@@ -19,13 +19,23 @@ export function CalibrationLoupe({
       aria-label="Magnified reference placement"
     >
       <strong>{label}</strong>
-      {point ? (
-        <>
-          <svg
-            viewBox={`${point.x - radius} ${point.y - radius} ${radius * 2} ${radius * 2}`}
-            role="img"
-            aria-label={`Original-image detail at x ${point.x.toFixed(1)}, y ${point.y.toFixed(1)}`}
-          >
+      <svg
+        width="132"
+        height="132"
+        viewBox={
+          point
+            ? `${point.x - radius} ${point.y - radius} ${radius * 2} ${radius * 2}`
+            : "0 0 132 132"
+        }
+        role="img"
+        aria-label={
+          point
+            ? `Original-image detail at x ${point.x.toFixed(1)}, y ${point.y.toFixed(1)}`
+            : "Move over the photo to inspect a hole before clicking"
+        }
+      >
+        {point ? (
+          <>
             <image
               href={imageUrl}
               x="0"
@@ -38,17 +48,24 @@ export function CalibrationLoupe({
               className="loupe-crosshair"
             />
             <circle cx={point.x} cy={point.y} r="1" className="loupe-center" />
-          </svg>
-          <span>
-            x {point.x.toFixed(1)} · y {point.y.toFixed(1)} px
-          </span>
-        </>
-      ) : (
-        <p>
-          Move over the photo to inspect a hole before clicking. Tap or use
-          pixel entry on touch devices.
-        </p>
-      )}
+          </>
+        ) : (
+          <text x="66" y="50" textAnchor="middle" fill="#53664a" fontSize="10">
+            <tspan x="66">Move over the photo</tspan>
+            <tspan x="66" dy="15">
+              to inspect a hole
+            </tspan>
+            <tspan x="66" dy="15">
+              before clicking.
+            </tspan>
+          </text>
+        )}
+      </svg>
+      <span>
+        {point
+          ? `x ${point.x.toFixed(1)} · y ${point.y.toFixed(1)} px`
+          : "Tap or use pixel entry on touch devices."}
+      </span>
     </div>
   );
 }

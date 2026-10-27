@@ -19,6 +19,8 @@ export function CalibrationGuide({
   return (
     <div className="calibration-guide">
       <svg
+        width="190"
+        height="117"
         viewBox="0 0 270 166"
         role="img"
         aria-label={`Reference diagram: a1 and j1 at row 1, j${rows} and a${rows} at row ${rows}. Select terminal holes, not power rails.`}

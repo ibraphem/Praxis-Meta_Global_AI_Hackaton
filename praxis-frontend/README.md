@@ -116,6 +116,15 @@ family, not automatic board-model recognition; verify that your board matches it
    locates a named template hole such as `a12`. Coordinate lookup does not establish
    that the hole is visible in the photograph.
 
+Calibration presentation is loaded with the image preview through a scoped CSS
+module. The Turbopack Tailwind loader processes only the global entry stylesheet,
+so CSS modules retain Next.js's native scoped class names. The guide and magnifier
+include bounded SVG dimensions even before the
+stylesheet loads. The magnifier reserves the same viewport in its empty and
+populated states, so hovering does not resize the helper and move the photograph.
+The helper responds to the width of the photo panel, including layouts with a
+results sidebar. Photo zoom affects the scrollable photo viewport only.
+
 Invalid or crossed reference points show **Correct the reference points**, without
 requesting grid alignment review. Confirmation remains disabled until the geometry
 is valid and a pending point replacement has been completed or cancelled. The
@@ -278,6 +287,7 @@ For a compiled local server, run `npm start` after building. It also uses port 3
 
 - `lib/breadboard/calibration.ts`: template, perspective transform, grouping, rail registration and bounded hole picking.
 - `components/breadboard-workspace.tsx`: manual calibration, confirmation, zoom and coordinate inspection.
+- `components/breadboard-workspace.module.css`: scoped calibration layout, bounded helper viewports, and panel-width responsiveness.
 - `components/calibration-guide.tsx`: named terminal-grid reference diagram.
 - `components/calibration-loupe.tsx`: original-pixel magnification and crosshair.
 - `lib/breadboard/references.ts`: stable reference slots and valid/invalid workflow instructions.

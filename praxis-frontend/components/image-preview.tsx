@@ -3,6 +3,7 @@ import { categories, componentLabel, type Analysis } from "@/lib/vision";
 import { Icon } from "./icons";
 import { WireOverlays } from "./wire-overlays";
 import { BreadboardWorkspace } from "./breadboard-workspace";
+import styles from "./breadboard-workspace.module.css";
 
 export interface Photograph {
   file: File;
@@ -81,7 +82,9 @@ export function ImagePreview({
     (result.image.width === photograph.width &&
       result.image.height === photograph.height);
   return (
-    <div className={`photo-stage ${dragging ? "is-dragging" : ""}`}>
+    <div
+      className={`photo-stage ${styles.workspace} ${dragging ? "is-dragging" : ""}`}
+    >
       <div className="stage-grid" aria-hidden="true" />
       <BreadboardWorkspace
         key={photograph.url}

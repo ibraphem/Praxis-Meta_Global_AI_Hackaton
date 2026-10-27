@@ -1,0 +1,445 @@
+/* Loaded with ImagePreview, independently of the global Tailwind entry. */
+.workspace {
+  min-width: 0;
+  max-width: 100%;
+  container: breadboard / inline-size;
+}
+.workspace > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Photograph-local manual breadboard calibration. */
+.workspace :global(.breadboard-toolbar),
+.workspace :global(.calibration-panel) {
+  width: 100%;
+}
+.workspace :global(.breadboard-toolbar) {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.workspace :global(.breadboard-toolbar strong) {
+  display: block;
+  font-size: 13px;
+  color: #44523d;
+}
+.workspace :global(.breadboard-toolbar span) {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #76806b;
+}
+.workspace :global(.spatial-buttons),
+.workspace :global(.calibration-controls),
+.workspace :global(.pixel-entry),
+.workspace :global(.hole-lookup) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+.workspace :global(.breadboard-toolbar .button),
+.workspace :global(.calibration-panel .button) {
+  padding: 8px 11px;
+  font-size: 11px;
+  min-height: 36px;
+}
+.workspace :global(.zoom-control),
+.workspace :global(.calibration-panel label) {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11px;
+  color: #56644a;
+}
+.workspace :global(.zoom-control select),
+.workspace :global(.calibration-panel select),
+.workspace :global(.calibration-panel input) {
+  border: 1px solid #bdc6b1;
+  border-radius: 5px;
+  background: white;
+  color: #34452d;
+  padding: 7px 8px;
+  font: inherit;
+  min-height: 34px;
+  max-width: 100%;
+}
+.workspace :global(.spatial-viewport) {
+  width: 100%;
+  max-height: 75vh;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.workspace :global(.spatial-viewport .photo-frame) {
+  margin: 0 auto;
+}
+.workspace :global(.breadboard-overlay) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 200;
+  pointer-events: none;
+  overflow: hidden;
+}
+.workspace :global(.hole-hit-surface) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 201;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: crosshair;
+  border-radius: 3px;
+}
+.workspace :global(.hole-hit-surface:focus-visible) {
+  outline: 3px solid #be5f28;
+  outline-offset: -3px;
+}
+.workspace :global(.terminal-strip) {
+  fill: #207e9a;
+  fill-opacity: 0.07;
+  stroke: #237f96;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.center-gap) {
+  fill: #e8b443;
+  fill-opacity: 0.16;
+  stroke: #b5872e;
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.grid-hole) {
+  fill: #25869f;
+  fill-opacity: 0.4;
+  stroke: #155264;
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.grid-hole.rail) {
+  fill: #a86228;
+  stroke: #8c4716;
+}
+.workspace :global(.grid-hole.same-group) {
+  fill: #f2c337;
+  fill-opacity: 0.9;
+  stroke: #805a00;
+  stroke-width: 1.4;
+}
+.workspace :global(.grid-hole.picked-hole) {
+  fill: #f65328;
+  fill-opacity: 1;
+  stroke: white;
+  stroke-width: 2;
+}
+.workspace :global(.grid-label) {
+  fill: #163f48;
+  stroke: white;
+  stroke-width: 2;
+  paint-order: stroke;
+  font: bold 13px sans-serif;
+}
+.workspace :global(.anchor-point) {
+  fill: #da582e;
+  stroke: white;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.calibration-panel) {
+  margin-top: 16px;
+  padding: 16px;
+  background: #fffef9;
+  border: 1px solid #c9cfbb;
+  border-radius: 8px;
+}
+.workspace :global(.calibration-panel fieldset) {
+  border: 0;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+}
+.workspace :global(.calibration-panel legend) {
+  font-size: 14px;
+  font-weight: 600;
+  color: #34452d;
+}
+.workspace :global(.calibration-panel p) {
+  line-height: 1.6;
+  font-size: 12px;
+}
+.workspace :global(.calibration-panel .calibration-hint) {
+  font-size: 11px;
+  color: #68755b;
+}
+.workspace :global(.calibration-controls),
+.workspace :global(.pixel-entry),
+.workspace :global(.hole-lookup) {
+  margin: 15px 0;
+}
+.workspace :global(.pixel-entry input) {
+  width: 90px;
+}
+.workspace :global(.pixel-entry > span) {
+  font-size: 11px;
+  align-self: center;
+}
+.workspace :global(.anchor-order) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 26px;
+  padding-left: 22px;
+  font: 11px monospace;
+  color: #6b765f;
+}
+.workspace :global(.anchor-order [aria-current]) {
+  color: #b64d19;
+  font-weight: bold;
+}
+.workspace :global(.calibration-notice) {
+  padding: 10px;
+  border: 1px solid #e8c391;
+  background: #fff7e8;
+  border-radius: 5px;
+  color: #825523;
+}
+.workspace :global(.registered-rails) {
+  padding-left: 18px;
+  font-size: 11px;
+}
+.workspace :global(.registered-rails li) {
+  padding: 5px 0;
+}
+.workspace :global(.registered-rails button) {
+  margin-left: 8px;
+  border: 1px solid #c9cfbb;
+  border-radius: 3px;
+  padding: 3px 6px;
+  background: white;
+  cursor: pointer;
+}
+.workspace :global(.hole-result) {
+  border: 1px solid #bfcdb2;
+  border-radius: 6px;
+  padding: 12px;
+  background: #f3f8ec;
+  overflow-wrap: anywhere;
+}
+.workspace :global(.hole-result > strong) {
+  color: #9d461e;
+  font: bold 21px monospace;
+}
+.workspace :global(.calibration-panel details) {
+  margin-top: 12px;
+  font-size: 11px;
+}
+.workspace :global(.calibration-panel summary) {
+  cursor: pointer;
+  padding: 5px 0;
+}
+.workspace :global(.calibration-panel pre) {
+  overflow: auto;
+  max-height: 260px;
+  background: #f1f3eb;
+  padding: 10px;
+  font-size: 10px;
+}
+@media (max-width: 600px) {
+  .workspace :global(.calibration-panel) {
+    padding: 12px;
+  }
+  .workspace :global(.spatial-buttons) {
+    gap: 7px;
+  }
+  .workspace :global(.calibration-controls > label) {
+    width: 100%;
+  }
+}
+
+.workspace :global(.calibration-assist) {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 144px;
+  height: 208px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  position: relative;
+  z-index: 220;
+  background: #fffef9;
+  border: 1px solid #bbc6ad;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  box-shadow: 0 3px 10px #26311d13;
+  pointer-events: auto;
+}
+.workspace :global(.calibration-guide) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-height: 100%;
+  overflow: hidden;
+}
+.workspace :global(.calibration-guide svg) {
+  width: 140px;
+  height: auto;
+  max-width: 48%;
+  flex-shrink: 0;
+}
+.workspace :global(.calibration-guide p) {
+  font-size: 11px;
+  line-height: 1.6;
+  max-width: 240px;
+  color: #53664a;
+}
+.workspace :global(.guide-strip) {
+  fill: #edf4f1;
+  stroke: #a2b6ad;
+}
+.workspace :global(.guide-gap) {
+  stroke: #c9ad61;
+  stroke-dasharray: 4 4;
+}
+.workspace :global(.guide-reference) {
+  fill: white;
+  stroke: #bd613b;
+  stroke-width: 2;
+}
+.workspace :global(.guide-label) {
+  font: 12px sans-serif;
+  fill: #435747;
+}
+.workspace :global(.guide-small) {
+  font: 10px sans-serif;
+  fill: #807249;
+}
+.workspace :global(.guide-active .guide-reference) {
+  fill: #d65c29;
+  stroke: #98431f;
+}
+.workspace :global(.guide-active .guide-label) {
+  fill: #ad441c;
+  font-weight: bold;
+}
+.workspace :global(.calibration-step) {
+  min-width: 0;
+  max-height: 100%;
+  overflow: auto;
+  font-size: 12px;
+  color: #44553e;
+}
+.workspace :global(.calibration-step p) {
+  line-height: 1.6;
+  margin: 6px 0;
+}
+.workspace :global(.calibration-loupe) {
+  display: grid;
+  grid-template-rows: 28px 132px 28px;
+  gap: 4px;
+  width: 144px;
+  min-width: 0;
+  align-self: center;
+  text-align: center;
+  font-size: 10px;
+  color: #53664a;
+}
+.workspace :global(.calibration-loupe strong),
+.workspace :global(.calibration-loupe span) {
+  display: block;
+  overflow: hidden;
+  line-height: 14px;
+}
+.workspace :global(.calibration-loupe svg) {
+  display: block;
+  width: 132px;
+  height: 132px;
+  margin: 0 auto;
+  background: #e5e9df;
+  border: 1px solid #b3bfa7;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.workspace :global(.calibration-loupe p) {
+  font-size: 10px;
+  line-height: 1.5;
+}
+.workspace :global(.loupe-crosshair) {
+  stroke: #ff5020;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.loupe-center) {
+  fill: none;
+  stroke: #ff5020;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.anchor-point.active-anchor) {
+  fill: #ffe36e;
+  stroke: #913b1d;
+}
+.workspace :global(.anchor-order button) {
+  font: inherit;
+  background: white;
+  color: #55664c;
+  border: 1px solid #c5ccb8;
+  border-radius: 4px;
+  padding: 8px;
+  cursor: pointer;
+}
+.workspace :global(.anchor-order button[aria-pressed="true"]) {
+  border-color: #b95625;
+  color: #a2471b;
+  background: #fff0df;
+}
+.workspace :global(.anchor-order button:disabled) {
+  cursor: default;
+  opacity: 0.65;
+}
+/* Respond to the photo panel width, including the desktop sidebar layout. */
+@container breadboard (max-width: 680px) {
+  .workspace :global(.calibration-assist) {
+    grid-template-columns: minmax(0, 1fr) 112px;
+    grid-template-rows: 80px 96px;
+    gap: 6px 10px;
+    padding: 8px;
+  }
+  .workspace :global(.calibration-guide) {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .workspace :global(.calibration-guide svg) {
+    width: 130px;
+    height: 80px;
+    max-width: 100%;
+  }
+  .workspace :global(.calibration-guide p) {
+    display: none;
+  }
+  .workspace :global(.calibration-step) {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: 11px;
+  }
+  .workspace :global(.calibration-step p) {
+    margin: 4px 0;
+  }
+  .workspace :global(.calibration-loupe) {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    grid-template-rows: 28px 92px 42px;
+    width: 112px;
+  }
+  .workspace :global(.calibration-loupe svg) {
+    width: 92px;
+    height: 92px;
+  }
+}

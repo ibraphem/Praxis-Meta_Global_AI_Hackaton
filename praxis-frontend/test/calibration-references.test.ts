@@ -113,3 +113,36 @@ test("magnifier reads the same source pixel as placement without adding overlays
   assert.doesNotMatch(initial, /<image/);
   assert.match(initial, /Move over the photo/);
 });
+
+test("the guide and magnifier have bounded intrinsic viewports even before component CSS loads", () => {
+  const image = { width: 1536, height: 1024 };
+  const render = (point: { x: number; y: number } | null) =>
+    renderToStaticMarkup(
+      createElement(CalibrationLoupe, {
+        imageUrl: "blob:photo",
+        image,
+        point,
+        label: "Pointer detail",
+      }),
+    );
+  const dimensions = (html: string) => {
+    const tag = html.match(/<svg\b[^>]*>/)?.[0] ?? "";
+    return [
+      tag.match(/\bwidth="(\d+)"/)?.[1],
+      tag.match(/\bheight="(\d+)"/)?.[1],
+    ];
+  };
+  assert.deepEqual(dimensions(render(null)), ["132", "132"]);
+  assert.deepEqual(
+    dimensions(render({ x: 800, y: 500 })),
+    dimensions(render(null)),
+  );
+  assert.deepEqual(
+    dimensions(
+      renderToStaticMarkup(
+        createElement(CalibrationGuide, { rows: 30, active: 0 }),
+      ),
+    ),
+    ["190", "117"],
+  );
+});
