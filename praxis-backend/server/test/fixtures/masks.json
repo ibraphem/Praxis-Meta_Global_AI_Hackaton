@@ -1,0 +1,32 @@
+{
+  "wire": {
+    "encoding": "one_bit",
+    "payload": "!!!!!.BAY!l#:41Y9alO",
+    "width": 20,
+    "height": 20
+  },
+  "blob": {
+    "encoding": "one_bit",
+    "payload": "!!!!!'y:P=c*$",
+    "width": 20,
+    "height": 20
+  },
+  "split": {
+    "encoding": "one_bit",
+    "payload": "!!!!!*BACXjg$4GD",
+    "width": 20,
+    "height": 20
+  },
+  "empty": {
+    "encoding": "one_bit",
+    "payload": "!!!!!&!!!!!",
+    "width": 20,
+    "height": 20
+  },
+  "branch": {
+    "encoding": "one_bit",
+    "payload": "!!!!!4CQ_(Bn]h72f!@n7*Yt9L!!",
+    "width": 20,
+    "height": 20
+  }
+}

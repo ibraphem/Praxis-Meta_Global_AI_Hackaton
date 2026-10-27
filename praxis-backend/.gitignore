@@ -1,0 +1,32 @@
+node_modules/
+server/dist/
+coverage/
+.DS_Store
+*.log
+
+# Local environment files; keep documented templates in Git
+.env*
+!.env.example
+!.env.*.example
+
+# Agent instructions and local tool state
+[Aa][Gg][Ee][Nn][Tt][Ss].md
+[Aa][Gg][Ee][Nn][Tt][Ss].*.md
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+SKILL.md
+.agents/
+.codex/
+.claude/
+.cursor/
+.gemini/
+.windsurf/
+.cursorrules
+.cursorignore
+.windsurfrules
+.aider*
+**/.github/copilot-instructions.md
+**/.github/instructions/
+**/.github/agents/
+**/.github/prompts/
