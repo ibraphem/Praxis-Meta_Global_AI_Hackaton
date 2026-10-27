@@ -6,6 +6,11 @@ This is not yet a circuit verifier. It does not identify breadboard holes, deter
 electrical connectivity, track objects between photographs, or establish that a
 circuit works.
 
+The frontend now provides **Step A: manual breadboard calibration and logical hole
+picking**, independently of this API. Its template-derived grid and user-declared
+rail groups are separate from model detections; they are not included in the
+analysis response. See the [frontend calibration guide](../praxis-frontend/README.md#breadboard-coordinates--step-a).
+
 ## Requirements and setup
 
 - Node.js **22.12 or later**, with npm. An active Node.js LTS release is recommended.

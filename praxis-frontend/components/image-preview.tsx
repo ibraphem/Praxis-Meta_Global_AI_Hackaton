@@ -1,9 +1,8 @@
-/* User photographs use blob URLs and must not go through an image optimizer. */
-/* eslint-disable @next/next/no-img-element */
 import type { CSSProperties } from "react";
 import { categories, componentLabel, type Analysis } from "@/lib/vision";
 import { Icon } from "./icons";
 import { WireOverlays } from "./wire-overlays";
+import { BreadboardWorkspace } from "./breadboard-workspace";
 
 export interface Photograph {
   file: File;
@@ -84,21 +83,12 @@ export function ImagePreview({
   return (
     <div className={`photo-stage ${dragging ? "is-dragging" : ""}`}>
       <div className="stage-grid" aria-hidden="true" />
-      <div
-        className="photo-frame"
-        style={{
-          aspectRatio: `${photograph.width} / ${photograph.height}`,
-          maxWidth: `min(100%, ${(560 * photograph.width) / photograph.height}px)`,
-        }}
+      <BreadboardWorkspace
+        key={photograph.url}
+        image={{ width: photograph.width, height: photograph.height }}
+        imageUrl={photograph.url}
+        disabled={loading || selecting}
       >
-        <img
-          src={photograph.url}
-          alt="Your uploaded electronics workspace"
-          width={photograph.width}
-          height={photograph.height}
-          className="workspace-photo"
-          draggable="false"
-        />
         {result && dimensionsMatch && showOverlays && (
           <div className="detection-overlays" aria-label="Component locations">
             {/* Keep smaller components above their enclosing breadboard. */}
@@ -146,7 +136,7 @@ export function ImagePreview({
             </span>
           </div>
         )}
-      </div>
+      </BreadboardWorkspace>
       {dragging && (
         <div className="drop-replace">Drop to replace this photograph</div>
       )}
