@@ -34,6 +34,20 @@ import {
 } from "./wire-assignment-panel";
 import { WireEndpointOverlay } from "./wire-endpoint-overlay";
 import {
+  cancelCorrection,
+  confirmCorrection,
+  confirmEndpoint,
+  createProposal,
+  endpointResponseSchema,
+  markEndpointUnknown,
+  ProposalRequestGate,
+  proposalValidity,
+  reviewedAssignment,
+  stageCorrection,
+  startReview,
+  type WireEndpointReview,
+} from "@/lib/wires/proposals";
+import {
   assignEndpoint,
   assignmentValidity,
   createAssignment,
@@ -82,6 +96,7 @@ export function BreadboardWorkspace({
   selectedWireId = null,
   onSelectWire,
   overlaysVisible = true,
+  imageFile,
 }: {
   image: ImageSize;
   imageUrl: string;
@@ -91,6 +106,7 @@ export function BreadboardWorkspace({
   selectedWireId?: string | null;
   onSelectWire?: (id: string) => void;
   overlaysVisible?: boolean;
+  imageFile?: File;
 }) {
   const [boards, setBoards] = useState<Board[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -108,6 +124,31 @@ export function BreadboardWorkspace({
   const [zoom, setZoom] = useState(1);
   const [assignments, setAssignments] = useState<WireAssignment[]>([]);
   const [capture, setCapture] = useState<EndpointCapture | null>(null);
+  const [reviews, setReviews] = useState<WireEndpointReview[]>([]);
+  const [proposing, setProposing] = useState(false);
+  const [proposalError, setProposalError] = useState<{
+    wireId: string;
+    analysisId: string | null;
+    message: string;
+  } | null>(null);
+  const proposalGate = useRef(new ProposalRequestGate());
+  const proposalRequest = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const gate = proposalGate.current;
+    gate.invalidate();
+    proposalRequest.current?.abort();
+    proposalRequest.current = null;
+    return () => {
+      gate.invalidate();
+      proposalRequest.current?.abort();
+    };
+  }, [
+    selectedWireId,
+    assignmentContext?.analysisRunId,
+    assignmentContext?.photoId,
+    boards,
+    disabled,
+  ]);
   const nextAssignment = useRef(1);
   const [editingReference, setEditingReference] = useState<number | null>(null);
   const [pointer, setPointer] = useState<Point | null>(null);
@@ -147,16 +188,37 @@ export function BreadboardWorkspace({
   const capturedRecord = assignments.find(
     (record) => record.id === capture?.assignmentId,
   );
+  const capturedReview = reviews.find(
+    (review) => review.proposal.id === capture?.assignmentId,
+  );
+  const visibleReview =
+    (assignmentContext &&
+      [...reviews]
+        .reverse()
+        .find(
+          (review) =>
+            review.proposal.wireCandidateId === selectedWireId &&
+            proposalValidity(review.proposal, assignmentContext, boards)
+              .status === "current",
+        )) ||
+    [...reviews]
+      .reverse()
+      .find((review) => review.proposal.wireCandidateId === selectedWireId);
   const picking = !!(
     capture &&
-    capturedRecord &&
+    (capturedRecord || capturedReview) &&
     assignmentContext &&
     !disabled &&
     !pausedReason &&
     board &&
-    selectedWireId === capturedRecord.wireCandidateId &&
-    assignmentValidity(capturedRecord, assignmentContext, boards).status !==
-      "stale"
+    (capturedReview
+      ? selectedWireId === capturedReview.proposal.wireCandidateId &&
+        proposalValidity(capturedReview.proposal, assignmentContext, boards)
+          .status !== "stale"
+      : capturedRecord &&
+        selectedWireId === capturedRecord.wireCandidateId &&
+        assignmentValidity(capturedRecord, assignmentContext, boards).status !==
+          "stale")
   );
   const visibleAssignment =
     assignmentContext && overlaysVisible
@@ -235,10 +297,12 @@ export function BreadboardWorkspace({
         ? "Click a visible hole near its center. Its electrical group will be highlighted."
         : "Calibrate a board to start mapping holes.";
   const photoInstruction = picking
-    ? `Pick endpoint ${capture!.index + 1} of ${capturedRecord!.wireCandidateId} on ${activeId}. Manual location only; contact remains unknown.`
+    ? `Pick endpoint ${capture!.index + 1} of ${capturedReview?.proposal.wireCandidateId ?? capturedRecord!.wireCandidateId} on ${activeId}. Manual location only; contact remains unknown.`
     : instruction;
 
   function startBoard(replace = false) {
+    proposalGate.current.invalidate();
+    proposalRequest.current?.abort();
     setCapture(null);
     setEditingReference(null);
     clearPointer();
@@ -283,8 +347,23 @@ export function BreadboardWorkspace({
       return;
     }
     setNotice("");
+    if (picking && capturedReview && capture && assignmentContext && board) {
+      updateReview(capturedReview, (review) =>
+        stageCorrection(
+          review,
+          capture.index,
+          point,
+          source,
+          board,
+          assignmentContext,
+          boards,
+        ),
+      );
+      return;
+    }
     if (picking && capturedRecord && capture && assignmentContext && board) {
       try {
+        proposalGate.current.invalidate();
         const updated = assignEndpoint(
           capturedRecord,
           capture.index,
@@ -356,6 +435,8 @@ export function BreadboardWorkspace({
     );
   }
   function startRail() {
+    proposalGate.current.invalidate();
+    proposalRequest.current?.abort();
     setCapture(null);
     clearPointer();
     const id = ["R1", "R2", "R3", "R4"].find(
@@ -433,6 +514,11 @@ export function BreadboardWorkspace({
       assignmentValidity(record, assignmentContext, boards).status === "stale"
     )
       return;
+    proposalGate.current.invalidate();
+    if (record.endpointReview) {
+      reopenReview(record);
+      return;
+    }
     setCapture({ assignmentId: id, index });
     setEnabled(false);
     setSelected(null);
@@ -453,6 +539,7 @@ export function BreadboardWorkspace({
       !wireCandidate(assignmentContext, selectedWireId)
     )
       return;
+    proposalGate.current.invalidate();
     const existing = assignments.find(
       (record) =>
         record.wireCandidateId === selectedWireId &&
@@ -484,6 +571,188 @@ export function BreadboardWorkspace({
       board?.calibration.breadboardId ?? boards[0].calibration.breadboardId,
     );
     clearPointer();
+  }
+
+  function updateReview(
+    review: WireEndpointReview,
+    transition: (value: WireEndpointReview) => WireEndpointReview,
+  ) {
+    proposalGate.current.invalidate();
+    try {
+      const updated = transition(review);
+      setReviews((current) =>
+        current.map((item) =>
+          item.proposal.id === review.proposal.id ? updated : item,
+        ),
+      );
+      setNotice("");
+    } catch (error) {
+      setNotice(message(error));
+    }
+  }
+  function reopenReview(record: WireAssignment) {
+    if (!record.endpointReview) return;
+    proposalGate.current.invalidate();
+    setReviews((current) =>
+      current.some(
+        (item) => item.proposal.id === record.endpointReview!.proposal.id,
+      )
+        ? current
+        : [...current, structuredClone(record.endpointReview!)],
+    );
+    onSelectWire?.(record.wireCandidateId);
+    setCapture(null);
+    setEnabled(false);
+  }
+  function correctReview(review: WireEndpointReview, index: 0 | 1) {
+    if (
+      !assignmentContext ||
+      proposalValidity(review.proposal, assignmentContext, boards).status ===
+        "stale" ||
+      pausedReason ||
+      disabled
+    )
+      return;
+    proposalGate.current.invalidate();
+    setCapture({ assignmentId: review.proposal.id, index });
+    const finalBoard =
+      review.endpoints[index].finalHole?.boardId ??
+      review.endpoints[index].originalProposal.proposedHole?.boardId;
+    setActiveId(
+      finalBoard ??
+        board?.calibration.breadboardId ??
+        boards[0]?.calibration.breadboardId ??
+        null,
+    );
+    setEnabled(false);
+    setSelected(null);
+    setNotice("");
+  }
+  function saveReview(review: WireEndpointReview) {
+    if (!assignmentContext || disabled || pausedReason) return;
+    proposalGate.current.invalidate();
+    try {
+      const id =
+        review.savedAssignmentId ?? `connection_${nextAssignment.current++}`;
+      if (!review.savedAssignmentId && assignments.length >= MAX_ASSIGNMENTS)
+        throw new Error("Remove an old assignment before saving another.");
+      const record = reviewedAssignment(id, review, assignmentContext, boards);
+      setAssignments((current) => [
+        ...current.filter((item) => item.id !== id),
+        record,
+      ]);
+      setReviews((current) =>
+        current.map((item) =>
+          item.proposal.id === review.proposal.id
+            ? record.endpointReview!
+            : item,
+        ),
+      );
+      setCapture(null);
+      setNotice(
+        "Endpoint review saved for this photograph. Wire identity is unverified; electrical contact remains unknown.",
+      );
+    } catch (error) {
+      setNotice(message(error));
+    }
+  }
+  async function proposeEndpoints() {
+    if (
+      !assignmentContext ||
+      !selectedWireId ||
+      !imageFile ||
+      disabled ||
+      pausedReason ||
+      !boards.length
+    )
+      return;
+    const candidate = wireCandidate(assignmentContext, selectedWireId);
+    if (
+      !candidate ||
+      assignments.some(
+        (record) =>
+          record.wireCandidateId === selectedWireId &&
+          assignmentValidity(record, assignmentContext, boards).status !==
+            "stale",
+      )
+    )
+      return;
+    if (
+      visibleReview &&
+      proposalValidity(visibleReview.proposal, assignmentContext, boards)
+        .status === "current"
+    )
+      return;
+    const generation = proposalGate.current.begin();
+    proposalRequest.current?.abort();
+    const controller = new AbortController();
+    proposalRequest.current = controller;
+    controller.signal.addEventListener(
+      "abort",
+      () => {
+        if (proposalRequest.current === controller) setProposing(false);
+      },
+      { once: true },
+    );
+    setProposing(true);
+    setProposalError(null);
+    try {
+      const body = new FormData();
+      body.set("image", imageFile);
+      body.set(
+        "context",
+        JSON.stringify({
+          analysisId: assignmentContext.analysisRunId,
+          imageId: assignmentContext.photoId,
+          image: assignmentContext.analysis!.image,
+          wire: {
+            id: candidate.id,
+            bbox: candidate.bbox,
+            mask: candidate.mask,
+          },
+        }),
+      );
+      const response = await fetch("/api/vision/endpoints", {
+        method: "POST",
+        body,
+        signal: controller.signal,
+      });
+      if (!response.ok)
+        throw new Error(
+          "Endpoint proposals could not be obtained. Try again or use manual assignment.",
+        );
+      const result = endpointResponseSchema.parse(await response.json());
+      if (
+        !proposalGate.current.accepts(generation) ||
+        controller.signal.aborted
+      )
+        return;
+      if (result.wireCandidateId !== selectedWireId)
+        throw new Error("The endpoint response belongs to a different wire.");
+      const review = startReview(
+        createProposal(crypto.randomUUID(), result, assignmentContext, boards),
+      );
+      setReviews((current) => [...current, review]);
+    } catch (error) {
+      if (
+        proposalGate.current.accepts(generation) &&
+        !controller.signal.aborted
+      )
+        setProposalError({
+          wireId: selectedWireId,
+          analysisId: assignmentContext.analysisRunId,
+          message:
+            error instanceof Error &&
+            !["ZodError", "SyntaxError", "TypeError"].includes(error.name)
+              ? error.message
+              : "Endpoint proposals could not be read. Try again or use manual assignment.",
+        });
+    } finally {
+      if (proposalRequest.current === controller) {
+        proposalRequest.current = null;
+        setProposing(false);
+      }
+    }
   }
 
   return (
@@ -626,7 +895,7 @@ export function BreadboardWorkspace({
               />
             </>
           )}
-          {visibleAssignment && !disabled && (
+          {visibleAssignment && !visibleReview && !disabled && (
             <WireEndpointOverlay
               assignment={visibleAssignment}
               image={image}
@@ -637,6 +906,26 @@ export function BreadboardWorkspace({
               )}
             />
           )}
+          {visibleReview &&
+            assignmentContext &&
+            overlaysVisible &&
+            !disabled && (
+              <WireEndpointOverlay
+                image={image}
+                review={visibleReview}
+                validity={{
+                  status:
+                    proposalValidity(
+                      visibleReview.proposal,
+                      assignmentContext,
+                      boards,
+                    ).status === "stale"
+                      ? "stale"
+                      : "draft",
+                  reasons: [],
+                }}
+              />
+            )}
         </div>
       </div>
       {assignmentContext &&
@@ -657,11 +946,63 @@ export function BreadboardWorkspace({
               onStop={() => setCapture(null)}
               onBoard={changeBoard}
               onPoint={acceptPoint}
+              review={visibleReview}
+              proposing={proposing}
+              proposalError={
+                proposalError?.wireId === selectedWireId &&
+                proposalError.analysisId === assignmentContext.analysisRunId
+                  ? proposalError.message
+                  : ""
+              }
+              canPropose={!!imageFile}
+              onPropose={() => void proposeEndpoints()}
+              onReviewConfirm={(index) => {
+                if (!visibleReview) return;
+                updateReview(visibleReview, (review) =>
+                  confirmEndpoint(review, index, assignmentContext, boards),
+                );
+                setCapture(null);
+              }}
+              onReviewUnknown={(index) => {
+                if (!visibleReview) return;
+                updateReview(visibleReview, (review) =>
+                  markEndpointUnknown(review, index, assignmentContext, boards),
+                );
+                setCapture(null);
+              }}
+              onReviewCorrect={(index) =>
+                visibleReview && correctReview(visibleReview, index)
+              }
+              onCorrectionConfirm={(index) => {
+                if (!visibleReview) return;
+                updateReview(visibleReview, (review) =>
+                  confirmCorrection(review, index, assignmentContext, boards),
+                );
+                setCapture(null);
+              }}
+              onCorrectionCancel={(index) => {
+                if (!visibleReview) return;
+                updateReview(visibleReview, (review) =>
+                  cancelCorrection(review, index),
+                );
+                setCapture(null);
+              }}
+              onReviewSave={() => visibleReview && saveReview(visibleReview)}
+              onReopen={reopenReview}
               onRemove={(id) => {
                 setAssignments((current) =>
                   current.filter((record) => record.id !== id),
                 );
                 if (capture?.assignmentId === id) setCapture(null);
+                const removed = assignments.find((record) => record.id === id);
+                if (removed?.endpointReview)
+                  setReviews((current) =>
+                    current.filter(
+                      (review) =>
+                        review.proposal.id !==
+                        removed.endpointReview!.proposal.id,
+                    ),
+                  );
               }}
             />
             {notice && !enabled && (

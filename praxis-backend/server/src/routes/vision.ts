@@ -11,21 +11,31 @@ export type AnalyzeImage = (
 ) => Promise<Analysis>;
 
 /** Admit requests before buffering, with no unbounded queue of photographs. */
-export function registerVisionRoute(
+export function registerVisionRoute<T extends object = Analysis>(
   app: FastifyInstance,
   config: Config,
-  analyze: AnalyzeImage,
+  analyze: (
+    bytes: Buffer,
+    signal: AbortSignal,
+    trace?: AnalysisTrace,
+    context?: unknown,
+  ) => Promise<T>,
   logger: TraceLogger = () => undefined,
+  options: {
+    path?: string;
+    allowContext?: boolean;
+    capacity?: { active: number };
+  } = {},
 ) {
-  let active = 0;
-  app.post('/api/vision/analyze', async (request, reply) => {
+  const capacity = options.capacity ?? { active: 0 };
+  app.post(options.path ?? '/api/vision/analyze', async (request, reply) => {
     if (!request.isMultipart())
       throw new AppError(
         415,
         'EXPECTED_MULTIPART',
         'Send multipart/form-data with one image field.',
       );
-    if (active >= config.MAX_CONCURRENT_ANALYSES) {
+    if (capacity.active >= config.MAX_CONCURRENT_ANALYSES) {
       reply.header('Retry-After', '2');
       throw new AppError(
         503,
@@ -33,7 +43,7 @@ export function registerVisionRoute(
         'All analysis slots are busy. Try again shortly.',
       );
     }
-    active++;
+    capacity.active++;
     const trace = new AnalysisTrace(request.id, logger);
     trace.emit('vision.analysis_started', {
       timeoutMs: config.ANALYSIS_TIMEOUT_MS,
@@ -77,10 +87,34 @@ export function registerVisionRoute(
     request.raw.once('aborted', disconnect);
     reply.raw.once('close', disconnect);
     let bytes: Buffer | undefined;
+    let context: unknown;
     const finishUpload = trace.begin('upload');
     try {
       try {
-        for await (const part of request.parts()) {
+        for await (const part of request.parts(
+          options.allowContext
+            ? { limits: { fields: 1, parts: 2, fieldSize: 192 * 1024 } }
+            : undefined,
+        )) {
+          if (
+            options.allowContext &&
+            part.type === 'field' &&
+            part.fieldname === 'context' &&
+            context === undefined &&
+            !part.valueTruncated &&
+            typeof part.value === 'string'
+          ) {
+            try {
+              context = JSON.parse(part.value);
+            } catch {
+              throw new AppError(
+                400,
+                'INVALID_CONTEXT',
+                'Endpoint context must be valid JSON.',
+              );
+            }
+            continue;
+          }
           if (part.type !== 'file' || part.fieldname !== 'image' || bytes) {
             throw new AppError(
               400,
@@ -116,7 +150,7 @@ export function registerVisionRoute(
         );
       controller.signal.throwIfAborted();
       finishUpload('completed');
-      const result = await analyze(bytes, controller.signal, trace);
+      const result = await analyze(bytes, controller.signal, trace, context);
       controller.signal.throwIfAborted();
       const diagnostics = trace.snapshot();
       trace.emit('vision.analysis_completed', {
@@ -157,7 +191,7 @@ export function registerVisionRoute(
       request.raw.removeListener('aborted', disconnect);
       reply.raw.removeListener('close', disconnect);
       bytes = undefined;
-      active--;
+      capacity.active--;
     }
   });
 }

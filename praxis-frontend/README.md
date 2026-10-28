@@ -254,11 +254,11 @@ lookup alone cannot assign an endpoint, because it does not establish visibility
 
 Three evidence states remain independent:
 
-| Evidence | Current state | Meaning |
-| --- | --- | --- |
-| Wire identity | `unverified`, association source `user` | The user associates these observations with the selected candidate; the mask does not prove one physical wire. |
-| Endpoint location | `user_selected`, selection source `manual` | The raw observation is retained alongside a resolved calibrated hole or an unknown result. No location is labeled inferred. |
-| Electrical contact | `unknown` | A selected hole and a visible connector do not establish seating or continuity. |
+| Evidence           | Current state                              | Meaning                                                                                                                     |
+| ------------------ | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| Wire identity      | `unverified`, association source `user`    | The user associates these observations with the selected candidate; the mask does not prove one physical wire.              |
+| Endpoint location  | `user_selected`, selection source `manual` | The raw observation is retained alongside a resolved calibrated hole or an unknown result. No location is labeled inferred. |
+| Electrical contact | `unknown`                                  | A selected hole and a visible connector do not establish seating or continuity.                                             |
 
 **Manually assigned** means both observations resolve to logical holes. It does
 not verify wire identity, visibility, connector insertion, or electrical contact.
@@ -392,3 +392,61 @@ For a compiled local server, run `npm start` after building. It also uses port 3
 - `lib/server/vision-proxy.ts`: bounded server-side forwarding and safe errors.
 - `app/api/vision/analyze/route.ts`: HTTP entry point.
 - `app/manifest.ts`: PWA manifest.
+
+## AI endpoint localization and review — Step B.2
+
+After calibrating the boards (including rail lanes), select a segmented wire and
+choose **Propose endpoints with Muse**. This explicitly sends the photograph and
+selected mask to `POST /api/vision/endpoints`; it is an additional model request.
+Muse returns original-image pixels and visual evidence, never authoritative board
+or hole IDs. Praxis uses the same bounded Step A resolver as manual assignment.
+Ambiguous cross-board matches, background and unregistered rails remain unknown.
+
+Review A and B independently:
+
+- **Confirm** accepts the proposed position and calibrated hole.
+- **Correct** opens the existing image/pixel picker. The new location is a preview
+  until **Confirm correction**. Cancel keeps the previous reviewed value.
+- **Unknown** clears the final location while retaining the rejected suggestion.
+- **Save reviewed assignment** requires both endpoints to be reviewed. One or both
+  may be unknown; these records remain incomplete. Two endpoints in the same
+  physical hole are flagged and cannot be saved until corrected or marked unknown.
+
+Dashed amber markers show proposals; green markers show reviewed positions;
+question marks show rejected/unknown positions when a source pixel exists. A
+purple dashed marker shows a pending correction. Corrections retain a faint marker
+at the original proposal. No line is drawn between endpoints.
+
+Saved reviews can be reopened. Review drafts and pending corrections survive wire
+switching during this photograph's session. JSON inspection retains the original
+proposal, selected candidate and analysis IDs, model, calibration revisions,
+reviewed values, and per-endpoint source (`ai_user_confirmed`, `manual_correction`,
+`user_unknown`). This extends the existing assignment records; no second graph or
+connection system is created. Identity remains unverified and contact unknown.
+
+Staleness is derived; it never replaces the historical review decision. Reanalysis,
+board/rail revision changes or removal prevent saving and hide the old markers.
+Proposals snapshot every calibrated board searched, so changing any searched board
+or adding a board also invalidates the proposal: a formerly unique match may have
+become ambiguous. Existing manual-only records retain their narrower per-endpoint
+invalidation behavior. Late responses after selection, analysis, calibration,
+a newer request or manual editing are discarded. AI never automatically replaces
+an existing assignment. Stale records remain inspectable.
+
+Storage remains in photograph-local component memory, capped at 100 assignments.
+There is no database or browser persistence: replacing the photograph or reloading
+clears assignments and reviews.
+
+Run the repeatable browser regression with the supplied `Complete-Circuit-5.jpg`
+in the repository root:
+
+```sh
+npx playwright install chromium
+npm run test:e2e
+# Or use an already installed Chrome:
+PLAYWRIGHT_CHROME_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:e2e
+```
+
+These tests use the real photograph with mocked perception and endpoint replies.
+They verify workflow and provenance, not live model accuracy or confirmed manual
+ground truth. Live Muse/SAM comparison is a separate, explicitly requested upload.

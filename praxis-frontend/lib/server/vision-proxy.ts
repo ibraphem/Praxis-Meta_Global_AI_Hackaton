@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { analysisSchema, MAX_FILE_BYTES } from "../vision";
 import { upstreamTimeoutSchema, type ErrorDetails } from "../diagnostics";
+import { endpointResponseSchema } from "../wires/proposals";
 
 const MAX_BODY_BYTES = MAX_FILE_BYTES + 64 * 1024;
 const TIMEOUT_MS = 190_000;
@@ -117,6 +118,7 @@ function backendError(status: number): ProxyError {
  */
 export function createVisionProxy(
   options: {
+    operation?: "analyze" | "endpoints";
     fetcher?: typeof fetch;
     environment?: {
       PRAXIS_BACKEND_URL?: string;
@@ -243,7 +245,7 @@ export function createVisionProxy(
         );
       }
       // This URL is fixed by trusted server configuration, never by the request.
-      const url = `${endpoint.href.replace(/\/$/, "")}/api/vision/analyze`;
+      const url = `${endpoint.href.replace(/\/$/, "")}/api/vision/${options.operation === "endpoints" ? "endpoints" : "analyze"}`;
       const upstreamHeaders = new Headers({
         "Content-Type": contentType,
         Accept: "application/json",
@@ -326,7 +328,10 @@ export function createVisionProxy(
           "The backend returned an unreadable result. Try the analysis again.",
         );
       }
-      const parsed = analysisSchema.safeParse(raw);
+      const parsed =
+        options.operation === "endpoints"
+          ? endpointResponseSchema.safeParse(raw)
+          : analysisSchema.safeParse(raw);
       if (!parsed.success)
         throw new ProxyError(
           502,

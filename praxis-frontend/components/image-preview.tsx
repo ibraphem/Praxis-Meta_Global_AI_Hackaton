@@ -94,6 +94,7 @@ export function ImagePreview({
         key={photograph.url}
         image={{ width: photograph.width, height: photograph.height }}
         imageUrl={photograph.url}
+        imageFile={photograph.file}
         disabled={loading || selecting}
         assignmentContext={{
           photoId: photograph.id,

@@ -7,6 +7,7 @@ import type { Config } from './config.js';
 import { AppError } from './lib/errors.js';
 import { registerVisionRoute, type AnalyzeImage } from './routes/vision.js';
 import { createVisionService } from './services/vision.js';
+import { createEndpointProposalService } from './services/endpoint-proposals.js';
 import { logTrace, type TraceLogger } from './lib/diagnostics.js';
 
 /** Build separately from listen(), so HTTP behavior can be tested without ports. */
@@ -16,6 +17,7 @@ export async function buildApp(
   traceLogger: TraceLogger = config.NODE_ENV === 'test'
     ? () => undefined
     : logTrace,
+  proposeEndpoints = createEndpointProposalService(config),
 ) {
   const app = Fastify({
     logger: false,
@@ -86,7 +88,13 @@ export async function buildApp(
   app.get('/health', { config: { rateLimit: false } }, async () => ({
     status: 'ok',
   }));
-  registerVisionRoute(app, config, analyze, traceLogger);
+  const capacity = { active: 0 };
+  registerVisionRoute(app, config, analyze, traceLogger, { capacity });
+  registerVisionRoute(app, config, proposeEndpoints, traceLogger, {
+    path: '/api/vision/endpoints',
+    allowContext: true,
+    capacity,
+  });
 
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send({

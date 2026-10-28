@@ -11,6 +11,7 @@ export const stages = [
   'wire.geometry',
   'muse.interpret',
   'muse.detect',
+  'muse.endpoints',
   'response.validate',
 ] as const;
 export type Stage = (typeof stages)[number];

@@ -1,4 +1,5 @@
 import type { Analysis, Component } from "../vision";
+import type { WireEndpointReview } from "./proposals";
 import {
   pickHole,
   type Calibration,
@@ -18,9 +19,9 @@ export interface AssignmentContext {
   analysis: Analysis | null;
 }
 export interface ManualEndpoint {
-  selectionSource: "manual";
-  inputMethod: "image_click" | "pixel_entry";
-  locationVerification: "user_selected";
+  selectionSource: "manual" | "ai_user_confirmed" | "manual_correction";
+  inputMethod: "image_click" | "pixel_entry" | "ai_proposal";
+  locationVerification: "user_selected" | "user_confirmed";
   /** Preserve the user's observation independently of the snapped grid location. */
   selectedImagePosition: Point;
   boardId: string;
@@ -45,6 +46,8 @@ export interface WireAssignment {
   wireCandidateId: string;
   wireIdentity: { status: "unverified"; associationSource: "user" };
   endpoints: [ManualEndpoint | null, ManualEndpoint | null];
+  /** Immutable proposal and reviewed values; kept outside the detection response. */
+  endpointReview?: WireEndpointReview;
 }
 export type StaleReason =
   | "photo_changed"
@@ -90,6 +93,25 @@ export function assignmentValidity(
     reasons.add("analysis_changed");
   if (!wireCandidate(context, assignment.wireCandidateId))
     reasons.add("wire_unavailable");
+  if (assignment.endpointReview) {
+    for (const [id, revision] of Object.entries(
+      assignment.endpointReview.proposal.calibrationRevisions,
+    )) {
+      const board = boards.find((item) => item.calibration.breadboardId === id);
+      if (!board) reasons.add("board_removed");
+      else if (board.revision !== revision) reasons.add("calibration_changed");
+    }
+    if (
+      boards.some(
+        (item) =>
+          !(
+            item.calibration.breadboardId in
+            assignment.endpointReview!.proposal.calibrationRevisions
+          ),
+      )
+    )
+      reasons.add("calibration_changed");
+  }
   for (const endpoint of assignment.endpoints) {
     if (!endpoint) continue;
     const board = boards.find(
@@ -144,7 +166,7 @@ export function assignEndpoint(
   assignment: WireAssignment,
   index: 0 | 1,
   point: Point,
-  inputMethod: ManualEndpoint["inputMethod"],
+  inputMethod: Exclude<ManualEndpoint["inputMethod"], "ai_proposal">,
   board: CalibratedBoard,
   context: AssignmentContext,
   boards: CalibratedBoard[],
@@ -154,6 +176,24 @@ export function assignEndpoint(
     throw new Error(
       "This assignment is stale. Start a new assignment for the current analysis and calibration.",
     );
+  if (assignment.endpointReview)
+    throw new Error("Reopen the endpoint review to revise this assignment.");
+  const endpoint = resolveEndpoint(point, inputMethod, board, context, boards);
+  const endpoints: [ManualEndpoint | null, ManualEndpoint | null] = [
+    ...assignment.endpoints,
+  ];
+  endpoints[index] = endpoint;
+  return { ...assignment, endpoints };
+}
+
+/** Shared observation resolver for manual picks, AI pixels, and corrections. */
+export function resolveEndpoint(
+  point: Point,
+  inputMethod: Exclude<ManualEndpoint["inputMethod"], "ai_proposal">,
+  board: CalibratedBoard,
+  context: AssignmentContext,
+  boards: CalibratedBoard[],
+): ManualEndpoint {
   if (
     !boards.includes(board) ||
     !Number.isSafeInteger(board.revision) ||
@@ -195,11 +235,7 @@ export function assignEndpoint(
       : { status: "unknown", source: "none", reason: "no_unambiguous_hole" },
     electricalContact: "unknown",
   };
-  const endpoints: [ManualEndpoint | null, ManualEndpoint | null] = [
-    ...assignment.endpoints,
-  ];
-  endpoints[index] = endpoint;
-  return { ...assignment, endpoints };
+  return endpoint;
 }
 export function reviseRails(
   board: CalibratedBoard,

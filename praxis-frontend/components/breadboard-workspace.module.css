@@ -589,3 +589,57 @@
   font-family: var(--font-mono);
   font-weight: 700;
 }
+
+.workspace :global(.endpoint-review) {
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid #b7c8bc;
+  border-radius: 10px;
+  background: #f5f8f4;
+}
+.workspace :global(.endpoint-review.stale) {
+  border-color: #b8853f;
+  background: #fcf6e9;
+}
+.workspace :global(.endpoint-review h4) {
+  margin: 0 0 12px;
+}
+.workspace :global(.endpoint-review ol) {
+  list-style: none;
+  padding: 0;
+}
+.workspace :global(.endpoint-review-item) {
+  padding: 12px 0;
+  border-top: 1px solid #d5ded4;
+}
+.workspace :global(.correction-preview) {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px dashed #8564a3;
+  border-radius: 6px;
+}
+.workspace :global(.endpoint-review pre) {
+  max-height: 280px;
+  overflow: auto;
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.workspace :global(.endpoint-proposed circle) {
+  stroke: #b27616;
+  fill: #edb84c33;
+  stroke-dasharray: 5 4;
+}
+.workspace :global(.endpoint-confirmed circle),
+.workspace :global(.endpoint-corrected circle) {
+  stroke: #267049;
+  fill: #77bc8733;
+}
+.workspace :global(.endpoint-original) {
+  opacity: 0.45;
+}
+.workspace :global(.endpoint-pending circle) {
+  stroke: #8564a3;
+  fill: #8564a322;
+  stroke-dasharray: 3 3;
+}

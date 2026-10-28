@@ -473,3 +473,31 @@ praxis-backend/
 │   └── package.json
 └── README.md
 ```
+
+## On-demand wire endpoint proposals
+
+`POST /api/vision/endpoints` accepts multipart `image` plus one JSON text field
+`context`: `{ analysisId, imageId, image: { width, height }, wire: { id, bbox, mask } }`.
+The wire must be a selected SAM-segmented candidate; `bbox` is original-image
+`[x,y,width,height]` and `mask` is the existing bounded SVG path contract. No image
+or analysis is retained on the server, so the caller supplies this context each
+time. IDs correlate the reply; they do not authenticate an analysis stored here.
+The photograph is decoded/rotated with the existing image preparation service, and
+context dimensions and bounds are checked before inference.
+
+One structured Muse call returns ordered endpoints A/B with
+`proposedImagePosition: [x,y] | null` in original-image pixels and evidence
+`visible_insertion`, `visible_connector`, `wire_mask_tip`, `occluded`, or
+`insufficient`. Hidden/insufficient positions must be null. Invalid roles,
+out-of-image positions and invented hole fields fail closed. The response echoes
+the analysis/image/wire IDs and configured model, with `muse.endpoints` timing.
+The frontend, using user-confirmed calibration and registered rails, resolves
+pixels to holes and obtains independent user review. This API does not confirm
+wire identity, electrical contact or continuity, and never returns hole IDs.
+
+The route shares authentication, browser-origin rejection, rate limiting,
+concurrency admission, upload bounds, deadline/cancellation and sanitized errors
+with analysis. The Next proxy exposes the same endpoint without revealing server
+credentials. No new environment variables are required. Fixture tests cover the
+provider contract, invalid output/context, HTTP transport and shared capacity;
+they make no external model calls.

@@ -10,6 +10,12 @@ import {
   type ManualEndpoint,
 } from "@/lib/wires/assignments";
 import type { Point } from "@/lib/breadboard/calibration";
+import {
+  proposalValidity,
+  reviewSaveIssue,
+  type EndpointIndex,
+  type WireEndpointReview,
+} from "@/lib/wires/proposals";
 
 export interface EndpointCapture {
   assignmentId: string;
@@ -30,7 +36,22 @@ interface Props {
   onStop: () => void;
   onRemove: (id: string) => void;
   onBoard: (id: string) => void;
-  onPoint: (point: Point, method: ManualEndpoint["inputMethod"]) => void;
+  onPoint: (
+    point: Point,
+    method: Exclude<ManualEndpoint["inputMethod"], "ai_proposal">,
+  ) => void;
+  review?: WireEndpointReview;
+  proposing?: boolean;
+  proposalError?: string;
+  canPropose?: boolean;
+  onPropose?: () => void;
+  onReviewConfirm?: (index: EndpointIndex) => void;
+  onReviewCorrect?: (index: EndpointIndex) => void;
+  onReviewUnknown?: (index: EndpointIndex) => void;
+  onCorrectionConfirm?: (index: EndpointIndex) => void;
+  onCorrectionCancel?: (index: EndpointIndex) => void;
+  onReviewSave?: () => void;
+  onReopen?: (record: WireAssignment) => void;
 }
 export function endpointLabel(endpoint: ManualEndpoint | null) {
   return endpoint
@@ -61,18 +82,210 @@ export function WireAssignmentPanel(props: Props) {
   const captureIsStale =
     !!capturedRecord &&
     assignmentValidity(capturedRecord, context, boards).status === "stale";
+  const review = props.review;
+  const reviewStale =
+    !!review &&
+    proposalValidity(review.proposal, context, boards).status === "stale";
+  const hasAssignment = records.some(
+    (record) =>
+      record.wireCandidateId === selectedWireId &&
+      assignmentValidity(record, context, boards).status !== "stale",
+  );
+  const reviewDisabled = disabled || !!pausedReason || reviewStale;
+  const saveIssue = review ? reviewSaveIssue(review, context, boards) : null;
   return (
     <section
       className="wire-assignment-panel"
-      aria-label="Manual wire endpoint assignments"
+      aria-label="Wire endpoint assignments and AI review"
     >
       <h3>
-        Wire endpoints <span>Manual assignment</span>
+        Wire endpoints <span>AI-assisted review · manual assignment</span>
       </h3>
       <p>
-        Select a segmented wire candidate, then pick two visible insertion
-        positions. Each endpoint can use a different calibrated board.
+        Select a segmented wire candidate. Ask Muse for insertion proposals or
+        pick positions manually. Praxis resolves pixels through your
+        calibration; you review each endpoint independently.
       </p>
+      {props.onPropose && (
+        <div className="endpoint-actions">
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={
+              disabled ||
+              !!pausedReason ||
+              !candidate ||
+              !boards.length ||
+              !props.canPropose ||
+              props.proposing ||
+              hasAssignment ||
+              (!!review && !reviewStale)
+            }
+            onClick={props.onPropose}
+          >
+            {props.proposing
+              ? "Locating endpoints…"
+              : "Propose endpoints with Muse"}
+          </button>
+          <small>
+            Your photograph and selected wire are sent when you request
+            proposals.
+          </small>
+        </div>
+      )}
+      {props.proposalError && (
+        <p role="alert" className="calibration-notice">
+          {props.proposalError}
+        </p>
+      )}
+      {review && (
+        <div
+          className={`endpoint-review ${reviewStale ? "stale" : ""}`}
+          aria-label="AI endpoint review"
+        >
+          <h4>
+            {review.proposal.wireCandidateId.replace(
+              "jumper_wire_",
+              "Jumper wire ",
+            )}{" "}
+            · endpoint review
+          </h4>
+          <p className="endpoint-limits">
+            Dashed amber: proposed · Green: reviewed · Purple: correction
+            preview · ?: unknown
+          </p>
+          {reviewStale && (
+            <p role="status">
+              Stale — analysis or calibration changed. Historical review
+              decisions are retained. Request new proposals to continue.
+            </p>
+          )}
+          <ol>
+            {review.endpoints.map((endpoint, index) => {
+              const i = index as EndpointIndex;
+              const original = endpoint.originalProposal;
+              const pending = review.pendingCorrections[i];
+              const correcting =
+                capture?.assignmentId === review.proposal.id &&
+                capture.index === i;
+              return (
+                <li
+                  key={endpoint.role}
+                  className={`endpoint-review-item endpoint-${endpoint.reviewStatus}`}
+                >
+                  <strong>
+                    Endpoint {endpoint.role} · {endpoint.reviewStatus}
+                  </strong>
+                  <p>
+                    AI proposal:{" "}
+                    {original.proposedHole
+                      ? `${original.proposedHole.boardId}:${original.proposedHole.holeId} · snap ${original.proposedHole.snapDistancePx.toFixed(1)} px`
+                      : "unknown hole"}
+                    {original.proposedImagePosition &&
+                      ` · pixels (${original.proposedImagePosition.map((coordinate) => coordinate.toFixed(1)).join(", ")})`}
+                    {" · "}
+                    {original.evidence.replaceAll("_", " ")}
+                  </p>
+                  {endpoint.reviewStatus !== "proposed" && (
+                    <p>
+                      Reviewed result:{" "}
+                      {endpoint.finalHole
+                        ? `${endpoint.finalHole.boardId}:${endpoint.finalHole.holeId}`
+                        : "unknown"}{" "}
+                      · {endpoint.source?.replaceAll("_", " ")}
+                    </p>
+                  )}
+                  <div className="endpoint-actions">
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      disabled={reviewDisabled || !original.proposedHole}
+                      onClick={() => props.onReviewConfirm?.(i)}
+                    >
+                      Confirm endpoint {endpoint.role}
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      disabled={reviewDisabled}
+                      onClick={() => props.onReviewCorrect?.(i)}
+                    >
+                      Correct endpoint {endpoint.role}
+                    </button>
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      disabled={reviewDisabled}
+                      onClick={() => props.onReviewUnknown?.(i)}
+                    >
+                      Mark endpoint {endpoint.role} unknown
+                    </button>
+                  </div>
+                  {(pending || correcting) && (
+                    <div className="correction-preview" role="status">
+                      <p>
+                        {pending
+                          ? `Correction preview: ${endpointLabel(pending)}. The reviewed endpoint changes only when you confirm.`
+                          : "Pick a new position on the photograph or enter pixels below."}
+                      </p>
+                      <div className="endpoint-actions">
+                        <button
+                          type="button"
+                          className="button button-primary"
+                          disabled={
+                            reviewDisabled ||
+                            pending?.resolution.status !== "resolved"
+                          }
+                          onClick={() => props.onCorrectionConfirm?.(i)}
+                        >
+                          Confirm correction {endpoint.role}
+                        </button>
+                        <button
+                          type="button"
+                          className="button button-secondary"
+                          onClick={() => props.onCorrectionCancel?.(i)}
+                        >
+                          Cancel correction {endpoint.role}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <div className="endpoint-actions">
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={
+                reviewDisabled ||
+                !!saveIssue ||
+                !review.dirty ||
+                (!!capture && capture.assignmentId === review.proposal.id)
+              }
+              onClick={props.onReviewSave}
+            >
+              Save reviewed assignment
+            </button>
+            <span role="status">
+              {saveIssue ??
+                (review.dirty
+                  ? "Ready to save · electrical contact unknown"
+                  : "Review saved · electrical contact unknown")}
+            </span>
+          </div>
+          <details>
+            <summary>Inspect original proposal and reviewed values</summary>
+            <pre>{JSON.stringify(review, null, 2)}</pre>
+          </details>
+          <p className="endpoint-limits">
+            Reviews are kept for this photograph during this session. Unknown
+            endpoints produce incomplete assignments; no reviewed assignment
+            verifies electrical contact.
+          </p>
+        </div>
+      )}
       <p className="endpoint-limits">
         Wire identity: unverified · Endpoint locations: user selected ·
         Electrical contact: unknown. Selecting two positions does not verify one
@@ -92,7 +305,8 @@ export function WireAssignmentPanel(props: Props) {
             !candidate ||
             !boards.length ||
             !!pausedReason ||
-            records.length >= MAX_ASSIGNMENTS
+            records.length >= MAX_ASSIGNMENTS ||
+            (!!review && !reviewStale)
           }
           onClick={props.onStart}
         >
@@ -204,10 +418,14 @@ export function WireAssignmentPanel(props: Props) {
                 </strong>
                 <span>
                   {validity.status === "complete"
-                    ? "Manually assigned"
+                    ? record.endpointReview
+                      ? "Reviewed locations · contact unknown"
+                      : "Manually assigned"
                     : validity.status === "stale"
                       ? "Stale — invalid"
-                      : "Draft — incomplete"}
+                      : record.endpointReview
+                        ? "Reviewed — incomplete"
+                        : "Draft — incomplete"}
                 </span>
               </div>
               <p className="assignment-connection">
@@ -229,7 +447,11 @@ export function WireAssignmentPanel(props: Props) {
                   <li key={index}>
                     <span>
                       Endpoint {index + 1}: {endpointLabel(endpoint)}
-                      {endpoint ? " · manually selected" : ""}
+                      {record.endpointReview
+                        ? ` · ${record.endpointReview.endpoints[index].reviewStatus}`
+                        : endpoint
+                          ? " · manually selected"
+                          : ""}
                     </span>
                     {endpoint && (
                       <small>
@@ -240,22 +462,36 @@ export function WireAssignmentPanel(props: Props) {
                         {endpoint.calibrationRevision}
                       </small>
                     )}
-                    <button
-                      type="button"
-                      className="button button-secondary"
-                      disabled={
-                        disabled ||
-                        validity.status === "stale" ||
-                        !!pausedReason
-                      }
-                      onClick={() => props.onPick(record.id, index as 0 | 1)}
-                    >
-                      {endpoint ? "Replace" : "Pick"} endpoint {index + 1}
-                    </button>
+                    {!record.endpointReview && (
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        disabled={
+                          disabled ||
+                          validity.status === "stale" ||
+                          !!pausedReason
+                        }
+                        onClick={() => props.onPick(record.id, index as 0 | 1)}
+                      >
+                        {endpoint ? "Replace" : "Pick"} endpoint {index + 1}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ol>
               <div className="endpoint-actions">
+                {record.endpointReview && (
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={
+                      disabled || !!pausedReason || validity.status === "stale"
+                    }
+                    onClick={() => props.onReopen?.(record)}
+                  >
+                    Reopen endpoint review
+                  </button>
+                )}
                 <details>
                   <summary>Inspect assignment JSON</summary>
                   <pre>{JSON.stringify({ ...record, validity }, null, 2)}</pre>
