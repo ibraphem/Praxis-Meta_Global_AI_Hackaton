@@ -14,6 +14,7 @@ import {
 import { prepareImage } from './image.js';
 import { createReasoningService } from './reasoning.js';
 import { createSamService } from './sam.js';
+import { consolidateBreadboards } from './breadboards.js';
 import {
   createWireResolution,
   normalizedBoxToPixels,
@@ -31,7 +32,7 @@ function intersectionOverUnion(a: BoundingBox, b: BoundingBox): number {
 
 function isDuplicate(a: Detection, b: Detection): boolean {
   if (a.type !== b.type) return false;
-  if (a.type === 'jumper_wire') return false;
+  if (a.type === 'jumper_wire' || a.type === 'breadboard') return false;
   return intersectionOverUnion(a.bbox, b.bbox) > 0.9;
 }
 
@@ -39,6 +40,8 @@ function isDuplicate(a: Detection, b: Detection): boolean {
  * Preserve separate SAM wire instances even when their rectangular boxes overlap.
  * Curved/crossing wires can share a box without sharing a segmentation mask.
  * Wire deduplication happens later against the decoded masks.
+ * Preserve breadboard regions too: Muse reviews their part/whole relationships
+ * before board consolidation. Overlap alone cannot establish board identity.
  */
 export function deduplicate<T extends Detection>(objects: T[]): T[] {
   const kept: T[] = [];
@@ -96,6 +99,7 @@ export function createVisionService(
     let objects: Component[];
     let proposals: WireRegion[] = [];
     let wireAudit: Analysis['provenance']['wireAudit'];
+    let breadboardAudit: Analysis['breadboardAudit'];
     if (config.VISION_MODE === 'combined') {
       const candidates = withIds(
         deduplicate(
@@ -113,6 +117,12 @@ export function createVisionService(
         signal,
         trace,
       );
+      const consolidated = consolidateBreadboards(
+        candidates,
+        review.objects,
+        review,
+      );
+      breadboardAudit = consolidated.audit;
       const interpretations = new Map(
         review.objects.map((entry) => [entry.id, entry]),
       );
@@ -138,7 +148,10 @@ export function createVisionService(
       );
       proposals = resolved.proposals;
       const nonWires = accepted
-        .filter((candidate) => candidate.type !== 'jumper_wire')
+        .filter(
+          (candidate) =>
+            candidate.type !== 'jumper_wire' && candidate.type !== 'breadboard',
+        )
         .map((candidate) => ({
           type: candidate.type,
           bbox: candidate.bbox,
@@ -152,7 +165,7 @@ export function createVisionService(
           ...(candidate.color ? { color: candidate.color } : {}),
         }));
       objects = withIds(
-        [...nonWires, ...resolved.wires].sort(
+        [...consolidated.boards, ...nonWires, ...resolved.wires].sort(
           (a, b) =>
             a.type.localeCompare(b.type) ||
             a.bbox[1] - b.bbox[1] ||
@@ -205,6 +218,7 @@ export function createVisionService(
       image: { width: image.width, height: image.height },
       objects,
       proposals,
+      ...(breadboardAudit ? { breadboardAudit } : {}),
       provenance: {
         mode: config.VISION_MODE,
         reasoningModel: config.META_REASONING_MODEL,

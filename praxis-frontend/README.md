@@ -84,6 +84,33 @@ analysis. Persistent tracking, connector verification and physical-action guidan
 are outside this milestone. Reasoning-only backend mode returns wire regions
 rather than numbered wire candidates because SAM geometry is unavailable.
 
+## Breadboard counts and grouped regions
+
+Combined-mode analysis distinguishes SAM breadboard regions from physical board
+instances. Muse reviews whether regions represent a whole board or sections of
+the same assembly. Supported groups become one breadboard in the results; raw
+sections do not each increase the count. Separate adjacent boards are not merged
+by box proximity alone.
+
+**Grouped SAM regions / DERIVED BOX** means the enclosure was calculated from
+several region boxes; it has no combined SAM score. **Whole-board SAM region**
+uses an existing enclosing whole-board candidate and retains only that candidate's
+optional score. Neither establishes calibration accuracy or electrical correctness.
+
+Ambiguous observations appear under **Unresolved board regions**, with separate
+amber outlines and labels such as **Board region 1**. Select a region to inspect
+its extent and optional SAM region score. These observations are excluded from
+physical-board and total-component counts; zero counted boards can coexist with
+unresolved regions. **Inspect response JSON** exposes each object's
+`breadboardGrouping` and the original candidate geometry/scores under
+`breadboardAudit`, including rejected candidates and `unresolvedCandidateIds`.
+
+Restart the backend and frontend and reanalyze the photograph to use the updated
+review contract. Compiled services must be rebuilt first. Existing results do not
+change retroactively. This uses the existing Muse call and adds no extra model
+request. Grouping can still be wrong and needs evaluation on real photographs.
+Manual calibration IDs remain separate from model detection IDs.
+
 ## Breadboard coordinates — Step A
 
 Upload a photograph, then choose **Calibrate a board** above the preview. This
@@ -360,6 +387,8 @@ For a compiled local server, run `npm start` after building. It also uses port 3
 - `lib/geometry.ts`: bounded mask/region contracts and failure explanations.
 - `components/results-panel.tsx`: counts, scores, uncertainty, and inspection.
 - `lib/vision.ts`: validated public response contract and display metadata.
+- `lib/breadboards.ts`: bounded board grouping evidence, source and geometry validation.
+- `components/breadboard-regions.tsx`: unresolved board-region inspection and overlays, separate from physical-board counts.
 - `lib/server/vision-proxy.ts`: bounded server-side forwarding and safe errors.
 - `app/api/vision/analyze/route.ts`: HTTP entry point.
 - `app/manifest.ts`: PWA manifest.

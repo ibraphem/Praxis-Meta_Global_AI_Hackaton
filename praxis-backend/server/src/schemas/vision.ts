@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { maskSchema, regionSchema, type EncodedMask } from './geometry.js';
+import {
+  breadboardAuditSchema,
+  breadboardGroupingSchema,
+  validateBreadboards,
+} from './breadboards.js';
 
 export const componentTypeSchema = z.enum([
   'breadboard',
@@ -25,7 +30,8 @@ export const componentSchema = z
     color: z.string().trim().min(1).max(40).optional(),
     // Only SAM-supplied detection confidence; never an LLM's self-assessment.
     confidence: z.number().min(0).max(1).optional(),
-    localizationSource: z.enum(['sam', 'muse']).optional(),
+    localizationSource: z.enum(['sam', 'muse', 'derived']).optional(),
+    breadboardGrouping: breadboardGroupingSchema.optional(),
     interpretation: z.enum(['confirmed', 'uncertain']),
     detectionSource: z.enum(['sam', 'muse']).optional(),
     geometryStatus: z.enum(['segmented', 'box_only']).optional(),
@@ -46,6 +52,7 @@ export const analysisSchema = z
       .strict(),
     objects: z.array(componentSchema).max(100),
     proposals: z.array(regionSchema).max(128).optional(),
+    breadboardAudit: breadboardAuditSchema.optional(),
     provenance: z
       .object({
         mode: z.enum(['combined', 'reasoning-only']),
@@ -67,6 +74,7 @@ export const analysisSchema = z
   })
   .strict()
   .superRefine((analysis, context) => {
+    validateBreadboards(analysis, context);
     const ids = new Set<string>();
     for (const [index, object] of analysis.objects.entries()) {
       const [x, y, width, height] = object.bbox;

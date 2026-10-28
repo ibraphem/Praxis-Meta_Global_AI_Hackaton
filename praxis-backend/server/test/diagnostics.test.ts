@@ -219,7 +219,12 @@ test('successful analyses expose the same request ID and safe per-stage timings'
   const client: MetaClient = {
     async post(path) {
       return path === 'chat/completions'
-        ? completion({ objects: [], missingWires: [] })
+        ? completion({
+            objects: [],
+            breadboardCandidates: [],
+            breadboardGroups: [],
+            missingWires: [],
+          })
         : samEnvelope('');
     },
   };

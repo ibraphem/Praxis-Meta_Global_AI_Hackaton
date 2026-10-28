@@ -4,6 +4,7 @@ import { Icon } from "./icons";
 import { WireOverlays } from "./wire-overlays";
 import { BreadboardWorkspace } from "./breadboard-workspace";
 import styles from "./breadboard-workspace.module.css";
+import { BreadboardRegionOverlays } from "./breadboard-regions";
 
 export interface Photograph {
   id: string;
@@ -135,6 +136,11 @@ export function ImagePreview({
                 );
               })}
             <WireOverlays
+              result={result}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+            <BreadboardRegionOverlays
               result={result}
               selectedId={selectedId}
               onSelect={onSelect}

@@ -69,7 +69,7 @@ test('SAM makes separate concept calls and treats completed empty output as no d
         (call.body.input as { content: { text: string }[] }[])[0]!.content[0]!
           .text,
     ),
-    ['breadboard', 'LED', 'resistor', 'wire'],
+    ['complete solderless breadboard', 'LED', 'resistor', 'wire'],
   );
   assert.deepEqual(calls[0]!.body.metadata, {
     include_confidence: 'true',
@@ -133,6 +133,8 @@ test('combined pipeline keeps SAM geometry and confidence, with uncertainty from
     samEnvelope(''),
     completion({
       objects: [{ id: 'led_1', decision: 'uncertain', color: 'green' }],
+      breadboardCandidates: [],
+      breadboardGroups: [],
       missingWires: [],
     }),
   ]);
@@ -168,7 +170,12 @@ test('Muse must account for every candidate, cannot invent IDs or confidence', a
       samEnvelope(samRecord),
       samEnvelope(''),
       samEnvelope(''),
-      completion({ objects, missingWires: [] }),
+      completion({
+        objects,
+        breadboardCandidates: [],
+        breadboardGroups: [],
+        missingWires: [],
+      }),
     ]);
     await assert.rejects(
       createVisionService(testConfig(), client)(

@@ -23,7 +23,7 @@ const responseSchema = z.object({
 });
 
 const concepts: ReadonlyArray<readonly [ComponentType, string]> = [
-  ['breadboard', 'breadboard'],
+  ['breadboard', 'complete solderless breadboard'],
   ['led', 'LED'],
   ['resistor', 'resistor'],
   // A generic visual concept has better recall than the domain-specific name.

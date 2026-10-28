@@ -115,7 +115,8 @@ Illustrative response, not a measured detection:
 - `confidence` is an optional, uncalibrated **SAM detection score**, not electrical
   correctness or Muse's certainty. Muse never supplies a score. A Muse-proposed
   wire refined successfully by SAM may carry SAM's score.
-- `localizationSource` identifies the geometry provider (`sam` or `muse`).
+- `localizationSource` identifies geometry from `sam`, `muse`, or `derived`
+  (an enclosing box calculated from grouped SAM breadboard regions).
   `detectionSource` distinguishes SAM discovery from Muse-proposed wire recovery.
 - `interpretation` is Muse's visual judgment: `confirmed` or `uncertain`. Neither
   proves a connection is electrically sound. Recovered wires remain uncertain.
@@ -137,11 +138,59 @@ Illustrative response, not a measured detection:
   `regionsProposedByMuse`, `refinementAttempts` (regions submitted in one batch),
   and `unresolvedRegions`.
 - An empty `objects` array means no detections passed the checks. Inspect
-  `proposals` too; an empty result does **not** prove components are absent.
+  `proposals` and `breadboardAudit.unresolvedCandidateIds` too; an empty result
+  does **not** prove components are absent.
 
 This is Praxis's schema, not the native Meta response format. Primary SAM/Muse
 failures remain errors. Optional wire refinement is explicitly best effort:
 failures retain the primary results and unresolved regions with a reason/code.
+
+## Breadboard instances and board sections
+
+In combined mode, SAM searches for a complete solderless breadboard. It can still
+return terminal strips or rail sections as separate regions. Preserve all of those
+candidates through deduplication: box overlap alone does not establish board identity.
+
+The existing Muse review now returns `breadboardCandidates` (one `whole`, `part`,
+or `uncertain` extent per SAM board candidate, including rejected ones) and
+`breadboardGroups` (candidate IDs, optional whole-candidate ID, and a confirmed or
+uncertain visual grouping). It sees the same photograph; this adds no model round
+trip. The prompt explicitly distinguishes attached rail/terminal sections from
+separate adjacent or overlapping boards.
+
+Only groups with confirmed membership and confirmed, known-extent candidates
+become breadboards in `objects`. A single part cannot become a complete board.
+Invalid IDs, duplicate membership, missing extent reviews, rejected group members
+and invalid whole-candidate references fail with `INVALID_PROVIDER_OUTPUT`.
+
+When a whole-board SAM region encloses every member, keep that region's original
+box and optional SAM score. Otherwise calculate the union of the member boxes,
+set `localizationSource: "derived"`, and omit `confidence`. A derived box is an
+approximate enclosure, not a newly segmented full board or verified calibration.
+No averaging or maximum of section scores becomes a physical-board confidence.
+
+Each consolidated object includes `breadboardGrouping` with `candidateIds`,
+`geometrySource: "sam_candidate" | "candidate_union"`, `wholeCandidateId` (or
+null), and `reviewSource: "muse"`. The separate `breadboardAudit` retains every
+original SAM board candidate's pixel box, optional score, review decision and
+extent under `sam_breadboard_N` IDs. These IDs describe evidence, not additional
+physical boards. `unresolvedCandidateIds` identifies accepted regions that could
+not be consolidated reliably. Rejected regions remain diagnostic-only.
+
+Backend and frontend validate bounded arrays, image bounds, unique membership,
+reference coverage, exact derived boxes and score provenance. Every accepted
+region must belong to exactly one displayed board or the unresolved list. The UI
+counts only consolidated objects and exposes unresolved board regions separately.
+Legacy responses without grouping metadata remain readable by the frontend.
+Reasoning-only mode retains its existing Muse-only contract and complete-board
+prompt; SAM-region consolidation applies to combined mode.
+
+Grouping is still a model judgment. There is no proximity-only merge, forced
+single-board count, added breadboard SAM refinement, or automatic link to manually
+calibrated board IDs. Unit/integration fixtures cover four fragments, whole-plus-
+part detections, separate adjacent boards, ambiguity and invalid output; they do
+not establish accuracy on a real photograph. Reanalyze after restarting both
+services (rebuild first for production) to evaluate the changed prompts on photos.
 
 ## Pipeline and account capabilities
 
@@ -160,14 +209,17 @@ The default `VISION_MODE=combined`:
    encoded masks internally for wires only; decode with the official
    `@meta-sam/parser` package. Raw encoded masks and provider object IDs never
    cross the public API.
-4. Suppress near-identical non-wire boxes and assign candidate IDs. Preserve
-   overlapping SAM wire boxes: curved wires can share a rectangular area.
+4. Suppress near-identical LED/resistor boxes and assign candidate IDs. Preserve
+   overlapping SAM wire boxes (curved wires can share a rectangular area) and
+   breadboard regions (whole/part relationships need semantic review).
 5. Muse receives the original prepared image and candidate boxes. It reviews
    every candidate and independently proposes at most 16 missed-wire search
    regions on its normalized 0–1000 grid. Each proposal includes up to three
    positive points on one wire and up to three negative points to exclude
    neighbors. If no trustworthy point is visible, Muse supplies no positive
    anchor and the region stays unresolved.
+   In that same call it reviews breadboard extents and grouping; consolidate
+   supported groups and retain unresolved board regions separately.
 6. Check the accepted primary wire masks. Select up to `MAX_WIRE_REFINEMENTS`
    anchored Muse regions and convert their boxes/points into original-image
    pixels. Submit one native spatial-prompt SAM batch (box + positive/negative

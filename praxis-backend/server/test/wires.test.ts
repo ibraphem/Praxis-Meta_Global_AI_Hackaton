@@ -131,7 +131,12 @@ test('seed consistency, duplicate masks, corrupt payloads and decode quotas are 
 test('Muse regions become wire candidates only after usable SAM refinement, with no guidance eligibility', async () => {
   const { client, calls } = queuedClient([
     ...noSam(),
-    completion({ objects: [], missingWires: [hint] }),
+    completion({
+      objects: [],
+      breadboardCandidates: [],
+      breadboardGroups: [],
+      missingWires: [hint],
+    }),
     samEnvelope(samWireRecord('wire', 0)),
   ]);
   const result = await createVisionService(testConfig(), client)(
@@ -162,7 +167,12 @@ test('missing anchors and capped proposals remain separately labeled regions wit
   ];
   const { client, calls } = queuedClient([
     ...noSam(),
-    completion({ objects: [], missingWires: hints }),
+    completion({
+      objects: [],
+      breadboardCandidates: [],
+      breadboardGroups: [],
+      missingWires: hints,
+    }),
   ]);
   const result = await createVisionService(testConfig(), client)(
     await imageBytes(),
@@ -175,7 +185,12 @@ test('missing anchors and capped proposals remain separately labeled regions wit
   assert.equal(result.proposals?.[0]?.reason, 'missing_anchor');
   const capped = queuedClient([
     ...noSam(),
-    completion({ objects: [], missingWires: [hint] }),
+    completion({
+      objects: [],
+      breadboardCandidates: [],
+      breadboardGroups: [],
+      missingWires: [hint],
+    }),
   ]);
   const result2 = await createVisionService(
     testConfig({ MAX_WIRE_REFINEMENTS: '0' }),
@@ -193,7 +208,12 @@ test('empty and ambiguous SAM refinements retain uncertain regions rather than w
   ]) {
     const { client } = queuedClient([
       ...noSam(),
-      completion({ objects: [], missingWires: [hint] }),
+      completion({
+        objects: [],
+        breadboardCandidates: [],
+        breadboardGroups: [],
+        missingWires: [hint],
+      }),
       samEnvelope(native),
     ]);
     const result = await createVisionService(testConfig(), client)(
@@ -214,6 +234,8 @@ test('accepted SAM masks render directly; duplicate refinement masks are not cou
     samEnvelope(samWireRecord()),
     completion({
       objects: [{ id: 'jumper_wire_1', decision: 'confirmed', color: 'red' }],
+      breadboardCandidates: [],
+      breadboardGroups: [],
       missingWires: [hint],
     }),
     samEnvelope(samWireRecord('wire', 0)),
@@ -236,6 +258,8 @@ test('optional refinement timeouts retain existing results and explicit failure 
     samEnvelope(samWireRecord()),
     completion({
       objects: [{ id: 'jumper_wire_1', decision: 'confirmed', color: 'red' }],
+      breadboardCandidates: [],
+      breadboardGroups: [],
       missingWires: [hint],
     }),
   ]);
@@ -321,7 +345,12 @@ test('parent analysis cancellation during optional refinement still fails the en
   const controller = new AbortController();
   const queue = queuedClient([
     ...noSam(),
-    completion({ objects: [], missingWires: [hint] }),
+    completion({
+      objects: [],
+      breadboardCandidates: [],
+      breadboardGroups: [],
+      missingWires: [hint],
+    }),
   ]);
   const parentFailure = new AppError(
     504,
@@ -349,7 +378,12 @@ test('parent analysis cancellation during optional refinement still fails the en
 test('unexpected refinement IDs stay unresolved and refinement caps apply to the single batch', async () => {
   const queue = queuedClient([
     ...noSam(),
-    completion({ objects: [], missingWires: [hint, hint, hint] }),
+    completion({
+      objects: [],
+      breadboardCandidates: [],
+      breadboardGroups: [],
+      missingWires: [hint, hint, hint],
+    }),
     samEnvelope(samWireRecord('wire', 9)),
   ]);
   const result = await createVisionService(

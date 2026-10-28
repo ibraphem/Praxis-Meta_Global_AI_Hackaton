@@ -7,6 +7,7 @@ import {
 } from "@/lib/vision";
 import { Icon } from "./icons";
 import { regionLabel, regionExplanations } from "@/lib/geometry";
+import { BreadboardRegions } from "./breadboard-regions";
 
 interface Props {
   result: Analysis | null;
@@ -86,9 +87,11 @@ export function ResultsPanel({
               <Icon name="eye" width="27" height="27" />
             </div>
             <h3>
-              {result.proposals?.length
-                ? "Wire regions need a closer look"
-                : "No components identified"}
+              {result.breadboardAudit?.unresolvedCandidateIds.length
+                ? "Board regions need a closer look"
+                : result.proposals?.length
+                  ? "Wire regions need a closer look"
+                  : "No components identified"}
             </h3>
             <p>
               Try a closer, well-lit photo with the components unobstructed. An
@@ -135,6 +138,12 @@ export function ResultsPanel({
                         {object.detectionSource === "muse"
                           ? " · Recovered candidate"
                           : ""}
+                        {object.breadboardGrouping
+                          ? object.breadboardGrouping.geometrySource ===
+                            "candidate_union"
+                            ? " · Grouped SAM regions"
+                            : " · Whole-board SAM region"
+                          : ""}
                       </span>
                     </span>
                     <span className="detection-score mono">
@@ -142,9 +151,11 @@ export function ResultsPanel({
                         ? "—"
                         : `${Math.round(object.confidence * 100)}%`}
                       <span>
-                        {object.localizationSource === "muse"
-                          ? "MUSE ESTIMATE"
-                          : "SAM SCORE"}
+                        {object.localizationSource === "derived"
+                          ? "DERIVED BOX"
+                          : object.localizationSource === "muse"
+                            ? "MUSE ESTIMATE"
+                            : "SAM SCORE"}
                       </span>
                     </span>
                   </button>
@@ -169,6 +180,13 @@ export function ResultsPanel({
           </>
         )}
       </div>
+      {result && (
+        <BreadboardRegions
+          result={result}
+          selectedId={selectedId}
+          onSelect={onSelect}
+        />
+      )}
       {!!result?.proposals?.length && (
         <section
           className="wire-regions-panel"

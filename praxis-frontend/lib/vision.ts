@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { diagnosticsSchema } from "./diagnostics";
 import { maskSchema, regionSchema } from "./geometry";
+import {
+  breadboardAuditSchema,
+  breadboardGroupingSchema,
+  validateBreadboards,
+} from "./breadboards";
 
 /** Public API contract. No server configuration or credentials belong here. */
 export const componentTypes = [
@@ -41,7 +46,8 @@ const componentSchema = z
     ]),
     color: z.string().min(1).max(40).optional(),
     confidence: z.number().min(0).max(1).optional(),
-    localizationSource: z.enum(["sam", "muse"]).optional(),
+    localizationSource: z.enum(["sam", "muse", "derived"]).optional(),
+    breadboardGrouping: breadboardGroupingSchema.optional(),
     interpretation: z.enum(["confirmed", "uncertain"]),
     detectionSource: z.enum(["sam", "muse"]).optional(),
     geometryStatus: z.enum(["segmented", "box_only"]).optional(),
@@ -61,6 +67,7 @@ export const analysisSchema = z
       .strict(),
     objects: z.array(componentSchema).max(100),
     proposals: z.array(regionSchema).max(128).optional(),
+    breadboardAudit: breadboardAuditSchema.optional(),
     diagnostics: diagnosticsSchema.optional(),
     provenance: z
       .object({
@@ -83,6 +90,7 @@ export const analysisSchema = z
   })
   .strict()
   .superRefine((analysis, context) => {
+    validateBreadboards(analysis, context);
     const ids = new Set<string>();
     for (const object of analysis.objects) {
       const [x, y, width, height] = object.bbox;
