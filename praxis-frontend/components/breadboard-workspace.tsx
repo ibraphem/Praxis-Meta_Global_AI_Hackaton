@@ -19,7 +19,6 @@ import {
   pickHole,
   registerRail,
   selectHole,
-  type Calibration,
   type HoleSelection,
   type ImageSize,
   type Point,
@@ -30,16 +29,30 @@ import { BreadboardOverlay } from "./breadboard-overlay";
 import { CalibrationGuide } from "./calibration-guide";
 import { CalibrationLoupe } from "./calibration-loupe";
 import {
+  WireAssignmentPanel,
+  type EndpointCapture,
+} from "./wire-assignment-panel";
+import { WireEndpointOverlay } from "./wire-endpoint-overlay";
+import {
+  assignEndpoint,
+  assignmentValidity,
+  createAssignment,
+  MAX_ASSIGNMENTS,
+  replaceBoard,
+  reviseRails,
+  sameImage,
+  wireCandidate,
+  type AssignmentContext,
+  type CalibratedBoard as Board,
+  type WireAssignment,
+} from "@/lib/wires/assignments";
+import {
   placeReference,
   referenceInstruction,
   referenceNames,
   referenceTarget,
 } from "@/lib/breadboard/references";
 
-interface Board {
-  calibration: Calibration;
-  rails: Rail[];
-}
 interface Draft {
   id: string;
   rows: Rows;
@@ -65,11 +78,19 @@ export function BreadboardWorkspace({
   imageUrl,
   disabled,
   children,
+  assignmentContext,
+  selectedWireId = null,
+  onSelectWire,
+  overlaysVisible = true,
 }: {
   image: ImageSize;
   imageUrl: string;
   disabled: boolean;
-  children: ReactNode;
+  children?: ReactNode;
+  assignmentContext?: AssignmentContext;
+  selectedWireId?: string | null;
+  onSelectWire?: (id: string) => void;
+  overlaysVisible?: boolean;
 }) {
   const [boards, setBoards] = useState<Board[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -85,6 +106,9 @@ export function BreadboardWorkspace({
   const [pixelX, setPixelX] = useState("");
   const [pixelY, setPixelY] = useState("");
   const [zoom, setZoom] = useState(1);
+  const [assignments, setAssignments] = useState<WireAssignment[]>([]);
+  const [capture, setCapture] = useState<EndpointCapture | null>(null);
+  const nextAssignment = useRef(1);
   const [editingReference, setEditingReference] = useState<number | null>(null);
   const [pointer, setPointer] = useState<Point | null>(null);
   const photoRef = useRef<HTMLImageElement>(null);
@@ -110,6 +134,41 @@ export function BreadboardWorkspace({
   }, [clearPointer]);
   const board =
     boards.find((board) => board.calibration.breadboardId === activeId) ?? null;
+  const pausedReason =
+    draft || railPoints
+      ? "Finish or cancel calibration before assigning endpoints."
+      : !overlaysVisible
+        ? "Show component overlays before picking wire endpoints."
+        : !assignmentContext?.analysis || !assignmentContext.analysisRunId
+          ? "Analyze this photograph to select a current wire candidate."
+          : !sameImage(assignmentContext.analysis.image, image)
+            ? "Image dimensions differ from the analysis. Endpoint picking is disabled."
+            : "";
+  const capturedRecord = assignments.find(
+    (record) => record.id === capture?.assignmentId,
+  );
+  const picking = !!(
+    capture &&
+    capturedRecord &&
+    assignmentContext &&
+    !disabled &&
+    !pausedReason &&
+    board &&
+    selectedWireId === capturedRecord.wireCandidateId &&
+    assignmentValidity(capturedRecord, assignmentContext, boards).status !==
+      "stale"
+  );
+  const visibleAssignment =
+    assignmentContext && overlaysVisible
+      ? [...assignments]
+          .reverse()
+          .find(
+            (record) =>
+              record.wireCandidateId === selectedWireId &&
+              assignmentValidity(record, assignmentContext, boards).status !==
+                "stale",
+          )
+      : undefined;
   const preview = useMemo(() => {
     if (!draft || draft.anchors.length !== 4)
       return { calibration: null, error: "" };
@@ -175,8 +234,12 @@ export function BreadboardWorkspace({
       : board
         ? "Click a visible hole near its center. Its electrical group will be highlighted."
         : "Calibrate a board to start mapping holes.";
+  const photoInstruction = picking
+    ? `Pick endpoint ${capture!.index + 1} of ${capturedRecord!.wireCandidateId} on ${activeId}. Manual location only; contact remains unknown.`
+    : instruction;
 
   function startBoard(replace = false) {
+    setCapture(null);
     setEditingReference(null);
     clearPointer();
     const id =
@@ -220,6 +283,37 @@ export function BreadboardWorkspace({
       return;
     }
     setNotice("");
+    if (picking && capturedRecord && capture && assignmentContext && board) {
+      try {
+        const updated = assignEndpoint(
+          capturedRecord,
+          capture.index,
+          point,
+          source,
+          board,
+          assignmentContext,
+          boards,
+        );
+        setAssignments((current) =>
+          current.map((record) =>
+            record.id === updated.id ? updated : record,
+          ),
+        );
+        const resolved =
+          updated.endpoints[capture.index]?.resolution.status === "resolved";
+        if (resolved)
+          setCapture(
+            capture.index === 0 ? { assignmentId: updated.id, index: 1 } : null,
+          );
+        else
+          setNotice(
+            "Endpoint recorded as manually selected, but its hole is unknown. Pick a clearer position or choose the other endpoint in the record.",
+          );
+      } catch (error) {
+        setNotice(message(error));
+      }
+      return;
+    }
     if (draft) {
       if (target !== null)
         setDraft({
@@ -245,10 +339,13 @@ export function BreadboardWorkspace({
   }
   function confirmGrid() {
     if (!preview.calibration || editingReference !== null) return;
-    const updated = { calibration: preview.calibration, rails: [] };
+    const calibration = preview.calibration;
     setBoards((current) => [
       ...current.filter((item) => item.calibration.breadboardId !== draft!.id),
-      updated,
+      replaceBoard(
+        current.find((item) => item.calibration.breadboardId === draft!.id),
+        calibration,
+      ),
     ]);
     setDraft(null);
     setEditingReference(null);
@@ -259,6 +356,7 @@ export function BreadboardWorkspace({
     );
   }
   function startRail() {
+    setCapture(null);
     clearPointer();
     const id = ["R1", "R2", "R3", "R4"].find(
       (id) => !board?.rails.some((rail) => rail.id === id),
@@ -278,7 +376,7 @@ export function BreadboardWorkspace({
     setBoards((current) =>
       current.map((item) =>
         item === board
-          ? { ...item, rails: [...item.rails, railPreview.rail!] }
+          ? reviseRails(item, [...item.rails, railPreview.rail!])
           : item,
       ),
     );
@@ -324,6 +422,69 @@ export function BreadboardWorkspace({
         pointerFrame.current = null;
       });
   }
+  function pickEndpoint(id: string, index: 0 | 1) {
+    const record = assignments.find((record) => record.id === id);
+    if (
+      !record ||
+      !assignmentContext ||
+      disabled ||
+      pausedReason ||
+      !boards.length ||
+      assignmentValidity(record, assignmentContext, boards).status === "stale"
+    )
+      return;
+    setCapture({ assignmentId: id, index });
+    setEnabled(false);
+    setSelected(null);
+    setNotice("");
+    setActiveId(
+      board?.calibration.breadboardId ?? boards[0].calibration.breadboardId,
+    );
+    onSelectWire?.(record.wireCandidateId);
+    clearPointer();
+  }
+  function beginAssignment() {
+    if (
+      !assignmentContext ||
+      !selectedWireId ||
+      disabled ||
+      pausedReason ||
+      !boards.length ||
+      !wireCandidate(assignmentContext, selectedWireId)
+    )
+      return;
+    const existing = assignments.find(
+      (record) =>
+        record.wireCandidateId === selectedWireId &&
+        assignmentValidity(record, assignmentContext, boards).status !==
+          "stale",
+    );
+    if (existing) {
+      pickEndpoint(
+        existing.id,
+        existing.endpoints[0]?.resolution.status === "resolved" ? 1 : 0,
+      );
+      return;
+    }
+    if (assignments.length >= MAX_ASSIGNMENTS) {
+      setNotice("Remove an old assignment before creating another.");
+      return;
+    }
+    const record = createAssignment(
+      `connection_${nextAssignment.current++}`,
+      assignmentContext,
+      selectedWireId,
+    );
+    setAssignments((current) => [...current, record]);
+    setCapture({ assignmentId: record.id, index: 0 });
+    setEnabled(false);
+    setSelected(null);
+    setNotice("");
+    setActiveId(
+      board?.calibration.breadboardId ?? boards[0].calibration.breadboardId,
+    );
+    clearPointer();
+  }
 
   return (
     <>
@@ -339,7 +500,10 @@ export function BreadboardWorkspace({
               className="button button-secondary"
               disabled={disabled || !!draft || !!railPoints}
               aria-pressed={enabled}
-              onClick={() => setEnabled(!enabled)}
+              onClick={() => {
+                setCapture(null);
+                setEnabled(!enabled);
+              }}
             >
               {enabled ? "Inspect components" : "Inspect holes"}
             </button>
@@ -426,7 +590,7 @@ export function BreadboardWorkspace({
             draggable="false"
           />
           {children}
-          {enabled && !disabled && (
+          {(enabled || picking) && !disabled && (
             <>
               <BreadboardOverlay
                 calibration={calibration}
@@ -441,7 +605,7 @@ export function BreadboardWorkspace({
                 type="button"
                 className="hole-hit-surface"
                 aria-label={
-                  instruction +
+                  photoInstruction +
                   " Keyboard users can enter pixel coordinates or a hole coordinate below."
                 }
                 onClick={(event) => {
@@ -462,8 +626,51 @@ export function BreadboardWorkspace({
               />
             </>
           )}
+          {visibleAssignment && !disabled && (
+            <WireEndpointOverlay
+              assignment={visibleAssignment}
+              image={image}
+              validity={assignmentValidity(
+                visibleAssignment,
+                assignmentContext!,
+                boards,
+              )}
+            />
+          )}
         </div>
       </div>
+      {assignmentContext &&
+        (assignmentContext.analysis || assignments.length > 0) && (
+          <>
+            <WireAssignmentPanel
+              context={assignmentContext}
+              selectedWireId={selectedWireId}
+              boards={boards}
+              records={assignments}
+              capture={capture}
+              activeBoardId={activeId}
+              picking={picking}
+              disabled={disabled}
+              pausedReason={pausedReason}
+              onStart={beginAssignment}
+              onPick={pickEndpoint}
+              onStop={() => setCapture(null)}
+              onBoard={changeBoard}
+              onPoint={acceptPoint}
+              onRemove={(id) => {
+                setAssignments((current) =>
+                  current.filter((record) => record.id !== id),
+                );
+                if (capture?.assignmentId === id) setCapture(null);
+              }}
+            />
+            {notice && !enabled && (
+              <p className="calibration-notice" role="status">
+                {notice}
+              </p>
+            )}
+          </>
+        )}
       {enabled && (
         <section
           className="calibration-panel"
@@ -857,12 +1064,12 @@ export function BreadboardWorkspace({
                           setBoards(
                             boards.map((item) =>
                               item === board
-                                ? {
-                                    ...item,
-                                    rails: item.rails.filter(
+                                ? reviseRails(
+                                    item,
+                                    item.rails.filter(
                                       (other) => other.id !== rail.id,
                                     ),
-                                  }
+                                  )
                                 : item,
                             ),
                           );
@@ -898,6 +1105,7 @@ export function BreadboardWorkspace({
                     {JSON.stringify(
                       {
                         calibration: board.calibration,
+                        revision: board.revision,
                         orientation: boardOrientation(board.calibration),
                         rails: board.rails,
                         confirmation: "user_confirmed",

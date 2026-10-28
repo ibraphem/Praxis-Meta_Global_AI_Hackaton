@@ -274,12 +274,11 @@ test("rendered overlay keeps terminal strips and center gap separate and highlig
 
 test("calibration is opt-in and the initial workspace leaves image interactions available", () => {
   const html = renderToStaticMarkup(
-    createElement(BreadboardWorkspace, {
-      image,
-      disabled: false,
-      imageUrl: "blob:test",
-      children: null,
-    }),
+    createElement(
+      BreadboardWorkspace,
+      { image, disabled: false, imageUrl: "blob:test" },
+      null,
+    ),
   );
   assert.match(html, /Calibrate a board/);
   assert.match(html, /Photo zoom/);

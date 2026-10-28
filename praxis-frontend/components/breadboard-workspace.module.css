@@ -443,3 +443,149 @@
     height: 92px;
   }
 }
+
+.workspace :global(.wire-assignment-panel) {
+  width: 100%;
+  min-width: 0;
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #b7c9cf;
+  border-radius: 8px;
+  background: #fbfefb;
+  font-size: 12px;
+  color: #435343;
+}
+.workspace :global(.wire-assignment-panel h3) {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.workspace :global(.wire-assignment-panel h3 span) {
+  font-size: 10px;
+  font-weight: 400;
+  color: #6b7a6b;
+  margin-left: 8px;
+}
+.workspace :global(.wire-assignment-panel p) {
+  line-height: 1.6;
+  margin: 8px 0;
+}
+.workspace :global(.endpoint-limits) {
+  font-size: 11px;
+  color: #6e735e;
+}
+.workspace :global(.endpoint-actions) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+.workspace :global(.wire-assignment-panel .button) {
+  font-size: 11px;
+  padding: 8px 11px;
+  min-height: 36px;
+}
+.workspace :global(.wire-assignment-panel label) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+}
+.workspace :global(.wire-assignment-panel input),
+.workspace :global(.wire-assignment-panel select) {
+  border: 1px solid #b7c9c1;
+  border-radius: 4px;
+  padding: 7px;
+  background: white;
+  max-width: 100%;
+}
+.workspace :global(.endpoint-capture) {
+  padding: 10px;
+  border-left: 3px solid #387a9b;
+  background: #edf5f6;
+}
+.workspace :global(.assignment-records) {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.workspace :global(.assignment-record) {
+  min-width: 0;
+  border: 1px solid #d0dbcc;
+  border-radius: 5px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.workspace :global(.assignment-record.stale) {
+  border-style: dashed;
+  background: #f5f3ed;
+  color: #77766b;
+}
+.workspace :global(.assignment-heading) {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+.workspace :global(.assignment-heading > span) {
+  font-size: 11px;
+}
+.workspace :global(.assignment-connection) {
+  font: 12px var(--font-mono);
+}
+.workspace :global(.assignment-record ol) {
+  list-style: decimal;
+  padding-left: 20px;
+}
+.workspace :global(.assignment-record ol li) {
+  margin-top: 8px;
+}
+.workspace :global(.assignment-record small) {
+  display: block;
+  margin: 4px 0;
+}
+.workspace :global(.assignment-record details) {
+  min-width: 0;
+  max-width: 100%;
+}
+.workspace :global(.assignment-record summary) {
+  cursor: pointer;
+}
+.workspace :global(.assignment-record pre) {
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  margin-top: 8px;
+  background: #edf1e9;
+  font-size: 10px;
+}
+.workspace :global(.endpoint-overlay) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 205;
+  pointer-events: none;
+}
+.workspace :global(.endpoint-overlay circle) {
+  fill: #fff9;
+  stroke-width: 2px;
+}
+.workspace :global(.endpoint-resolved circle) {
+  stroke: #166ca0;
+}
+.workspace :global(.endpoint-unknown circle) {
+  stroke: #bc7d1b;
+  stroke-dasharray: 3 2;
+}
+.workspace :global(.endpoint-overlay text) {
+  fill: #174d6a;
+  stroke: white;
+  stroke-width: 2px;
+  paint-order: stroke;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}

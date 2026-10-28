@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
+import Link from "next/link";
 import {
   analysisSchema,
   categories,
@@ -29,6 +30,7 @@ export function VisionWorkspace() {
   const dragDepth = useRef(0);
   const [photograph, setPhotograph] = useState<Photograph | null>(null);
   const [result, setResult] = useState<Analysis | null>(null);
+  const [analysisRunId, setAnalysisRunId] = useState<string | null>(null);
   const [error, setErrorState] = useState<Failure | null>(null);
   function setError(message: string | null) {
     setErrorState(message ? { code: "CLIENT_ERROR", message } : null);
@@ -87,12 +89,14 @@ export function VisionWorkspace() {
       if (image.naturalWidth * image.naturalHeight > MAX_IMAGE_PIXELS)
         throw new Error("Use a photograph with no more than 16 megapixels.");
       setPhotograph({
+        id: crypto.randomUUID(),
         file,
         url,
         width: image.naturalWidth,
         height: image.naturalHeight,
       });
       setResult(null);
+      setAnalysisRunId(null);
       setSelectedId(null);
       setElapsed(null);
       setShowOverlays(true);
@@ -114,6 +118,7 @@ export function VisionWorkspace() {
     requestRef.current?.abort();
     requestRef.current = null;
     setPhotograph(null);
+    setAnalysisRunId(null);
     setResult(null);
     setError(null);
     setLoading(false);
@@ -126,6 +131,9 @@ export function VisionWorkspace() {
   async function analyze() {
     if (!photograph || loading || selecting) return;
     const controller = new AbortController();
+    // Candidate numbers can repeat. A fresh run ID invalidates old associations
+    // immediately, including when this request is later cancelled or fails.
+    setAnalysisRunId(crypto.randomUUID());
     requestRef.current = controller;
     setLoading(true);
     setError(null);
@@ -189,12 +197,12 @@ export function VisionWorkspace() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <a className="brand" href="/" aria-label="Praxis home">
+        <Link className="brand" href="/" aria-label="Praxis home">
           <PraxisMark />
           <span>
             praxis<span className="brand-period">.</span>
           </span>
-        </a>
+        </Link>
         <div className="header-divider" />
         <span className="header-context">
           Your hands. A little more insight.
@@ -289,6 +297,7 @@ export function VisionWorkspace() {
                 dragging={dragging}
                 showOverlays={showOverlays}
                 selectedId={selectedId}
+                analysisRunId={analysisRunId}
                 onSelect={setSelectedId}
                 onChoose={() => inputRef.current?.click()}
               />

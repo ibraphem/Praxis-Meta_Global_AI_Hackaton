@@ -6,6 +6,7 @@ import { BreadboardWorkspace } from "./breadboard-workspace";
 import styles from "./breadboard-workspace.module.css";
 
 export interface Photograph {
+  id: string;
   file: File;
   url: string;
   width: number;
@@ -19,6 +20,7 @@ interface Props {
   dragging: boolean;
   showOverlays: boolean;
   selectedId: string | null;
+  analysisRunId: string | null;
   onSelect: (id: string) => void;
   onChoose: () => void;
 }
@@ -31,6 +33,7 @@ export function ImagePreview({
   dragging,
   showOverlays,
   selectedId,
+  analysisRunId,
   onSelect,
   onChoose,
 }: Props) {
@@ -91,6 +94,14 @@ export function ImagePreview({
         image={{ width: photograph.width, height: photograph.height }}
         imageUrl={photograph.url}
         disabled={loading || selecting}
+        assignmentContext={{
+          photoId: photograph.id,
+          analysisRunId,
+          analysis: result,
+        }}
+        selectedWireId={selectedId}
+        onSelectWire={onSelect}
+        overlaysVisible={showOverlays}
       >
         {result && dimensionsMatch && showOverlays && (
           <div className="detection-overlays" aria-label="Component locations">

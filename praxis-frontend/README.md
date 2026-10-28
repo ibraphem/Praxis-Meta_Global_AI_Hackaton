@@ -198,9 +198,64 @@ Calibration, selections and photographs stay in component memory. Replacing or
 removing the image, or reloading the page, clears them. Reanalyzing the same photo
 preserves calibration. Recalibrating a board clears its rails to avoid stale
 geometry. **Inspect components** restores ordinary detection selection without
-removing the calibration. No wire endpoint detection, endpoint assignment, circuit
-graph or physical-action guidance is introduced by this milestone. The backend
-analysis response remains unchanged; calibration is currently a client-side feature.
+removing the calibration. The backend analysis response remains unchanged;
+calibration is currently a client-side feature.
+
+## Wire endpoints — Step B, manual assignment
+
+1. Analyze a photograph and confirm at least one breadboard calibration.
+2. Return to **Inspect components** and select an existing **segmented wire
+   candidate** in the photograph or results. An unresolved Muse search region is
+   not an assignable wire.
+3. Choose **Assign wire endpoints** below the photograph. Select the board for
+   the first endpoint, then click its visible insertion position. Original-image
+   pixel entry is available as a keyboard alternative. Photo zoom remains available.
+4. When the first position resolves to a hole, picking advances to endpoint 2.
+   Choose another calibrated board if necessary, then select the second position.
+5. Inspect the connection, for example **board_1:a12 → board_2:f18**, its numbered
+   endpoint markers and **Inspect assignment JSON**. The selected wire retains its
+   original SAM contour; a straight line between the markers is not substituted
+   for the wire's shape. Use **Replace endpoint** to correct a selection, **Stop
+   picking** to pause, or **Remove record** to discard the assignment.
+
+The active board is explicit: overlapping boards are never silently chosen. A
+point is resolved using Step A's bounded hole-picking rules. An ambiguous position,
+center gap or background remains **unknown** and the record remains a draft;
+pick a clearer position or select the other endpoint in the record. Registered
+rail holes can be located even when their electrical group is unknown. Coordinate
+lookup alone cannot assign an endpoint, because it does not establish visibility.
+
+Three evidence states remain independent:
+
+| Evidence | Current state | Meaning |
+| --- | --- | --- |
+| Wire identity | `unverified`, association source `user` | The user associates these observations with the selected candidate; the mask does not prove one physical wire. |
+| Endpoint location | `user_selected`, selection source `manual` | The raw observation is retained alongside a resolved calibrated hole or an unknown result. No location is labeled inferred. |
+| Electrical contact | `unknown` | A selected hole and a visible connector do not establish seating or continuity. |
+
+**Manually assigned** means both observations resolve to logical holes. It does
+not verify wire identity, visibility, connector insertion, or electrical contact.
+These records do not enable physical-action guidance or change `guidanceEligible`.
+Automatic endpoint proposals and connector analysis are a later milestone.
+
+Assignments are stored separately from `Analysis.objects`; the original SAM/Muse
+response JSON is unchanged. Each record carries the photograph ID, a client-side
+analysis-run ID, the wire candidate ID, and a calibration revision per endpoint.
+The client run ID is separate from the request ID used for backend diagnostics.
+Raw selected pixels and snapped hole centers are both preserved, with input method,
+snap distance, electrical-group basis and endpoint provenance.
+
+Confirming recalibration, adding/removing a rail or changing its continuity
+advances that board's revision and invalidates associated records. Removing a
+referenced board also invalidates them. Unrelated board edits and cancelled
+calibration drafts leave them current. Starting another analysis invalidates the
+old records even if the request later fails/cancels or the new result reuses wire
+numbers. Stale records remain visibly labeled for inspection, cannot be edited,
+and their markers are hidden; they are never silently re-snapped or revived.
+
+All records stay in photograph-local component memory, capped at 100 records.
+Replacing/removing the photograph or reloading the page clears them. There is no
+server persistence, browser storage, additional upload or additional model call.
 
 ## Request flow and security
 
@@ -278,6 +333,10 @@ region labels, count separation, and rejection of unsafe or guidance-ready outpu
 Breadboard geometry tests project every hole under multiple orientations and
 perspective transforms, check grouping and rail splits, reject invalid calibrations
 and background clicks, and verify zoom/scroll coordinate conversion.
+Endpoint tests cover cross-board resolution, raw versus snapped positions,
+unknown holes and rail continuity, separate evidence states, immutable detection
+results, edits, calibration/rail revisions, board removal, repeated wire IDs after
+reanalysis, stale-record presentation and endpoint overlays.
 Browser QA should also exercise upload, analysis,
 selection, empty scenes, errors, and the mobile layout.
 
@@ -295,6 +354,9 @@ For a compiled local server, run `npm start` after building. It also uses port 3
 - `components/vision-workspace.tsx`: upload, preview lifecycle, cancellation, and requests.
 - `components/image-preview.tsx`: image-relative component overlays.
 - `components/wire-overlays.tsx`: mask selection and separately labeled search regions.
+- `lib/wires/assignments.ts`: separate manual records, hole resolution, evidence states and revision-based invalidation.
+- `components/wire-assignment-panel.tsx`: manual picking, board selection, partial/stale records and assignment JSON.
+- `components/wire-endpoint-overlay.tsx`: selected assignment markers without inventing a wire path.
 - `lib/geometry.ts`: bounded mask/region contracts and failure explanations.
 - `components/results-panel.tsx`: counts, scores, uncertainty, and inspection.
 - `lib/vision.ts`: validated public response contract and display metadata.

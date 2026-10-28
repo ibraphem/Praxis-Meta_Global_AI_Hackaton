@@ -11,6 +11,12 @@ picking**, independently of this API. Its template-derived grid and user-declare
 rail groups are separate from model detections; they are not included in the
 analysis response. See the [frontend calibration guide](../praxis-frontend/README.md#breadboard-coordinates--step-a).
 
+The frontend also supports [manual wire endpoint assignments](../praxis-frontend/README.md#wire-endpoints--step-b-manual-assignment)
+against that calibrated grid. These photograph-local records are separate from SAM
+detections and become stale when their calibration or analysis changes. Wire
+identity remains unverified and electrical contact remains unknown. This feature
+adds no backend endpoint or automatic connector analysis.
+
 ## Requirements and setup
 
 - Node.js **22.12 or later**, with npm. An active Node.js LTS release is recommended.
