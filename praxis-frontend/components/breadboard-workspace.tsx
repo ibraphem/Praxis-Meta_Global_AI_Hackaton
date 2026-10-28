@@ -33,6 +33,11 @@ import {
   type EndpointCapture,
 } from "./wire-assignment-panel";
 import { WireEndpointOverlay } from "./wire-endpoint-overlay";
+import { failureSchema } from "@/lib/diagnostics";
+import {
+  serverRequestTiming,
+  type EndpointRequestTiming,
+} from "@/lib/wires/request-timing";
 import {
   cancelCorrection,
   confirmCorrection,
@@ -126,6 +131,17 @@ export function BreadboardWorkspace({
   const [capture, setCapture] = useState<EndpointCapture | null>(null);
   const [reviews, setReviews] = useState<WireEndpointReview[]>([]);
   const [proposing, setProposing] = useState(false);
+  const [endpointRequests, setEndpointRequests] = useState<
+    EndpointRequestTiming[]
+  >([]);
+  const visibleRequestTiming = [...endpointRequests]
+    .reverse()
+    .find(
+      (request) =>
+        request.wireCandidateId === selectedWireId &&
+        request.analysisId === assignmentContext?.analysisRunId &&
+        request.imageId === assignmentContext?.photoId,
+    );
   const [proposalError, setProposalError] = useState<{
     wireId: string;
     analysisId: string | null;
@@ -687,9 +703,37 @@ export function BreadboardWorkspace({
     proposalRequest.current?.abort();
     const controller = new AbortController();
     proposalRequest.current = controller;
+    const startedAtMs = performance.now();
+    const requestId = crypto.randomUUID();
+    setEndpointRequests((current) => [
+      ...current.slice(-99),
+      {
+        id: requestId,
+        wireCandidateId: selectedWireId,
+        analysisId: assignmentContext.analysisRunId!,
+        imageId: assignmentContext.photoId,
+        startedAtMs,
+        elapsedMs: null,
+        status: "running",
+      },
+    ]);
+    const finishTiming = (
+      status: Exclude<EndpointRequestTiming["status"], "running">,
+      server?: EndpointRequestTiming["server"],
+    ) => {
+      const elapsedMs = Math.max(0, performance.now() - startedAtMs);
+      setEndpointRequests((current) =>
+        current.map((request) =>
+          request.id === requestId && request.status === "running"
+            ? { ...request, elapsedMs, status, ...(server ? { server } : {}) }
+            : request,
+        ),
+      );
+    };
     controller.signal.addEventListener(
       "abort",
       () => {
+        finishTiming("cancelled");
         if (proposalRequest.current === controller) setProposing(false);
       },
       { once: true },
@@ -710,6 +754,17 @@ export function BreadboardWorkspace({
             bbox: candidate.bbox,
             mask: candidate.mask,
           },
+          otherWires: assignmentContext
+            .analysis!.objects.filter(
+              (object) =>
+                object.id !== candidate.id &&
+                wireCandidate(assignmentContext, object.id),
+            )
+            .map((object) => ({
+              id: object.id,
+              bbox: object.bbox,
+              mask: object.mask,
+            })),
         }),
       );
       const response = await fetch("/api/vision/endpoints", {
@@ -717,23 +772,61 @@ export function BreadboardWorkspace({
         body,
         signal: controller.signal,
       });
-      if (!response.ok)
+      const payload: unknown = await response.json();
+      if (!response.ok) {
+        const failure = failureSchema.safeParse(payload);
+        const details = failure.success
+          ? failure.data.error.details
+          : undefined;
+        finishTiming(
+          "failed",
+          details
+            ? {
+                elapsedMs: details.totalElapsedMs ?? details.elapsedMs,
+                timings: details.timings ?? [],
+                requestId: failure.success
+                  ? failure.data.error.requestId
+                  : undefined,
+              }
+            : undefined,
+        );
         throw new Error(
           "Endpoint proposals could not be obtained. Try again or use manual assignment.",
         );
-      const result = endpointResponseSchema.parse(await response.json());
+      }
+      const result = endpointResponseSchema.parse(payload);
       if (
         !proposalGate.current.accepts(generation) ||
         controller.signal.aborted
-      )
+      ) {
+        finishTiming(controller.signal.aborted ? "cancelled" : "discarded");
         return;
+      }
       if (result.wireCandidateId !== selectedWireId)
         throw new Error("The endpoint response belongs to a different wire.");
-      const review = startReview(
-        createProposal(crypto.randomUUID(), result, assignmentContext, boards),
+      const proposal = createProposal(
+        crypto.randomUUID(),
+        result,
+        assignmentContext,
+        boards,
+      );
+      proposal.clientElapsedMs = Math.max(0, performance.now() - startedAtMs);
+      const review = startReview(proposal);
+      finishTiming(
+        "completed",
+        result.diagnostics
+          ? serverRequestTiming(result.diagnostics)
+          : undefined,
       );
       setReviews((current) => [...current, review]);
     } catch (error) {
+      finishTiming(
+        controller.signal.aborted
+          ? "cancelled"
+          : proposalGate.current.accepts(generation)
+            ? "failed"
+            : "discarded",
+      );
       if (
         proposalGate.current.accepts(generation) &&
         !controller.signal.aborted
@@ -948,6 +1041,11 @@ export function BreadboardWorkspace({
               onPoint={acceptPoint}
               review={visibleReview}
               proposing={proposing}
+              requestTiming={visibleRequestTiming}
+              onCancelProposal={() => {
+                proposalGate.current.invalidate();
+                proposalRequest.current?.abort();
+              }}
               proposalError={
                 proposalError?.wireId === selectedWireId &&
                 proposalError.analysisId === assignmentContext.analysisRunId

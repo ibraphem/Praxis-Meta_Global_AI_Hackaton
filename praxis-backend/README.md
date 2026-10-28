@@ -477,20 +477,40 @@ praxis-backend/
 ## On-demand wire endpoint proposals
 
 `POST /api/vision/endpoints` accepts multipart `image` plus one JSON text field
-`context`: `{ analysisId, imageId, image: { width, height }, wire: { id, bbox, mask } }`.
+`context`: `{ analysisId, imageId, image: { width, height }, wire: { id, bbox, mask }, otherWires?: [{ id, bbox, mask }] }`.
 The wire must be a selected SAM-segmented candidate; `bbox` is original-image
 `[x,y,width,height]` and `mask` is the existing bounded SVG path contract. No image
 or analysis is retained on the server, so the caller supplies this context each
 time. IDs correlate the reply; they do not authenticate an analysis stored here.
 The photograph is decoded/rotated with the existing image preparation service, and
-context dimensions and bounds are checked before inference.
+context dimensions and bounds are checked before inference. All wire IDs must be
+distinct, with at most 99 neighboring masks and a combined 120,000-character path
+budget. Metadata is bounded independently of the photograph upload.
+
+`wire-grounding.ts` uses Sharp to render a deterministic image reference: the selected
+SAM mask retains bright original pixels with a cyan highlight, neighboring masks
+are darkened, and the background is dimmed/desaturated. Selected pixels win at
+overlaps. This annotation preserves the original resolution and coordinates; no
+scene content is generated or hidden pin location inferred. The service sends the
+original photograph **and** aligned reference to Muse in one request. Its prompt
+identifies the selected wire and image dimensions without serializing the mask
+path as text. No annotated image is stored on disk or returned to the browser.
 
 One structured Muse call returns ordered endpoints A/B with
-`proposedImagePosition: [x,y] | null` in original-image pixels and evidence
-`visible_insertion`, `visible_connector`, `wire_mask_tip`, `occluded`, or
-`insufficient`. Hidden/insufficient positions must be null. Invalid roles,
+`proposedImagePosition: [x,y] | null` for the actual physical insertion point,
+plus `connectorJunctionPosition: [x,y] | null` for a separately visible
+wire-to-connector junction. Evidence is `visible_insertion`,
+`visible_connector_junction`, `occluded_insertion`, or `insufficient`.
+Only visible insertion evidence permits an insertion position; all other evidence
+requires a null insertion. A junction is not the pin or hole beneath a connector
+body, and neither a mask tip nor a nearby calibrated hole is a valid substitute.
+Invalid roles, inconsistent evidence/positions, missing visible-junction coordinates,
 out-of-image positions and invented hole fields fail closed. The response echoes
-the analysis/image/wire IDs and configured model, with `muse.endpoints` timing.
+the analysis/image/wire IDs and configured model, with `image.prepare`,
+`wire.grounding`, and `muse.endpoints` timing. Endpoint requests override automatic
+provider retries to zero; their one attempt still uses the configured provider
+timeout. Main analysis retries are unaffected. Two images may increase provider
+latency; local rendering tests do not establish an inference speed improvement.
 The frontend, using user-confirmed calibration and registered rails, resolves
 pixels to holes and obtains independent user review. This API does not confirm
 wire identity, electrical contact or continuity, and never returns hole IDs.

@@ -263,7 +263,8 @@ Three evidence states remain independent:
 **Manually assigned** means both observations resolve to logical holes. It does
 not verify wire identity, visibility, connector insertion, or electrical contact.
 These records do not enable physical-action guidance or change `guidanceEligible`.
-Automatic endpoint proposals and connector analysis are a later milestone.
+The AI review layer described below complements manual picking; it does not verify
+connector seating or electrical contact.
 
 Assignments are stored separately from `Analysis.objects`; the original SAM/Muse
 response JSON is unchanged. Each record carries the photograph ID, a client-side
@@ -397,14 +398,16 @@ For a compiled local server, run `npm start` after building. It also uses port 3
 
 After calibrating the boards (including rail lanes), select a segmented wire and
 choose **Propose endpoints with Muse**. This explicitly sends the photograph and
-selected mask to `POST /api/vision/endpoints`; it is an additional model request.
+selected and neighboring masks to `POST /api/vision/endpoints`; it is an additional model request.
 Muse returns original-image pixels and visual evidence, never authoritative board
 or hole IDs. Praxis uses the same bounded Step A resolver as manual assignment.
 Ambiguous cross-board matches, background and unregistered rails remain unknown.
 
 Review A and B independently:
 
-- **Confirm** accepts the proposed position and calibrated hole.
+- **Confirm** accepts a visible-insertion proposal and its calibrated hole.
+  Junction-only, mask-tip, occluded and insufficient evidence cannot be confirmed
+  or automatically snapped, even when their reference pixels coincide with a hole.
 - **Correct** opens the existing image/pixel picker. The new location is a preview
   until **Confirm correction**. Cancel keeps the previous reviewed value.
 - **Unknown** clears the final location while retaining the rejected suggestion.
@@ -416,6 +419,60 @@ Dashed amber markers show proposals; green markers show reviewed positions;
 question marks show rejected/unknown positions when a source pixel exists. A
 purple dashed marker shows a pending correction. Corrections retain a faint marker
 at the original proposal. No line is drawn between endpoints.
+Gray dashed squares mark visible connector junctions as references only. These are
+separate from insertion points and never resolve to holes.
+
+### Wire-specific visual grounding and insertion visibility
+
+The backend creates a deterministic copy of the photograph using the selected
+SAM mask: original wire pixels are highlighted in cyan, neighboring wire masks
+are darkened, and the background is dimmed/desaturated. At mask crossings the
+selected wire takes precedence. The reference keeps the original image size and
+coordinate system, with no cropping or resizing. It is generated with Sharp from
+validated geometry; no image-generation model invents scene content.
+
+Muse receives **both the original photograph and this aligned visual reference**.
+The SVG path is no longer placed in the reasoning prompt as text. The original
+photograph remains the evidence source; the highlight only identifies the selected
+candidate and cannot reveal an occluded hole or prove wire identity.
+
+`proposedImagePosition` now means the actual physical insertion point only.
+`connectorJunctionPosition` separately records a visible wire-to-connector junction.
+New responses distinguish `visible_insertion`, `visible_connector_junction`,
+`occluded_insertion` and `insufficient`. Every non-visible insertion must have a
+null proposed insertion position. A connector body hiding its pin means an
+**unknown hole**, even when the visible junction is close to a calibrated hole.
+Legacy connector/mask-tip evidence is also prevented from snapping on the client.
+The user can retain these original references, mark both endpoints unknown and
+save an incomplete review. This is a valid abstention, not an accurate hole prediction.
+
+### Endpoint latency
+
+The endpoint panel shows a live client elapsed clock and **Cancel endpoint request**.
+After success or failure it retains the total duration and, when supplied by the
+backend, image preparation, `wire.grounding`, and `muse.endpoints` times plus the
+request ID. Timings stay associated with their image, analysis and selected wire.
+Cancellation stops the clock; stale/late results cannot populate another wire.
+Successful proposal snapshots also retain client elapsed time and backend diagnostics
+for later inspection alongside the original proposals.
+
+The client total includes upload/proxy/response overhead. Backend and Muse times
+are nested measurements, not durations to add together; Muse request time includes
+network transfer and provider waiting, not just model computation. Initial image
+analysis is separate and is not included in this endpoint timer. Unknown stage
+durations are omitted rather than shown as measured zeroes.
+
+Endpoint inference uses one attempt without automatic retries, under the configured
+provider deadline. The main image-analysis retry policy is unchanged. The two-image
+input may increase model latency; improved speed or accuracy must be measured in a
+live comparison rather than inferred from local tests. Restart both services (and
+rebuild compiled deployments) before evaluating this updated response contract.
+
+For evaluation, compare exact resolved holes against independently reviewed **visible**
+insertions, record unknown/occluded endpoints separately, and measure both client
+total and Muse duration. A correct abstention for an occluded insertion must not be
+counted as a correct hole prediction. The same photo, wire selection and calibration
+should be retained when comparing versions.
 
 Saved reviews can be reopened. Review drafts and pending corrections survive wire
 switching during this photograph's session. JSON inspection retains the original

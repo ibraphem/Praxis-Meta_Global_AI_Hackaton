@@ -20,8 +20,10 @@ export type ReviewStatus = "proposed" | "confirmed" | "corrected" | "unknown";
 export const endpointEvidenceSchema = z.enum([
   "visible_insertion",
   "visible_connector",
+  "visible_connector_junction",
   "wire_mask_tip",
   "occluded",
+  "occluded_insertion",
   "insufficient",
 ]);
 const pixelSchema = z.tuple([
@@ -32,6 +34,8 @@ export const endpointSuggestionSchema = z
   .object({
     role: z.enum(["A", "B"]),
     proposedImagePosition: pixelSchema.nullable(),
+    /** A visible junction is a reference only, never an insertion-hole proposal. */
+    connectorJunctionPosition: pixelSchema.nullable().optional(),
     evidence: endpointEvidenceSchema,
   })
   .strict();
@@ -68,6 +72,8 @@ export interface WireEndpointProposal {
   wireCandidateId: string;
   calibrationRevisions: Record<string, number>;
   model: string;
+  diagnostics?: z.infer<typeof diagnosticsSchema>;
+  clientElapsedMs?: number;
   endpoints: [EndpointProposal, EndpointProposal];
 }
 export interface ReviewedEndpoint {
@@ -166,18 +172,22 @@ export function createProposal(
     );
   const endpoints = data.endpoints.map((endpoint): EndpointProposal => {
     const position = endpoint.proposedImagePosition;
+    const junction = endpoint.connectorJunctionPosition;
     if (
-      position &&
-      (!context.analysis ||
-        position[0] >= context.analysis.image.width ||
-        position[1] >= context.analysis.image.height)
+      [position, junction].some(
+        (position) =>
+          position &&
+          (!context.analysis ||
+            position[0] >= context.analysis.image.width ||
+            position[1] >= context.analysis.image.height),
+      )
     )
       throw new Error(
         "Endpoint response contains pixels outside the photograph.",
       );
-    // Hidden/insufficient evidence is never an authoritative insertion proposal.
+    // Junctions, mask tips and hidden insertions must NEVER be snapped to a hole.
     const matches =
-      position && !["occluded", "insufficient"].includes(endpoint.evidence)
+      position && endpoint.evidence === "visible_insertion"
         ? boards
             .map((board) =>
               resolveEndpoint(
@@ -203,6 +213,7 @@ export function createProposal(
     wireCandidateId: data.wireCandidateId,
     calibrationRevisions: calibrationRevisions(boards),
     model: data.model,
+    ...(data.diagnostics ? { diagnostics: data.diagnostics } : {}),
     endpoints,
   };
 }
@@ -248,7 +259,11 @@ export function confirmEndpoint(
 ) {
   assertCurrent(review, context, boards);
   const original = review.endpoints[index].originalProposal;
-  if (!original.proposedHole || !original.proposedImagePosition)
+  if (
+    original.evidence !== "visible_insertion" ||
+    !original.proposedHole ||
+    !original.proposedImagePosition
+  )
     throw new Error(
       "No reliable proposed hole. Correct this endpoint or mark it unknown.",
     );

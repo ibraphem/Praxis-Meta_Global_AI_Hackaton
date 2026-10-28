@@ -96,7 +96,7 @@ function fixture(currentBoards = boards) {
       {
         role: "B",
         proposedImagePosition: [b.x, b.y],
-        evidence: "visible_connector",
+        evidence: "visible_insertion",
       },
     ],
   };
@@ -469,4 +469,82 @@ test("review panel and overlays show proposals, independent actions, original pr
     }),
   );
   assert.equal(hidden, "");
+});
+
+test("junctions and mask tips never snap to holes even when their pixels exactly match calibration", () => {
+  const a = p("a12"),
+    b = p("e14");
+  for (const evidence of [
+    "visible_connector",
+    "visible_connector_junction",
+    "occluded",
+    "occluded_insertion",
+    "wire_mask_tip",
+    "insufficient",
+  ] as const) {
+    const response: EndpointResponse = {
+      analysisId: context.analysisRunId!,
+      imageId: context.photoId,
+      wireCandidateId: "jumper_wire_1",
+      model: "muse",
+      endpoints: [
+        {
+          role: "A",
+          proposedImagePosition: [a.x, a.y],
+          connectorJunctionPosition: [a.x, a.y],
+          evidence,
+        },
+        {
+          role: "B",
+          proposedImagePosition: [b.x, b.y],
+          connectorJunctionPosition: [b.x, b.y],
+          evidence,
+        },
+      ],
+    };
+    let review = startReview(
+      createProposal(`junction-${evidence}`, response, context, boards),
+    );
+    assert.ok(
+      review.proposal.endpoints.every(
+        (endpoint) => endpoint.proposedHole === null,
+      ),
+    );
+    assert.throws(
+      () => confirmEndpoint(review, 0, context, boards),
+      /No reliable/,
+    );
+    review = markEndpointUnknown(
+      markEndpointUnknown(review, 0, context, boards),
+      1,
+      context,
+      boards,
+    );
+    const saved = reviewedAssignment("connection_1", review, context, boards);
+    assert.deepEqual(saved.endpoints, [null, null]);
+    assert.equal(assignmentValidity(saved, context, boards).status, "draft");
+    assert.deepEqual(
+      saved.endpointReview!.endpoints[0].originalProposal
+        .connectorJunctionPosition,
+      [a.x, a.y],
+    );
+  }
+});
+
+test("junction markers are explicitly references and never appear as proposed insertion circles", () => {
+  const original = fixture();
+  original.endpoints[0].originalProposal.proposedImagePosition = null;
+  original.endpoints[0].originalProposal.connectorJunctionPosition = [50, 160];
+  original.endpoints[0].originalProposal.proposedHole = null;
+  original.endpoints[0].originalProposal.evidence = "occluded_insertion";
+  const html = renderToStaticMarkup(
+    createElement(WireEndpointOverlay, {
+      review: original,
+      image,
+      validity: { status: "draft", reasons: [] },
+    }),
+  );
+  assert.match(html, /endpoint-junction/);
+  assert.match(html, /not an insertion hole/);
+  assert.equal((html.match(/<circle/g) ?? []).length, 1);
 });

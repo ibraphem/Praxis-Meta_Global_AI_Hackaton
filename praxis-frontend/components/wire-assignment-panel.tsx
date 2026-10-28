@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { EndpointRequestTiming } from "./endpoint-request-timing";
+import type { EndpointRequestTiming as RequestTiming } from "@/lib/wires/request-timing";
 import { componentLabel } from "@/lib/vision";
 import {
   assignmentValidity,
@@ -42,6 +44,8 @@ interface Props {
   ) => void;
   review?: WireEndpointReview;
   proposing?: boolean;
+  requestTiming?: RequestTiming;
+  onCancelProposal?: () => void;
   proposalError?: string;
   canPropose?: boolean;
   onPropose?: () => void;
@@ -127,11 +131,26 @@ export function WireAssignmentPanel(props: Props) {
               ? "Locating endpoints…"
               : "Propose endpoints with Muse"}
           </button>
+          {props.proposing && props.onCancelProposal && (
+            <button
+              type="button"
+              className="button button-secondary"
+              onClick={props.onCancelProposal}
+            >
+              Cancel endpoint request
+            </button>
+          )}
           <small>
             Your photograph and selected wire are sent when you request
             proposals.
           </small>
         </div>
+      )}
+      {props.requestTiming && (
+        <EndpointRequestTiming
+          key={props.requestTiming.id}
+          timing={props.requestTiming}
+        />
       )}
       {props.proposalError && (
         <p role="alert" className="calibration-notice">
@@ -152,7 +171,7 @@ export function WireAssignmentPanel(props: Props) {
           </h4>
           <p className="endpoint-limits">
             Dashed amber: proposed · Green: reviewed · Purple: correction
-            preview · ?: unknown
+            preview · Gray squares: junction references · ?: unknown
           </p>
           {reviewStale && (
             <p role="status">
@@ -177,7 +196,7 @@ export function WireAssignmentPanel(props: Props) {
                     Endpoint {endpoint.role} · {endpoint.reviewStatus}
                   </strong>
                   <p>
-                    AI proposal:{" "}
+                    Insertion proposal:{" "}
                     {original.proposedHole
                       ? `${original.proposedHole.boardId}:${original.proposedHole.holeId} · snap ${original.proposedHole.snapDistancePx.toFixed(1)} px`
                       : "unknown hole"}
@@ -186,6 +205,26 @@ export function WireAssignmentPanel(props: Props) {
                     {" · "}
                     {original.evidence.replaceAll("_", " ")}
                   </p>
+                  {original.connectorJunctionPosition && (
+                    <p>
+                      Visible connector junction: (
+                      {original.connectorJunctionPosition
+                        .map((coordinate) => coordinate.toFixed(1))
+                        .join(", ")}
+                      ) · reference only, not an insertion hole.
+                    </p>
+                  )}
+                  {original.evidence !== "visible_insertion" && (
+                    <p className="endpoint-limits">
+                      {["occluded_insertion", "occluded"].includes(
+                        original.evidence,
+                      )
+                        ? "Insertion point is occluded — hole unknown."
+                        : "A physical insertion point has not been established — hole unknown."}{" "}
+                      Correct it only if you can independently establish the
+                      hole, or mark this endpoint unknown.
+                    </p>
+                  )}
                   {endpoint.reviewStatus !== "proposed" && (
                     <p>
                       Reviewed result:{" "}

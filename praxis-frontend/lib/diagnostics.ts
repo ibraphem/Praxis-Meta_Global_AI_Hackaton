@@ -9,6 +9,7 @@ const stageSchema = z.enum([
   "sam.jumper_wire",
   "sam.wire_refine",
   "wire.geometry",
+  "wire.grounding",
   "muse.interpret",
   "muse.detect",
   "muse.endpoints",

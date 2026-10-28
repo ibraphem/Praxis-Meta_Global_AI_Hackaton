@@ -29,7 +29,15 @@ export function WireEndpointOverlay({
         aria-label="AI proposed and user-reviewed insertion positions; electrical contact unknown"
       >
         {review.endpoints.map((endpoint, index) => {
-          const original = endpoint.originalProposal.proposedImagePosition;
+          const original =
+            endpoint.originalProposal.evidence === "visible_insertion"
+              ? endpoint.originalProposal.proposedImagePosition
+              : null;
+          const junction =
+            endpoint.originalProposal.connectorJunctionPosition ??
+            (endpoint.originalProposal.evidence === "visible_connector"
+              ? endpoint.originalProposal.proposedImagePosition
+              : null);
           const position = endpoint.finalPosition ?? original;
           const observation = endpoint.observation;
           const snapped =
@@ -41,6 +49,25 @@ export function WireEndpointOverlay({
           const pending = review.pendingCorrections[index];
           return (
             <g key={endpoint.role}>
+              {junction && (
+                <g className="endpoint-junction">
+                  <rect
+                    x={junction[0] - radius * 0.7}
+                    y={junction[1] - radius * 0.7}
+                    width={radius * 1.4}
+                    height={radius * 1.4}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <text
+                    x={junction[0] + radius}
+                    y={Math.max(radius * 2, junction[1] - radius)}
+                    fontSize={Math.max(image.width, image.height) / 65}
+                  >
+                    {endpoint.role} junction
+                  </text>
+                  <title>{`Endpoint ${endpoint.role}: visible connector junction reference, not an insertion hole; electrical contact unknown`}</title>
+                </g>
+              )}
               {original && endpoint.reviewStatus === "corrected" && (
                 <g className="endpoint-proposed endpoint-original">
                   <circle
@@ -49,10 +76,7 @@ export function WireEndpointOverlay({
                     r={radius}
                     vectorEffect="non-scaling-stroke"
                   />
-                  <title>
-                    Original AI proposal {endpoint.role}; superseded by
-                    correction
-                  </title>
+                  <title>{`Original AI proposal ${endpoint.role}; superseded by correction`}</title>
                 </g>
               )}
               {p && (
@@ -82,10 +106,7 @@ export function WireEndpointOverlay({
                     r={radius * 1.3}
                     vectorEffect="non-scaling-stroke"
                   />
-                  <title>
-                    Endpoint {endpoint.role}: pending correction, awaiting
-                    confirmation
-                  </title>
+                  <title>{`Endpoint ${endpoint.role}: pending correction, awaiting confirmation`}</title>
                 </g>
               )}
             </g>

@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { resolve } from "node:path";
+import { randomUUID } from "node:crypto";
 import {
   calibrateBoard,
   project,
@@ -57,11 +58,38 @@ async function reply(route: Route) {
       imageId: metadata.imageId,
       wireCandidateId: metadata.wire.id,
       model: "muse-test",
+      diagnostics: {
+        requestId: randomUUID(),
+        elapsedMs: 15,
+        timings: [
+          {
+            stage: "image.prepare",
+            startedAtMs: 0,
+            durationMs: 2,
+            status: "completed",
+            kind: "work",
+          },
+          {
+            stage: "wire.grounding",
+            startedAtMs: 2,
+            durationMs: 3,
+            status: "completed",
+            kind: "work",
+          },
+          {
+            stage: "muse.endpoints",
+            startedAtMs: 5,
+            durationMs: 10,
+            status: "completed",
+            kind: "request",
+          },
+        ],
+      },
       endpoints: [
         {
           role: "A",
           proposedImagePosition: [a.x, a.y],
-          evidence: "visible_connector",
+          evidence: "visible_insertion",
         },
         {
           role: "B",
@@ -81,11 +109,11 @@ async function enterCalibrationPoint(page: Page, p: { x: number; y: number }) {
     .fill(String(p.y));
   await page.getByRole("button", { name: /^Set [aj]\d+$/ }).click();
 }
-async function setup(page: Page, withRail = false) {
+async function setup(page: Page, withRail = false, endpointReply = reply) {
   await page.route("**/api/vision/analyze", (route) =>
     route.fulfill({ json: analysis }),
   );
-  await page.route("**/api/vision/endpoints", reply);
+  await page.route("**/api/vision/endpoints", endpointReply);
   await page.goto("/");
   await page
     .getByLabel("Upload a workspace photograph")
@@ -387,4 +415,177 @@ test("manual endpoint edits made during an AI request are never overwritten", as
     "board_1:d18 → board_1:f19",
   );
   expect((await savedJSON(page)).endpointReview).toBeUndefined();
+});
+
+test("visible junctions with occluded insertions remain unknown and cannot be confirmed", async ({
+  page,
+}) => {
+  await setup(page, false, async (route) => {
+    const raw = route.request().postDataBuffer()!.toString();
+    const metadata = JSON.parse(
+      raw.match(/name="context"\r\n\r\n([^\r]+)/)![1],
+    );
+    expect(metadata.otherWires.map((wire: { id: string }) => wire.id)).toEqual([
+      "jumper_wire_2",
+    ]);
+    const a = point("e17"),
+      b = point("a22");
+    await route.fulfill({
+      json: {
+        analysisId: metadata.analysisId,
+        imageId: metadata.imageId,
+        wireCandidateId: metadata.wire.id,
+        model: "muse-test",
+        endpoints: [
+          {
+            role: "A",
+            proposedImagePosition: null,
+            connectorJunctionPosition: [a.x, a.y],
+            evidence: "visible_connector_junction",
+          },
+          {
+            role: "B",
+            proposedImagePosition: null,
+            connectorJunctionPosition: [b.x, b.y],
+            evidence: "occluded_insertion",
+          },
+        ],
+      },
+    });
+  });
+  await expect(
+    page.getByRole("button", { name: "Confirm endpoint A", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Confirm endpoint B", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("AI endpoint review")).toContainText(
+    "Insertion point is occluded — hole unknown.",
+  );
+  await expect(page.locator(".endpoint-junction rect")).toHaveCount(2);
+  await expect(page.locator(".endpoint-proposed circle")).toHaveCount(0);
+  await page.getByRole("button", { name: "Mark endpoint A unknown" }).click();
+  await page.getByRole("button", { name: "Mark endpoint B unknown" }).click();
+  await page.getByRole("button", { name: "Save reviewed assignment" }).click();
+  const record = await savedJSON(page);
+  expect(record.endpoints).toEqual([null, null]);
+  expect(record.validity.status).toBe("draft");
+  expect(
+    record.endpointReview.endpoints[0].originalProposal
+      .connectorJunctionPosition,
+  ).toEqual([point("e17").x, point("e17").y]);
+  expect(record.endpointReview.proposal.clientElapsedMs).toBeGreaterThan(0);
+});
+
+test("request clock advances, can be cancelled, and keeps timings separate across wires", async ({
+  page,
+}) => {
+  await setup(page);
+  await expect(page.getByLabel("Endpoint request timing")).toContainText(
+    "completed",
+  );
+  await expect(page.getByLabel("Endpoint request timing")).toContainText(
+    "Visual grounding:",
+  );
+  await expect(page.getByLabel("Endpoint request timing")).toContainText(
+    "Muse:",
+  );
+  await page
+    .locator(".detection-item")
+    .filter({ hasText: "Jumper wire 2" })
+    .click();
+  await expect(page.getByLabel("Endpoint request timing")).toHaveCount(0);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/vision/endpoints", async (route) => {
+    await held;
+    await reply(route).catch(() => undefined);
+  });
+  try {
+    await page
+      .getByRole("button", { name: "Propose endpoints with Muse" })
+      .click();
+    const clock = page.getByLabel("Endpoint request timing");
+    await expect(clock).toContainText("running");
+    await expect(clock).not.toContainText("0.0 s");
+    await page.getByRole("button", { name: "Cancel endpoint request" }).click();
+    await expect(clock).toContainText("cancelled");
+    const text = await clock.innerText();
+    await page
+      .locator(".detection-item")
+      .filter({ hasText: "Jumper wire 1" })
+      .click();
+    await expect(page.getByLabel("Endpoint request timing")).toContainText(
+      "completed",
+    );
+    await page
+      .locator(".detection-item")
+      .filter({ hasText: "Jumper wire 2" })
+      .click();
+    await expect(page.getByLabel("Endpoint request timing")).toHaveText(text);
+    await expect(page.getByLabel("AI endpoint review")).toHaveCount(0);
+  } finally {
+    release();
+  }
+});
+
+test("a failed endpoint request stops the clock and displays backend stage timings", async ({
+  page,
+}) => {
+  await setup(page);
+  await page
+    .locator(".detection-item")
+    .filter({ hasText: "Jumper wire 2" })
+    .click();
+  await page.route("**/api/vision/endpoints", (route) =>
+    route.fulfill({
+      status: 504,
+      json: {
+        error: {
+          code: "PROVIDER_TIMEOUT",
+          message: "The backend timed out waiting for Muse.",
+          requestId: randomUUID(),
+          details: {
+            source: "backend_provider",
+            elapsedMs: 45000,
+            totalElapsedMs: 45500,
+            timings: [
+              {
+                stage: "wire.grounding",
+                startedAtMs: 0,
+                durationMs: 200,
+                status: "completed",
+                kind: "work",
+              },
+              {
+                stage: "muse.endpoints",
+                startedAtMs: 500,
+                durationMs: 45000,
+                status: "timed_out",
+                kind: "request",
+              },
+            ],
+          },
+        },
+      },
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Propose endpoints with Muse" })
+    .click();
+  await expect(page.getByLabel("Endpoint request timing")).toContainText(
+    "failed",
+  );
+  await expect(page.getByLabel("Endpoint request timing")).toContainText(
+    "Muse: 45.0 s",
+  );
+  await expect(page.getByLabel("Endpoint request timing")).toContainText(
+    "Backend: 45.5 s",
+  );
+  await expect(
+    page.getByRole("button", { name: "Propose endpoints with Muse" }),
+  ).toBeEnabled();
+  await expect(page.getByLabel("AI endpoint review")).toHaveCount(0);
 });

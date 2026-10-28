@@ -3,7 +3,6 @@ import { analysisSchema, MAX_FILE_BYTES } from "../vision";
 import { upstreamTimeoutSchema, type ErrorDetails } from "../diagnostics";
 import { endpointResponseSchema } from "../wires/proposals";
 
-const MAX_BODY_BYTES = MAX_FILE_BYTES + 64 * 1024;
 const TIMEOUT_MS = 190_000;
 const RESPONSE_BYTES = 256 * 1024;
 
@@ -128,6 +127,9 @@ export function createVisionProxy(
     logger?: (event: Record<string, unknown>) => void;
   } = {},
 ) {
+  // Endpoint context includes all selected/neighbouring masks (120k total path budget).
+  const maxBodyBytes =
+    MAX_FILE_BYTES + (options.operation === "endpoints" ? 192 : 64) * 1024;
   const fetcher = options.fetcher ?? fetch;
   const logger =
     options.logger ??
@@ -219,7 +221,7 @@ export function createVisionProxy(
           "Choose a photograph to analyze.",
         );
       const length = request.headers.get("content-length");
-      if (length && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES))
+      if (length && (!/^\d+$/.test(length) || Number(length) > maxBodyBytes))
         throw new ProxyError(
           413,
           "BODY_TOO_LARGE",
@@ -256,7 +258,7 @@ export function createVisionProxy(
           "Authorization",
           `Bearer ${environment.PRAXIS_API_TOKEN}`,
         );
-      const body = await readBounded(request.body, MAX_BODY_BYTES, signal);
+      const body = await readBounded(request.body, maxBodyBytes, signal);
       stage = "backend.wait";
       logger({
         event: "vision.proxy_backend_started",
