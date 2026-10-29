@@ -24,6 +24,10 @@ interface Props {
   analysisRunId: string | null;
   onSelect: (id: string) => void;
   onChoose: () => void;
+  onRecoveryContext?: (context: {
+    pitchPx: number;
+    gridPoints: [number, number][];
+  }) => void;
 }
 
 export function ImagePreview({
@@ -37,6 +41,7 @@ export function ImagePreview({
   analysisRunId,
   onSelect,
   onChoose,
+  onRecoveryContext,
 }: Props) {
   if (!photograph)
     return (
@@ -95,6 +100,7 @@ export function ImagePreview({
         image={{ width: photograph.width, height: photograph.height }}
         imageUrl={photograph.url}
         imageFile={photograph.file}
+        onRecoveryContext={onRecoveryContext}
         disabled={loading || selecting}
         assignmentContext={{
           photoId: photograph.id,

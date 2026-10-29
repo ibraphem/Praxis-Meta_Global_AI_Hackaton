@@ -31,6 +31,9 @@ export const recoveryCandidateSchema = z
     candidateCoverage: z.number().min(0).max(1),
     verifiedCoverage: z.number().min(0).max(1),
     touchesImageBoundary: z.boolean(),
+    touchesCropBoundary: z.boolean().optional(),
+    cropOrigin: boxSchema.optional(),
+    cropExitPoints: z.array(point).max(16).optional(),
     identityStatus: z.literal('unverified'),
     guidanceEligible: z.literal(false),
   })
@@ -80,6 +83,15 @@ export const cropAttemptSchema = z
   .object({
     attemptId: z.uuid(),
     region: boxSchema,
+    spatialPrompt: z
+      .object({
+        bbox: boxSchema,
+        positivePoints: z.array(point).min(1).max(3),
+        negativePoints: z.array(point).max(3),
+      })
+      .strict()
+      .optional(),
+    mode: z.enum(['tiles', 'short', 'human']).optional(),
     status: z.enum([
       'running',
       'succeeded',
@@ -117,6 +129,43 @@ const reconciliationSchema = z
     ]),
   })
   .strict();
+export const recoveryContextSchema = z
+  .object({
+    pitchPx: z.number().finite().min(2).max(200),
+    gridPoints: z.array(point).max(1000),
+  })
+  .strict();
+export const recoveryTargetSchema = recoveryContextSchema.extend({
+  manualPoint: z
+    .tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])
+    .optional(),
+});
+export const shortRegionSchema = z
+  .object({
+    crop: boxSchema,
+    bbox: boxSchema,
+    positivePoints: z
+      .array(
+        z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+        ]),
+      )
+      .min(1)
+      .max(3),
+    negativePoints: z
+      .array(
+        z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+        ]),
+      )
+      .max(3),
+    source: z.enum(['automatic', 'human']),
+    evidence: z.enum(['reviewer_seed', 'dark_line', 'color_line']),
+  })
+  .strict();
+export type ShortRegion = z.infer<typeof shortRegionSchema>;
 export const recoveryReportSchema = z
   .object({
     version: z.literal('wire-coverage-v1'),
@@ -143,6 +192,7 @@ export const recoveryReportSchema = z
       })
       .strict(),
     cropRegions: z.array(boxSchema).max(9),
+    shortRegions: z.array(shortRegionSchema).max(16).optional(),
     reviewReconciliation: z.array(reconciliationSchema).max(100).optional(),
     stopReason: z.enum([
       'audit_only',
@@ -162,7 +212,21 @@ export const recoveryReportSchema = z
         z
           .object({
             candidateIds: z.tuple([z.string().max(64), z.string().max(64)]),
-            kind: z.literal('possible_fragment_continuation'),
+            kind: z.enum([
+              'possible_fragment_continuation',
+              'crop_fragment_association',
+            ]),
+            signals: z
+              .array(
+                z.enum([
+                  'spatial_overlap',
+                  'similar_color',
+                  'aligned_direction',
+                  'near_crop_exit',
+                ]),
+              )
+              .max(4)
+              .optional(),
             status: z.literal('unverified'),
           })
           .strict(),

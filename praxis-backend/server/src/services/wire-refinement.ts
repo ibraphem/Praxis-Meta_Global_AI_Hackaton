@@ -1,3 +1,4 @@
+import { cropFragment } from './wire-fragments.js';
 import type { Config } from '../config.js';
 import { AppError, abortError } from '../lib/errors.js';
 import type { AnalysisTrace } from '../lib/diagnostics.js';
@@ -71,6 +72,12 @@ export function createWireResolution(config: Config, client: MetaClient) {
           detectionSource: 'sam',
           geometryStatus: 'segmented',
           mask: resolved.mask.geometry,
+          ...(cropFragment(wire).cropOrigin
+            ? {
+                cropOrigin: cropFragment(wire).cropOrigin!,
+                touchesCropBoundary: cropFragment(wire).touchesCropBoundary,
+              }
+            : {}),
           guidanceEligible: false,
           identityStatus: 'unverified',
           ...(wire.confidence === undefined
@@ -185,6 +192,13 @@ export function createWireResolution(config: Config, client: MetaClient) {
             detectionSource: 'muse',
             geometryStatus: 'segmented',
             mask: resolved.mask.geometry,
+            ...(cropFragment(detection).cropOrigin
+              ? {
+                  cropOrigin: cropFragment(detection).cropOrigin!,
+                  touchesCropBoundary:
+                    cropFragment(detection).touchesCropBoundary,
+                }
+              : {}),
             interpretation: 'uncertain',
             guidanceEligible: false,
             identityStatus: 'unverified',

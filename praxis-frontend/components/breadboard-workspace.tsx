@@ -116,6 +116,7 @@ export function BreadboardWorkspace({
   onSelectWire,
   overlaysVisible = true,
   imageFile,
+  onRecoveryContext,
 }: {
   image: ImageSize;
   imageUrl: string;
@@ -126,6 +127,10 @@ export function BreadboardWorkspace({
   onSelectWire?: (id: string) => void;
   overlaysVisible?: boolean;
   imageFile?: File;
+  onRecoveryContext?: (context: {
+    pitchPx: number;
+    gridPoints: [number, number][];
+  }) => void;
 }) {
   const [boards, setBoards] = useState<Board[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -716,7 +721,11 @@ export function BreadboardWorkspace({
       setNotice(message(error));
     }
   }
-  async function proposeEndpoints(focused = false) {
+  async function proposeEndpoints(
+    focused = false,
+    closeups = false,
+    normalized = false,
+  ) {
     if (
       !assignmentContext ||
       !selectedWireId ||
@@ -793,9 +802,9 @@ export function BreadboardWorkspace({
           analysisId: assignmentContext.analysisRunId,
           imageId: assignmentContext.photoId,
           image: assignmentContext.analysis!.image,
-          ...(focused
+          ...(focused || closeups
             ? {
-                view: "candidate_crop",
+                view: closeups ? "endpoint_crops" : "candidate_crop",
                 gridPoints: boards
                   .flatMap((board) =>
                     allHoles(board.calibration, board.rails).map((hole) => {
@@ -806,7 +815,14 @@ export function BreadboardWorkspace({
                   .slice(0, 1000),
               }
             : {}),
+          coordinateSpace: normalized ? "normalized_1000" : "pixels",
           wire: {
+            ...(candidate.cropOrigin
+              ? {
+                  cropOrigin: candidate.cropOrigin,
+                  touchesCropBoundary: candidate.touchesCropBoundary,
+                }
+              : {}),
             id: candidate.id,
             bbox: candidate.bbox,
             mask: candidate.mask,
@@ -1242,6 +1258,42 @@ export function BreadboardWorkspace({
           >
             Export evaluation bundle
           </button>
+          {onRecoveryContext && (
+            <button
+              type="button"
+              className="button button-secondary"
+              disabled={disabled || !boards.length}
+              onClick={() => {
+                const gridPoints = boards
+                  .flatMap((b) =>
+                    allHoles(b.calibration, b.rails).map((h) => {
+                      const p = project(b.calibration, h.grid);
+                      return [p.x, p.y] as [number, number];
+                    }),
+                  )
+                  .filter(
+                    ([x, y]) =>
+                      x >= 0 && y >= 0 && x < image.width && y < image.height,
+                  )
+                  .slice(0, 1000);
+                const b = boards[0],
+                  p = project(b.calibration, { x: 0, y: 0 }),
+                  q = project(b.calibration, { x: 1, y: 0 });
+                onRecoveryContext({
+                  pitchPx: Math.max(
+                    2,
+                    Math.min(200, Math.hypot(p.x - q.x, p.y - q.y)),
+                  ),
+                  gridPoints,
+                });
+                setNotice(
+                  "Calibration shared as a search prior. Share again after recalibration.",
+                );
+              }}
+            >
+              Use calibration for short-wire search
+            </button>
+          )}
         </>
       )}
       {assignmentContext &&
@@ -1278,7 +1330,9 @@ export function BreadboardWorkspace({
                   : ""
               }
               canPropose={!!imageFile}
-              onPropose={(focused) => void proposeEndpoints(focused)}
+              onPropose={(focused, closeups, normalized) =>
+                void proposeEndpoints(focused, closeups, normalized)
+              }
               onReviewConfirm={(index) => {
                 if (!visibleReview) return;
                 updateReview(visibleReview, (review) =>

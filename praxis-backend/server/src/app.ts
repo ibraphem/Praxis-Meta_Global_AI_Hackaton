@@ -1,3 +1,4 @@
+import { admittedClient } from './jobs/model-admission.js';
 import { JobStore } from './jobs/store.js';
 import { AnalysisWorker, type VisionStages } from './jobs/worker.js';
 import { registerAnalysisRoutes } from './routes/analyses.js';
@@ -16,11 +17,11 @@ import { logTrace, type TraceLogger } from './lib/diagnostics.js';
 /** Build separately from listen(), so HTTP behavior can be tested without ports. */
 export async function buildApp(
   config: Config,
-  analyze: AnalyzeImage = createVisionService(config),
+  analyze?: AnalyzeImage,
   traceLogger: TraceLogger = config.NODE_ENV === 'test'
     ? () => undefined
     : logTrace,
-  proposeEndpoints = createEndpointProposalService(config),
+  proposeEndpoints?: ReturnType<typeof createEndpointProposalService>,
   jobOptions?: { store: JobStore; stages?: VisionStages },
 ) {
   const app = Fastify({
@@ -99,6 +100,7 @@ export async function buildApp(
       config,
       config.NODE_ENV === 'test' ? ':memory:' : config.ANALYSIS_JOB_DIR,
     );
+  const client = admittedClient(jobStore);
   const worker = new AnalysisWorker(
     jobStore,
     config,
@@ -113,16 +115,30 @@ export async function buildApp(
     await worker.close();
     if (!jobOptions?.store) jobStore.close();
   });
-  registerVisionRoute(app, config, analyze, traceLogger, {
-    capacity,
-    reserveModelAdmission: () => jobStore.experiments.enterLegacyRequest(),
-  });
-  registerVisionRoute(app, config, proposeEndpoints, traceLogger, {
-    path: '/api/vision/endpoints',
-    allowContext: true,
-    capacity,
-    reserveModelAdmission: () => jobStore.experiments.enterLegacyRequest(),
-  });
+  registerVisionRoute(
+    app,
+    config,
+    analyze ??
+      ((bytes, signal, trace) =>
+        createVisionService(config, client)(bytes, signal, trace)),
+    traceLogger,
+    {
+      capacity,
+      reserveModelAdmission: () => jobStore.experiments.enterLegacyRequest(),
+    },
+  );
+  registerVisionRoute(
+    app,
+    config,
+    proposeEndpoints ?? createEndpointProposalService(config, client),
+    traceLogger,
+    {
+      path: '/api/vision/endpoints',
+      allowContext: true,
+      capacity,
+      reserveModelAdmission: () => jobStore.experiments.enterLegacyRequest(),
+    },
+  );
 
   app.setNotFoundHandler((request, reply) =>
     reply.code(404).send({

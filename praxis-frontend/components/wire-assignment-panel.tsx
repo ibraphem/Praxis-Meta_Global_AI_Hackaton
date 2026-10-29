@@ -49,7 +49,11 @@ interface Props {
   onCancelProposal?: () => void;
   proposalError?: string;
   canPropose?: boolean;
-  onPropose?: (focused?: boolean) => void;
+  onPropose?: (
+    focused?: boolean,
+    closeups?: boolean,
+    normalized?: boolean,
+  ) => void;
   onReviewConfirm?: (index: EndpointIndex) => void;
   onReviewCorrect?: (index: EndpointIndex) => void;
   onReviewUnknown?: (index: EndpointIndex) => void;
@@ -77,7 +81,9 @@ export function WireAssignmentPanel(props: Props) {
     disabled,
     pausedReason,
   } = props;
-  const [focused, setFocused] = useState(false);
+  const [focused, setFocused] = useState(false),
+    [closeups, setCloseups] = useState(false),
+    [normalized, setNormalized] = useState(false);
   const [x, setX] = useState(""),
     [y, setY] = useState("");
   const candidate = selectedWireId
@@ -124,6 +130,30 @@ export function WireAssignmentPanel(props: Props) {
             />{" "}
             Focused crop + calibrated grid reference (experiment)
           </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={closeups}
+              disabled={disabled || props.proposing}
+              onChange={(e) => setCloseups(e.target.checked)}
+            />{" "}
+            Insertion close-ups (one extra request; experiment)
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={normalized}
+              disabled={disabled || props.proposing}
+              onChange={(e) => setNormalized(e.target.checked)}
+            />{" "}
+            Normalized coordinate contract (experiment)
+          </label>
+          {candidate?.touchesCropBoundary && (
+            <p role="status">
+              This mask is truncated at a crop edge. Recover its continuation
+              before proposing physical insertion points.
+            </p>
+          )}
           <button
             type="button"
             className="button button-primary"
@@ -131,13 +161,14 @@ export function WireAssignmentPanel(props: Props) {
               disabled ||
               !!pausedReason ||
               !candidate ||
+              candidate.touchesCropBoundary ||
               !boards.length ||
               !props.canPropose ||
               props.proposing ||
               hasAssignment ||
               (!!review && !reviewStale)
             }
-            onClick={() => props.onPropose?.(focused)}
+            onClick={() => props.onPropose?.(focused, closeups, normalized)}
           >
             {props.proposing
               ? "Locating endpoints…"
@@ -195,6 +226,20 @@ export function WireAssignmentPanel(props: Props) {
             Dashed amber: proposed · Green: reviewed · Purple: correction
             preview · Gray squares: junction references · ?: unknown
           </p>
+          {review.proposal.localization && (
+            <details>
+              <summary>
+                Insertion close-up experiment:{" "}
+                {review.proposal.localization.status.replaceAll("_", " ")}
+              </summary>
+              <p>
+                The original coarse proposal is preserved separately. Failed
+                refinement leaves insertion unknown; it does not promote the
+                coarse point.
+              </p>
+              <pre>{JSON.stringify(review.proposal.localization, null, 2)}</pre>
+            </details>
+          )}
           {reviewStale && (
             <p role="status">
               Stale — analysis or calibration changed. Historical review

@@ -95,6 +95,7 @@ export function registerAnalysisRoutes(
   for (const [path, operation] of [
     ['audit-wires', 'audit'],
     ['recover-wires', 'recover'],
+    ['recover-short-wires', 'recover_short'],
     ['verify-wire', 'verify'],
   ] as const)
     app.post(`/api/analyses/:id/${path}`, async (request, reply) => {
@@ -119,6 +120,7 @@ export function registerAnalysisRoutes(
         id(request.params),
         operation,
         body?.success ? body.data.candidateId : undefined,
+        operation === 'recover_short' ? request.body : undefined,
       );
       setImmediate(kick);
       return reply.code(202).send(publicJob(job));

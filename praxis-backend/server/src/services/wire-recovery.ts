@@ -1,3 +1,6 @@
+import { supportsSpatialPrompt } from './wire-fragments.js';
+import { shortWireRegions } from './short-wire-recovery.js';
+import { buildWirePrompt } from './sam.js';
 import { randomUUID } from 'node:crypto';
 import { normalizeCropAttempts, sameRegion } from './crop-attempts.js';
 import sharp from 'sharp';
@@ -101,7 +104,12 @@ export function createWireRecovery(
       budget: RecoveryBudget;
       visited: BoundingBox[];
       cropAttempts?: CropAttempt[];
-      operation: 'audit' | 'recover' | 'verify';
+      operation: 'audit' | 'recover' | 'verify' | 'recover_short';
+      target?: {
+        pitchPx: number;
+        gridPoints: [number, number][];
+        manualPoint?: [number, number] | undefined;
+      };
       candidateId?: string;
       previous?: RecoveryReport;
     },
@@ -153,6 +161,12 @@ export function createWireRecovery(
           'SEGMENTATION_REQUIRED',
           'Select a candidate with an observed pixel mask.',
         );
+      if (candidate.touchesCropBoundary)
+        throw new AppError(
+          409,
+          'CROP_FRAGMENT',
+          'Recover the observed crop-edge continuation before insertion verification.',
+        );
       budget.verificationRequests++;
       emit();
       const result = await createWireVerifier(config, client)(
@@ -189,8 +203,25 @@ export function createWireRecovery(
     const deadline = Date.now() + config.WIRE_RECOVERY_TIMEOUT_MS;
     let changed = false,
       requests = 0;
-    const regions = report.cropRegions.filter(
-      (b) => !cropAttempts.some((a) => sameRegion(a.region, b)),
+    if (input.operation === 'recover_short') {
+      report.shortRegions = await shortWireRegions(
+        snapshot,
+        report,
+        input.target,
+        input.target?.manualPoint,
+      );
+      emit();
+    }
+    const targeted =
+      input.operation === 'recover_short' ? (report.shortRegions ?? []) : [];
+    const regions = (
+      input.operation === 'recover_short'
+        ? targeted.map((t) => t.crop)
+        : report.cropRegions
+    ).filter(
+      (b, i, all) =>
+        !cropAttempts.some((a) => sameRegion(a.region, b)) &&
+        all.findIndex((a) => sameRegion(a, b)) === i,
     );
     for (const crop of regions) {
       if (snapshot.candidates.length >= 100) {
@@ -219,9 +250,25 @@ export function createWireRecovery(
       budget.pixels += area;
       requests++;
       visited.push(crop);
+      const target = targeted.find((t) => sameRegion(t.crop, crop));
       const attempt: CropAttempt = {
         attemptId: randomUUID(),
         region: crop,
+        ...(target
+          ? {
+              spatialPrompt: {
+                bbox: target.bbox,
+                positivePoints: target.positivePoints,
+                negativePoints: target.negativePoints,
+              },
+            }
+          : {}),
+        mode:
+          input.operation === 'recover_short'
+            ? input.target?.manualPoint
+              ? 'human'
+              : 'short'
+            : 'tiles',
         status: 'running',
         upstreamOutcome: 'not_sent',
         startedAt: Date.now(),
@@ -246,6 +293,30 @@ export function createWireRecovery(
         signal.throwIfAborted();
         attempt.upstreamOutcome = 'unknown';
         emit();
+        const prompt = target
+          ? buildWirePrompt(
+              [
+                {
+                  id: 1,
+                  bbox: [
+                    target.bbox[0] - left,
+                    target.bbox[1] - top,
+                    target.bbox[2],
+                    target.bbox[3],
+                  ],
+                  positivePoints: target.positivePoints.map(([x, y]) => [
+                    x - left,
+                    y - top,
+                  ]),
+                  negativePoints: target.negativePoints.map(([x, y]) => [
+                    x - left,
+                    y - top,
+                  ]),
+                },
+              ],
+              image,
+            )
+          : 'wire';
         const raw = await client.post(
           'responses',
           {
@@ -256,7 +327,7 @@ export function createWireRecovery(
                 type: 'message',
                 role: 'user',
                 content: [
-                  { type: 'input_text', text: 'wire' },
+                  { type: 'input_text', text: prompt },
                   { type: 'input_image', image_url: image.dataUrl },
                 ],
               },
@@ -287,7 +358,27 @@ export function createWireRecovery(
                 .map((c) => Number(c.id.split('_').at(-1))),
             );
         const global = reprojectCrop(
-          native.map((c, i) => ({ ...c, id: `jumper_wire_${i + 1}` })),
+          native.map((c, i) => ({
+            ...c,
+            id: `jumper_wire_${i + 1}`,
+            ...(target
+              ? {
+                  recoveryPromptMatched:
+                    c.samObjectId === 1 &&
+                    supportsSpatialPrompt(
+                      c,
+                      target.positivePoints.map(([x, y]) => [
+                        x - left,
+                        y - top,
+                      ]),
+                      target.negativePoints.map(([x, y]) => [
+                        x - left,
+                        y - top,
+                      ]),
+                    ),
+                }
+              : {}),
+          })),
           crop,
           first,
         );
@@ -331,6 +422,7 @@ export function createWireRecovery(
           config.WIRE_AUDIT_MAX_DIMENSION,
           report,
         );
+        if (targeted.length) report.shortRegions = targeted;
         report.stopReason = 'round_complete';
         changed = false;
         emit();

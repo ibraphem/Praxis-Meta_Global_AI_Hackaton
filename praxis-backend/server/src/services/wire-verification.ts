@@ -62,6 +62,16 @@ export function createWireVerifier(
     signal: AbortSignal,
     trace?: AnalysisTrace,
   ): Promise<WireModelReview> => {
+    if (candidate.touchesCropBoundary)
+      return {
+        candidateId: candidate.id,
+        decision: 'fragment_only',
+        endpoints: [
+          { role: 'A', position: null, evidence: 'insufficient' },
+          { role: 'B', position: null, evidence: 'insufficient' },
+        ],
+        elapsedMs: 0,
+      };
     if (!candidate.mask)
       throw new AppError(
         400,

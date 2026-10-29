@@ -1,3 +1,4 @@
+import { cropFragment } from './wire-fragments.js';
 import { reconcileWireReviews } from './wire-review-reconciliation.js';
 import sharp from 'sharp';
 import { createHash } from 'node:crypto';
@@ -105,7 +106,12 @@ function pathOf(binary: Uint8Array, w: number, h: number) {
     path.push(second.parent[path.at(-1)!]!);
   return { path, ends, branches };
 }
-function labelsOf(rgb: Uint8Array, w: number, h: number): Uint8Array {
+function labelsOf(
+  rgb: Uint8Array,
+  w: number,
+  h: number,
+  short = false,
+): Uint8Array {
   const labels = new Uint8Array(w * h),
     values = new Float32Array(w * h);
   for (let i = 0; i < labels.length; i++) {
@@ -124,13 +130,42 @@ function labelsOf(rgb: Uint8Array, w: number, h: number): Uint8Array {
             ? (b - r) / d + 2
             : (r - g) / d + 4;
       if (hue < 0) hue += 6;
-      labels[i] = 1 + Math.floor(hue);
+      labels[i] = short && hue >= 5 ? 1 : 1 + Math.floor(hue);
     }
   }
   for (let y = 2; y < h - 2; y++)
     for (let x = 2; x < w - 2; x++) {
       const i = y * w + x;
       if (labels[i]) continue;
+      if (short) {
+        for (const radius of [1, 2, 4, 8])
+          for (const [dx, dy] of [
+            [1, 0],
+            [0, 1],
+            [1, 1],
+            [1, -1],
+          ]) {
+            const ax = x - dx! * radius,
+              ay = y - dy! * radius,
+              bx = x + dx! * radius,
+              by = y + dy! * radius;
+            if (
+              ax >= 0 &&
+              ay >= 0 &&
+              bx >= 0 &&
+              by >= 0 &&
+              ax < w &&
+              bx < w &&
+              ay < h &&
+              by < h &&
+              values[i]! < 0.5 &&
+              values[ay * w + ax]! > values[i]! + 0.1 &&
+              values[by * w + bx]! > values[i]! + 0.1
+            )
+              labels[i] = 7;
+          }
+        if (labels[i]) continue;
+      }
       const v = values[i]!,
         sides = [
           values[i - 2]!,
@@ -159,8 +194,9 @@ export function classicalTraces(
   h: number,
   image: { width: number; height: number },
   limit = 64,
+  options: { short?: boolean } = {},
 ): { candidates: RecoveryCandidate[]; truncated: boolean } {
-  const labels = labelsOf(rgb, w, h),
+  const labels = labelsOf(rgb, w, h, options.short),
     seen = new Uint8Array(labels.length),
     candidates: RecoveryCandidate[] = [];
   let roiPixels = 0,
@@ -208,7 +244,11 @@ export function classicalTraces(
     const bw = maxX - minX + 1,
       bh = maxY - minY + 1,
       span = Math.max(bw, bh);
-    if (queue.length < 6 || span < 9 || queue.length / (span * span) > 0.5)
+    if (
+      queue.length < 6 ||
+      span < (options.short ? 4 : 9) ||
+      queue.length / (span * span) > 0.5
+    )
       continue;
     if (
       candidates.length >= limit ||
@@ -226,7 +266,7 @@ export function classicalTraces(
       binary[(Math.floor(i / w) - minY + 1) * pw + ((i % w) - minX + 1)] = 1;
     const skeleton = thinBinary(binary, pw, ph),
       topology = pathOf(skeleton, pw, ph);
-    if (topology.path.length < 8) continue;
+    if (topology.path.length < (options.short ? 4 : 8)) continue;
     const points: [number, number][] = topology.path
       .filter(
         (_p, i) =>
@@ -362,7 +402,8 @@ export async function auditWireCoverage(
     .update('wire-coverage-v1:' + ref.samSnapshotHash + ':' + maxDimension)
     .digest('hex');
   for (const c of raw) {
-    const accepted = geometry.resolve(c);
+    const accepted = geometry.resolve(c),
+      fragment = cropFragment(c);
     const mask = c.encodedMask;
     let inspection = inspectWire(
       mask && decoded + mask.width * mask.height > 12000000
@@ -415,7 +456,8 @@ export async function auditWireCoverage(
           : 'sam_full',
       bbox: c.bbox,
       points: [],
-      geometryAccepted: accepted.ok,
+      ...fragment,
+      geometryAccepted: accepted.ok && !fragment.touchesCropBoundary,
       rejectionReasons: inspection.reasons,
       metrics: {
         area: inspection.area,
@@ -456,6 +498,8 @@ export async function auditWireCoverage(
       candidate.mask = inspection.preview;
       paths += candidate.mask.path.length;
     }
+    if (fragment.touchesCropBoundary)
+      candidate.rejectionReasons.push('crop_truncated');
     candidates.push(candidate);
   }
   const cv = classicalTraces(
@@ -523,6 +567,60 @@ export async function auditWireCoverage(
         hypotheses.push({
           candidateIds: [a.id, b.id],
           kind: 'possible_fragment_continuation',
+          status: 'unverified',
+        });
+    }
+  for (let i = 0; i < candidates.length; i++)
+    for (let j = i + 1; j < candidates.length && hypotheses.length < 32; j++) {
+      const a = candidates[i]!,
+        b = candidates[j]!;
+      if (!a.touchesCropBoundary && !b.touchesCropBoundary) continue;
+      if (a.source === 'cv_trace' || b.source === 'cv_trace') continue;
+      const overlap =
+        a.bbox[0] < b.bbox[0] + b.bbox[2] &&
+        b.bbox[0] < a.bbox[0] + a.bbox[2] &&
+        a.bbox[1] < b.bbox[1] + b.bbox[3] &&
+        b.bbox[1] < a.bbox[1] + a.bbox[3];
+      const sample = (c: RecoveryCandidate) => {
+        const p = c.cropExitPoints?.[0] ?? [
+          c.bbox[0] + c.bbox[2] / 2,
+          c.bbox[1] + c.bbox[3] / 2,
+        ];
+        const idx =
+          (Math.min(
+            info.height - 1,
+            Math.floor((p[1]! * info.height) / image.height),
+          ) *
+            info.width +
+            Math.min(
+              info.width - 1,
+              Math.floor((p[0]! * info.width) / image.width),
+            )) *
+          3;
+        return [data[idx]!, data[idx + 1]!, data[idx + 2]!];
+      };
+      const ca = sample(a),
+        cb = sample(b),
+        color =
+          Math.hypot(ca[0]! - cb[0]!, ca[1]! - cb[1]!, ca[2]! - cb[2]!) < 90;
+      const aligned = a.bbox[2] >= a.bbox[3] === b.bbox[2] >= b.bbox[3];
+      const near = (a.cropExitPoints ?? []).some((p) =>
+        (b.cropExitPoints ?? []).some(
+          (q) =>
+            Math.hypot(p[0] - q[0], p[1] - q[1]) <
+            Math.max(image.width, image.height) / 100,
+        ),
+      );
+      if (color && aligned && (overlap || near))
+        hypotheses.push({
+          candidateIds: [a.id, b.id],
+          kind: 'crop_fragment_association',
+          signals: [
+            ...(overlap ? ['spatial_overlap' as const] : []),
+            'similar_color',
+            'aligned_direction',
+            ...(near ? ['near_crop_exit' as const] : []),
+          ],
           status: 'unverified',
         });
     }

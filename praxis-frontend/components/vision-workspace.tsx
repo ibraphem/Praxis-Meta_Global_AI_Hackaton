@@ -36,6 +36,12 @@ export function VisionWorkspace() {
   const selectionVersion = useRef(0);
   const dragDepth = useRef(0);
   const [photograph, setPhotograph] = useState<Photograph | null>(null);
+  const [recoveryContext, setRecoveryContext] = useState<{
+    photoId: string;
+    runId: string | null;
+    pitchPx: number;
+    gridPoints: [number, number][];
+  } | null>(null);
   const [job, setJob] = useState<AnalysisJob | null>(null);
   const [usingPartial, setUsingPartial] = useState(false);
   const resultKeyRef = useRef<string | null>(null);
@@ -513,6 +519,14 @@ export function VisionWorkspace() {
                 analysisRunId={analysisRunId}
                 onSelect={setSelectedId}
                 onChoose={() => inputRef.current?.click()}
+                onRecoveryContext={(context) => {
+                  if (photograph)
+                    setRecoveryContext({
+                      ...context,
+                      photoId: photograph.id,
+                      runId: analysisRunId,
+                    });
+                }}
               />
             </div>
             {error && (
@@ -606,6 +620,12 @@ export function VisionWorkspace() {
             job={job}
             imageUrl={photograph.url}
             busy={loading}
+            recoveryContext={
+              recoveryContext?.photoId === photograph.id &&
+              recoveryContext?.runId === analysisRunId
+                ? recoveryContext
+                : undefined
+            }
             onAction={(action, payload) =>
               void runJob(action, undefined, payload)
             }

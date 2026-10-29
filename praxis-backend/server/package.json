@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
+    "experiment:endpoints": "node --env-file-if-exists=.env --import tsx scripts/experiment-endpoints.ts",
     "experiment:muse": "node --env-file-if-exists=.env --import tsx scripts/experiment-muse.ts",
     "wire:audit": "node --import tsx scripts/audit-wires.ts",
     "wire:score": "node --import tsx scripts/score-wires.ts",

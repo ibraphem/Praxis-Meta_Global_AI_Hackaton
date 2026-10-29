@@ -19,6 +19,7 @@ export async function POST(
       "retry-sam",
       "audit-wires",
       "recover-wires",
+      "recover-short-wires",
       "verify-wire",
       "wire-identities",
       "interpret-recovery",
@@ -32,6 +33,7 @@ export async function POST(
       | "retry-sam"
       | "audit-wires"
       | "recover-wires"
+      | "recover-short-wires"
       | "verify-wire"
       | "wire-identities"
       | "interpret-recovery",

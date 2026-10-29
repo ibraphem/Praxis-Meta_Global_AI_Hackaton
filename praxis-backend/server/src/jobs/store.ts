@@ -8,6 +8,7 @@ import {
   wireIdentitySchema,
   effectiveIdentityReviews,
   type CropAttempt,
+  recoveryTargetSchema,
 } from '../schemas/wire-recovery.js';
 import type { RecoveryBudget } from '../services/wire-recovery.js';
 import { ExperimentRegistry } from './experiments.js';
@@ -88,7 +89,12 @@ export interface Job {
   recovery: {
     status: AttemptStatus | 'not_started';
     attempts: Attempt[];
-    operation: 'audit' | 'recover' | 'verify';
+    operation: 'audit' | 'recover' | 'verify' | 'recover_short';
+    target?: {
+      pitchPx: number;
+      gridPoints: [number, number][];
+      manualPoint?: [number, number] | undefined;
+    };
     candidateId?: string;
     snapshotRef?: SnapshotRef;
     report?: RecoveryReport;
@@ -154,6 +160,9 @@ export class JobStore {
     );
     this.db.exec(
       "CREATE TRIGGER IF NOT EXISTS immutable_sam_snapshots BEFORE UPDATE ON sam_snapshots BEGIN SELECT RAISE(ABORT,'SAM checkpoints are immutable'); END",
+    );
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS model_requests (id TEXT PRIMARY KEY, lease_until INTEGER NOT NULL)',
     );
     this.experiments = new ExperimentRegistry(this);
     this.transaction(() => {
@@ -494,8 +503,9 @@ export class JobStore {
   }
   requestRecovery(
     id: string,
-    operation: 'audit' | 'recover' | 'verify',
+    operation: 'audit' | 'recover' | 'verify' | 'recover_short',
     candidateId?: string,
+    target?: unknown,
   ): Job {
     return this.transaction(() => {
       const job = this.get(id);
@@ -545,7 +555,7 @@ export class JobStore {
           'The cumulative Muse verification budget is exhausted.',
         );
       if (
-        operation === 'recover' &&
+        (operation === 'recover' || operation === 'recover_short') &&
         (job.recovery.budget.requests >=
           this.config.WIRE_RECOVERY_MAX_REQUESTS ||
           job.recovery.budget.rounds >= this.config.WIRE_RECOVERY_MAX_ROUNDS)
@@ -562,6 +572,30 @@ export class JobStore {
       attempt.snapshotBinding = 'recorded';
       job.recovery.status = 'queued';
       job.recovery.operation = operation;
+      delete job.recovery.target;
+      if (operation === 'recover_short') {
+        const parsed = recoveryTargetSchema.safeParse({
+          pitchPx: Math.max(
+            2,
+            Math.min(job.image.width, job.image.height) / 80,
+          ),
+          gridPoints: [],
+          ...((target as object) ?? {}),
+        });
+        if (
+          !parsed.success ||
+          [
+            ...parsed.data.gridPoints,
+            ...(parsed.data.manualPoint ? [parsed.data.manualPoint] : []),
+          ].some(([x, y]) => x >= job.image.width || y >= job.image.height)
+        )
+          throw new AppError(
+            400,
+            'INVALID_RECOVERY_TARGET',
+            'Use points inside the original photograph and a valid hole spacing.',
+          );
+        job.recovery.target = parsed.data;
+      }
       if (candidateId) job.recovery.candidateId = candidateId;
       else delete job.recovery.candidateId;
       job.recovery.attempts.push(attempt);

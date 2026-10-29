@@ -37,6 +37,8 @@ export const componentSchema = z
     detectionSource: z.enum(['sam', 'muse']).optional(),
     geometryStatus: z.enum(['segmented', 'box_only']).optional(),
     mask: maskSchema.optional(),
+    touchesCropBoundary: z.boolean().optional(),
+    cropOrigin: bboxSchema.optional(),
     guidanceEligible: z.literal(false).optional(),
     identityStatus: z.literal('unverified').optional(),
   })

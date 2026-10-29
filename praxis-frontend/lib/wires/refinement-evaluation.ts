@@ -35,7 +35,7 @@ function errorStatistics(values: (number | null)[]) {
 }
 
 /** A/B may reverse, but choose the correspondence ONCE from raw observations, before refinement. */
-function alignTruth(
+export function alignTruth(
   wire: EvaluationWire,
   resolved: [string | null, string | null],
   boards: CalibratedBoard[],

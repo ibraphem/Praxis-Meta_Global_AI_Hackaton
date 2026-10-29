@@ -826,3 +826,35 @@ For reproducible offline coverage overlays and independent wire/endpoint accepta
 scoring, see [backend benchmark instructions](../praxis-backend/README.md#offline-coverage-and-acceptance-benchmarks).
 These commands use real exported snapshot paths rather than placeholder bundle files.
 No accuracy target is claimed achieved by implementation or synthetic tests.
+
+### Short-wire and endpoint grounding experiments
+
+In **Wire coverage and recovery**, choose **Find short wires automatically** for a
+bounded native-resolution scan and spatially prompted SAM recovery. Current crop
+budgets remain in force. To target a known missing wire, enable **Mark a missing wire
+body**, click its visible body in the photograph, then **Recover marked wire (user
+assisted)**. Manual-seed gains are recorded separately from automatic recovery.
+After calibration, **Use calibration for short-wire search** shares hole centers
+as search priors; share again after recalibration. Hole spacing may also be entered
+as a search scale. Dark components, printed markings and shadows remain possible
+false candidates and require identity review.
+
+Truncated masks explicitly say **Truncated at crop boundary**. They remain fragment
+hypotheses; their clipped tips cannot become insertion proposals. Associations show
+supporting signals in diagnostics and remain separate masks with no inferred bridge.
+The original photograph boundary and crop boundary are reported separately.
+
+The existing focused crop/grid checkbox remains opt-in. **Insertion close-ups (one
+extra request; experiment)** adds one bounded localization call after focused wire
+identification, sending both endpoint regions together. **Normalized coordinate
+contract (experiment)** independently tests model output in a 0–1000 coordinate
+frame. All primary coordinates are transformed back to original pixels before the
+unchanged resolver. The review panel and exported proposal preserve coarse and revised
+coordinates, crop frames, status and coordinate contract. Failed localization leaves
+insertion unknown; it never quietly falls back to a coarse point for acceptance.
+
+For paired full/focused/close-up experiments and one-versus-two request concurrency,
+use the [controlled benchmark commands](../praxis-backend/README.md#controlled-endpoint-grounding-comparison).
+The live runner requires a real exported bundle and an existing inactive saved job;
+it makes model calls. `benchmark:grounding` is the separate offline scorer. Neither
+command modifies original evidence, calibration, review decisions or predictions.

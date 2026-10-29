@@ -1,3 +1,4 @@
+import { cropFragment } from './wire-fragments.js';
 import type { Config } from '../config.js';
 import {
   analysisSchema,
@@ -35,6 +36,12 @@ export function partialAnalysis(
       objects.push({
         ...base,
         mask: resolved.mask.geometry,
+        ...(cropFragment(c).cropOrigin
+          ? {
+              cropOrigin: cropFragment(c).cropOrigin!,
+              touchesCropBoundary: cropFragment(c).touchesCropBoundary,
+            }
+          : {}),
         geometryStatus: 'segmented',
         identityStatus: 'unverified',
       });

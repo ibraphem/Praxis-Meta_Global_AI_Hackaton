@@ -62,7 +62,7 @@ export class ExperimentRegistry {
       .prepare('DELETE FROM legacy_requests WHERE lease_until<=?')
       .run(now);
   }
-  reserve(analysisId: string): ExperimentRecord {
+  reserve(analysisId: string, snapshotId?: string): ExperimentRecord {
     this.store.recover();
     return this.store.transaction(() => {
       this.recover();
@@ -86,7 +86,25 @@ export class ExperimentRegistry {
           'EXPERIMENT_SOURCE_ACTIVE',
           'Use an inactive combined analysis with completed SAM results.',
         );
+      const requested = snapshotId
+        ? this.store
+            .snapshots(analysisId)
+            .find((r) => r.ref.samSnapshotId === snapshotId)?.ref
+        : job.sam.snapshotRef;
+      if (!requested)
+        throw new AppError(
+          409,
+          'SNAPSHOT_NOT_FOUND',
+          'Use an immutable checkpoint belonging to this analysis.',
+        );
       const busy =
+        Number(
+          this.store.db
+            .prepare(
+              'SELECT COUNT(*) AS n FROM model_requests WHERE lease_until>?',
+            )
+            .get(Date.now())!.n,
+        ) +
         Number(
           this.store.db
             .prepare('SELECT COUNT(*) AS n FROM jobs WHERE owner IS NOT NULL')
@@ -120,7 +138,7 @@ export class ExperimentRegistry {
       const record: ExperimentRecord = {
         experimentId: randomUUID(),
         analysisId,
-        snapshotRef: job.sam.snapshotRef,
+        snapshotRef: requested,
         createdAt: Date.now(),
         status: 'running',
         owner: randomUUID(),

@@ -228,6 +228,11 @@ export class WireGeometry {
   ) {}
 
   resolve(detection: Detection, prompt?: WirePrompt): Resolution {
+    if (
+      (detection as Detection & { recoveryPromptMatched?: boolean })
+        .recoveryPromptMatched === false
+    )
+      return { ok: false, reason: 'prompt_mismatch' };
     const raw = detection.encodedMask;
     if (!raw) return { ok: false, reason: 'no_mask' };
     const pixels = raw.width * raw.height;

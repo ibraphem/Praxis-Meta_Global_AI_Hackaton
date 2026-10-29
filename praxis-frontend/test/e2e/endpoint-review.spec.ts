@@ -115,6 +115,8 @@ async function setup(
   withRail = false,
   endpointReply = reply,
   focused = false,
+  closeups = false,
+  normalized = false,
 ) {
   await page.route("**/api/analyses", (route) =>
     route.fulfill({ status: 202, json: completedJob(analysis) }),
@@ -162,6 +164,18 @@ async function setup(
     await page
       .getByRole("checkbox", {
         name: "Focused crop + calibrated grid reference (experiment)",
+      })
+      .check();
+  if (closeups)
+    await page
+      .getByRole("checkbox", {
+        name: "Insertion close-ups (one extra request; experiment)",
+      })
+      .check();
+  if (normalized)
+    await page
+      .getByRole("checkbox", {
+        name: "Normalized coordinate contract (experiment)",
       })
       .check();
   await page
@@ -741,4 +755,30 @@ test("experimental refinement and ranking diagnostics never change original prop
   expect(bundle.reviews[0].proposal.endpoints[0].proposedImagePosition).toEqual(
     record.endpointReview.proposal.endpoints[0].proposedImagePosition,
   );
+});
+
+test("two-stage and normalized grounding are explicit options and retain the calibrated grid context", async ({
+  page,
+}) => {
+  let calls = 0;
+  await setup(
+    page,
+    false,
+    async (route) => {
+      calls++;
+      const raw = route.request().postDataBuffer()!.toString(),
+        context = JSON.parse(raw.match(/name="context"\r\n\r\n([^\r]+)/)![1]);
+      expect(context.view).toBe("endpoint_crops");
+      expect(context.coordinateSpace).toBe("normalized_1000");
+      expect(context.gridPoints.length).toBe(630);
+      await reply(route);
+    },
+    true,
+    true,
+    true,
+  );
+  expect(calls).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Confirm endpoint A", exact: true }),
+  ).toBeEnabled();
 });

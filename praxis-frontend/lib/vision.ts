@@ -53,6 +53,15 @@ const componentSchema = z
     detectionSource: z.enum(["sam", "muse"]).optional(),
     geometryStatus: z.enum(["segmented", "box_only"]).optional(),
     mask: maskSchema.optional(),
+    touchesCropBoundary: z.boolean().optional(),
+    cropOrigin: z
+      .tuple([
+        z.number().int().nonnegative(),
+        z.number().int().nonnegative(),
+        z.number().int().positive(),
+        z.number().int().positive(),
+      ])
+      .optional(),
     guidanceEligible: z.literal(false).optional(),
     identityStatus: z.literal("unverified").optional(),
   })

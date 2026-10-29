@@ -45,6 +45,7 @@ export const endpointSuggestionSchema = z
     role: z.enum(["A", "B"]),
     proposedImagePosition: pixelSchema.nullable(),
     sourceFramePosition: pixelSchema.nullable().optional(),
+    sourceCoordinates: pixelSchema.nullable().optional(),
     /** A visible junction is a reference only, never an insertion-hole proposal. */
     connectorJunctionPosition: pixelSchema.nullable().optional(),
     evidence: endpointEvidenceSchema,
@@ -58,7 +59,44 @@ export const endpointResponseSchema = z
     model: z.string().min(1).max(100),
     endpoints: z.tuple([endpointSuggestionSchema, endpointSuggestionSchema]),
     diagnostics: diagnosticsSchema.optional(),
-    inputVariant: z.enum(["full", "candidate_crop"]).optional(),
+    inputVariant: z
+      .enum(["full", "candidate_crop", "endpoint_crops"])
+      .optional(),
+    coordinateSpace: z.enum(["pixels", "normalized_1000"]).optional(),
+    localization: z
+      .object({
+        coarseEndpoints: z.tuple([
+          endpointSuggestionSchema,
+          endpointSuggestionSchema,
+        ]),
+        frames: z
+          .array(
+            z
+              .object({
+                role: z.enum(["A", "B"]),
+                bbox: z.tuple([
+                  z.number().int().nonnegative(),
+                  z.number().int().nonnegative(),
+                  z.number().int().positive(),
+                  z.number().int().positive(),
+                ]),
+                width: z.number().int().positive(),
+                height: z.number().int().positive(),
+              })
+              .strict(),
+          )
+          .max(2),
+        status: z.enum([
+          "completed",
+          "no_anchor",
+          "failed",
+          "timed_out",
+          "crop_fragment",
+        ]),
+        errorCode: z.string().max(64).optional(),
+      })
+      .strict()
+      .optional(),
     inputFrame: z
       .object({
         bbox: z.tuple([
@@ -150,6 +188,8 @@ export interface WireEndpointProposal {
   model: string;
   inputVariant?: EndpointResponse["inputVariant"];
   inputFrame?: EndpointResponse["inputFrame"];
+  localization?: EndpointResponse["localization"];
+  coordinateSpace?: EndpointResponse["coordinateSpace"];
   diagnostics?: z.infer<typeof diagnosticsSchema>;
   clientElapsedMs?: number;
   endpoints: [EndpointProposal, EndpointProposal];
@@ -307,6 +347,8 @@ export function createProposal(
     model: data.model,
     ...(data.inputVariant ? { inputVariant: data.inputVariant } : {}),
     ...(data.inputFrame ? { inputFrame: data.inputFrame } : {}),
+    ...(data.localization ? { localization: data.localization } : {}),
+    ...(data.coordinateSpace ? { coordinateSpace: data.coordinateSpace } : {}),
     ...(data.diagnostics ? { diagnostics: data.diagnostics } : {}),
     endpoints,
     spatialConsistency: spatialConsistency(

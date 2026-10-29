@@ -821,3 +821,110 @@ with analysis. The Next proxy exposes the same endpoint without revealing server
 credentials. No new environment variables are required. Fixture tests cover the
 provider contract, invalid output/context, HTTP transport and shared capacity;
 they make no external model calls.
+
+### Targeted short-wire recovery and crop fragments
+
+`POST /api/analyses/:id/recover-short-wires` runs a separate experiment using the
+existing cumulative request/pixel/round budgets. Optional JSON is
+`{ pitchPx, gridPoints, manualPoint?: [x,y] }`, all in original-image pixels.
+`gridPoints` has at most 1,000 calibrated centers; they guide the search and never
+prove wire identity or insertion. The UI can share current calibration as a search
+prior; share it again after recalibration. Without a calibration, bounded native
+image regions use component neighborhoods, uncovered short traces, board regions,
+and existing crop exits. At most twelve local crops of at most 512×512 pixels are
+scanned locally; only evidence-bearing regions produce SAM requests, still capped
+by the existing model budget. Short-mode color/dark-line filtering operates at
+native crop resolution and does not change the general detector's acceptance policy.
+
+Automatic regions generate box/positive/negative-point prompts, rather than another
+generic `wire` request. A clicked wire-body seed uses the same path but is recorded
+as `mode=human`, separately from `mode=short` automatic requests. Do not count
+user-assisted results as autonomous recall. Original snapshots and all crop-attempt
+outcomes remain preserved. No mask is a confirmed wire or electrical connection. If an older
+job has exhausted its recovery budget, usage is not reset. For a separately planned
+cached-SAM experiment, increase cumulative limits explicitly (for example,
+`WIRE_RECOVERY_MAX_REQUESTS=8`, `WIRE_RECOVERY_MAX_ROUNDS=4`, and
+`WIRE_RECOVERY_MAX_PIXELS=8000000`) and restart the backend. The old requests remain
+charged; no whole-scene reanalysis is required. Keep those larger limits local to the
+experiment and within the validated configuration bounds.
+
+SAM crop candidates expose `cropOrigin`, `touchesCropBoundary`, and observed
+`cropExitPoints`. Crop-edge contact is distinct from photograph-edge contact.
+Truncated masks remain reviewable fragments and cannot supply insertion proposals.
+Neighboring recovery searches can use crop exits. Fragment associations combine
+spatial overlap/proximity, sampled color similarity and approximate direction;
+they remain unverified hypotheses with their signals recorded. Masks are never
+joined through unobserved gaps or promoted into connections. Diagnose each missing
+physical wire against raw candidates, rejection reasons, budget outcomes, and main
+view selection before assuming it was never segmented.
+
+### Bounded insertion close-ups and coordinate contracts
+
+`POST /api/vision/endpoints` additionally accepts `view=endpoint_crops`. It first
+runs the existing focused wire request, then uses its visible insertion/junction
+references as approximate search anchors. At most **one additional Muse request**
+contains both endpoint regions, untouched photographs, separate mask/grid references,
+and full-scene identity context. Regions are bounded and sized using available hole
+spacing. An endpoint without an observed anchor remains unknown; a crop boundary,
+artificial grid, connector body or mask tip is not insertion evidence. No loop retries
+until a point snaps. Failed close-ups retain coarse proposals in `localization` while
+primary insertion results become unknown; parent cancellation still aborts the request.
+
+The response preserves coarse endpoints, crop rectangles, raw source coordinates,
+converted original-image positions, status and diagnostics. `coordinateSpace` may be
+`pixels` (default) or experimental `normalized_1000`; the latter explicitly requests
+coordinates in [0,1000), converts them with the actual input frame dimensions, and
+stores the original coordinates. For two-stage responses, `inputFrame` describes
+the coarse request and `localization.frames` gives each refined endpoint frame. This tests a coordinate contract independently from
+crop changes. The deterministic frontend snap policy is unchanged.
+
+`MUSE_CONCURRENCY=2` caps locally active Muse requests across interpretation,
+verification, and endpoints using shared SQLite admission leases. Admission waiting
+appears as `muse.admission`; close-up execution as `muse.insertion_closeups`.
+`JOB_WORKER_CONCURRENCY` remains independent and defaults to one. Expired/stale
+admission owners cannot publish late responses. This bounds local activity, not
+unknown upstream execution after a timeout. Team RPM/TPM and provider queuing may
+still prevent a latency improvement.
+
+### Controlled endpoint grounding comparison
+
+From `server/`, after exporting a bundle with exactly one original proposal per wire:
+
+```sh
+npm run experiment:endpoints -- ANALYSIS_ID /actual/path/bundle.json \
+  benchmark-evidence/grounding-full-focused \
+  --variants full,candidate_crop --concurrency 1 --runs 1
+```
+
+This command **makes live model calls**; it is not an offline scorer. It verifies the
+image/checkpoint binding, reserves global experiment admission, preserves all saved
+analysis/predictions, and writes progress into a new private directory. Ground truth
+is never read by the live runner. At most thirty provider requests are planned; a
+close-up variant budgets two per wire. Every provider request has automatic retries
+disabled. Frozen original proposals provide unverified role anchors solely to label
+the same A/B ends, never as insertion evidence; ground truth is not used for these
+anchors. For latency alone, run a separately named experiment with `--concurrency 2`.
+Use `--variants endpoint_crops` to isolate two-stage localization, and
+`--coordinates normalized_1000` to isolate coordinate representation. Keep the same
+model, wires and calibration. A local timeout interrupts the experiment and retains
+its reservation because upstream completion is unknown. Release explicitly using
+`npm run experiment:muse -- --release EXPERIMENT_ID` after inspecting the outcome.
+
+From `praxis-frontend/`, score without any model calls:
+
+```sh
+npm run benchmark:grounding -- /actual/path/bundle.json /actual/path/truth.json \
+  /actual/path/grounding-full-focused/report.json /new/path/grounding-score.json
+```
+
+Truth uses the existing blinded endpoint truth format. Input hashes and calibration
+must match, and original proposal/calibration revisions must be current. Original
+abstentions and missing/failed calls remain in the denominator. A/B correspondence is
+chosen from the frozen original once, not reselected to favor an experiment. Reports
+include the frozen baseline, each fresh variant/run, wrong and unresolved holes,
+complete wires, correct→wrong/unresolved regressions, paired coordinate errors,
+reference basis, request count, and batch wall time including rendering/admission.
+The five-wire interim gate is at least 8/10 correct endpoints, 4/5 complete wires,
+zero wrong holes, zero regressions, and under 75 seconds. Wire coverage (15/17) and
+identity precision are separate measurements, not inferred from endpoint success.
+No improvement is established by synthetic tests; repeat on held-out photographs.

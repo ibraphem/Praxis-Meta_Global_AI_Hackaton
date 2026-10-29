@@ -12,6 +12,7 @@ type Action =
   | "delete"
   | "audit-wires"
   | "recover-wires"
+  | "recover-short-wires"
   | "verify-wire"
   | "wire-identities"
   | "interpret-recovery";
@@ -133,9 +134,17 @@ export function createAnalysisJobProxy(
         upstreamHeaders["Content-Type"] = contentType;
       }
       phase = "backend.connect";
-      if (action === "verify-wire" || action === "wire-identities") {
+      if (
+        action === "verify-wire" ||
+        action === "wire-identities" ||
+        action === "recover-short-wires"
+      ) {
         phase = "upload";
-        body = await readBounded(request.body, 8192, signal);
+        body = await readBounded(
+          request.body,
+          action === "recover-short-wires" ? 65536 : 8192,
+          signal,
+        );
         upstreamHeaders["Content-Type"] = "application/json";
         phase = "backend.connect";
       }

@@ -10,6 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
     "test:e2e": "playwright test",
+    "benchmark:grounding": "node --import tsx scripts/score-grounding.mts",
     "benchmark:replay": "node --import tsx scripts/replay-endpoints.ts",
     "benchmark:refine": "node --import tsx scripts/evaluate-refinement.mts"
   },

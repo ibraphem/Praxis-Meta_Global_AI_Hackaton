@@ -2,6 +2,7 @@ import {
   recoveryReportSchema,
   wireIdentitySchema,
   cropAttemptSchema,
+  recoveryTargetSchema,
 } from "./wire-recovery";
 import { geometryBoxSchema } from "./geometry";
 import { z } from "zod";
@@ -111,7 +112,8 @@ export const analysisJobSchema = z
       .optional(),
     recovery: stageSchema
       .extend({
-        operation: z.enum(["audit", "recover", "verify"]),
+        operation: z.enum(["audit", "recover", "verify", "recover_short"]),
+        target: recoveryTargetSchema.optional(),
         candidateId: z.string().max(64).optional(),
         snapshotRef: snapshotRefSchema.optional(),
         report: recoveryReportSchema.optional(),
@@ -151,7 +153,8 @@ export function jobMessage(job: AnalysisJob) {
   if (job.recovery?.status === "running" || job.recovery?.status === "queued")
     return job.recovery.operation === "audit"
       ? "Auditing wire coverage. Existing results are saved."
-      : job.recovery.operation === "recover"
+      : job.recovery.operation === "recover" ||
+          job.recovery.operation === "recover_short"
         ? "Recovering wire candidates within the saved budget. Existing results are saved."
         : "Muse is verifying a selected candidate. Its response remains a proposal.";
   if (job.experiment)

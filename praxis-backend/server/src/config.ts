@@ -26,6 +26,7 @@ const environmentSchema = z.object({
   MAX_UPLOAD_BYTES: integer(8 * 1024 * 1024, 20 * 1024 * 1024),
   MAX_IMAGE_PIXELS: integer(16_000_000, 25_000_000),
   MAX_CONCURRENT_ANALYSES: integer(2, 8),
+  MUSE_CONCURRENCY: integer(2, 2),
   JOB_WORKER_CONCURRENCY: integer(1, 8),
   WIRE_AUDIT_MAX_DIMENSION: integer(1280, 2048),
   WIRE_RECOVERY_MAX_REQUESTS: z.coerce.number().int().min(0).max(12).default(4),

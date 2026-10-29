@@ -1,3 +1,4 @@
+import { admittedClient } from './model-admission.js';
 import { finishRunningCrops } from '../services/crop-attempts.js';
 import {
   createWireRecovery,
@@ -27,9 +28,9 @@ export class AnalysisWorker {
     readonly config: Config,
     readonly logger: TraceLogger,
     readonly stages?: VisionStages,
-    readonly recoveryFactory: (
+    readonly recoveryFactory?: (
       settings: Config,
-    ) => ReturnType<typeof createWireRecovery> = createWireRecovery,
+    ) => ReturnType<typeof createWireRecovery>,
   ) {}
   start() {
     this.timer = setInterval(() => this.tick(), 250);
@@ -79,7 +80,8 @@ export class AnalysisWorker {
       MUSE_MAX_DIMENSION: job.settings.maxDimension,
       MUSE_MINIMAL_PROMPT: job.settings.minimalPrompt,
     };
-    const stages = this.stages ?? createVisionStages(settings);
+    const client = admittedClient(this.store);
+    const stages = this.stages ?? createVisionStages(settings, client);
     const heartbeat = setInterval(() => {
       try {
         if (
@@ -141,7 +143,10 @@ export class AnalysisWorker {
             : Promise.resolve(snapshot)
           : stage === 'muse'
             ? stages.interpret(snapshot, controller.signal, trace)
-            : this.recoveryFactory(settings)(
+            : (
+                this.recoveryFactory?.(settings) ??
+                createWireRecovery(settings, client)
+              )(
                 {
                   snapshot,
                   ref: bound!.ref,
@@ -150,6 +155,9 @@ export class AnalysisWorker {
                   visited: job.recovery.visited,
                   cropAttempts: job.recovery.cropAttempts,
                   operation: job.recovery.operation,
+                  ...(job.recovery.target
+                    ? { target: job.recovery.target }
+                    : {}),
                   ...(job.recovery.candidateId
                     ? { candidateId: job.recovery.candidateId }
                     : {}),

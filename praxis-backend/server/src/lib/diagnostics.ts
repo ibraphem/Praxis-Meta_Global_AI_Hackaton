@@ -15,6 +15,8 @@ export const stages = [
   'muse.interpret',
   'muse.detect',
   'muse.endpoints',
+  'muse.insertion_closeups',
+  'muse.admission',
   'response.validate',
 ] as const;
 export type Stage = (typeof stages)[number];

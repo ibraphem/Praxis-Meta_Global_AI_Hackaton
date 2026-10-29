@@ -15,6 +15,8 @@ const stageSchema = z.enum([
   "muse.interpret",
   "muse.detect",
   "muse.endpoints",
+  "muse.insertion_closeups",
+  "muse.admission",
   "response.validate",
   "proxy.upload",
   "backend.wait",

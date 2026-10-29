@@ -9,6 +9,7 @@ import {
 export type RecoveryAction =
   | "audit-wires"
   | "recover-wires"
+  | "recover-short-wires"
   | "verify-wire"
   | "wire-identities"
   | "interpret-recovery";
@@ -17,15 +18,20 @@ export function WireRecoveryPanel({
   imageUrl,
   busy,
   onAction,
+  recoveryContext,
 }: {
   job: AnalysisJob;
   imageUrl: string;
   busy: boolean;
+  recoveryContext?: { pitchPx: number; gridPoints: [number, number][] };
   onAction: (action: RecoveryAction, payload?: unknown) => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]),
     [note, setNote] = useState(""),
-    [uncovered, setUncovered] = useState(true);
+    [uncovered, setUncovered] = useState(true),
+    [markPoint, setMarkPoint] = useState(false),
+    [seed, setSeed] = useState<[number, number] | null>(null),
+    [pitch, setPitch] = useState("");
   const report = job.recovery?.report,
     disabled = busy || jobIsActive(job) || !!job.experiment,
     current = report
@@ -85,6 +91,22 @@ export function WireRecoveryPanel({
         >
           Recover prioritized regions
         </button>
+        <button
+          className="button button-secondary"
+          disabled={disabled || !report}
+          onClick={() =>
+            onAction("recover-short-wires", {
+              pitchPx: Number(
+                pitch ||
+                  recoveryContext?.pitchPx ||
+                  Math.max(2, Math.min(job.image.width, job.image.height) / 80),
+              ),
+              gridPoints: recoveryContext?.gridPoints ?? [],
+            })
+          }
+        >
+          Find short wires automatically
+        </button>
         {job.recovery?.snapshotRef && (
           <button
             className="button button-secondary"
@@ -97,6 +119,55 @@ export function WireRecoveryPanel({
           >
             Interpret recovered candidates
           </button>
+        )}
+      </div>
+      <div>
+        {recoveryContext && (
+          <p>
+            Using {recoveryContext.gridPoints.length} calibrated hole references
+            as search priors. Share again after recalibration.
+          </p>
+        )}
+        <label>
+          Hole spacing in original pixels (search scale only){" "}
+          <input
+            type="number"
+            min="2"
+            max="200"
+            value={pitch}
+            onChange={(e) => setPitch(e.target.value)}
+          />
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={markPoint}
+            onChange={(e) => setMarkPoint(e.target.checked)}
+          />{" "}
+          Mark a missing wire body on the photograph
+        </label>
+        <button
+          className="button button-secondary"
+          disabled={disabled || !seed || !report}
+          onClick={() =>
+            onAction("recover-short-wires", {
+              pitchPx: Number(
+                pitch ||
+                  recoveryContext?.pitchPx ||
+                  Math.max(2, Math.min(job.image.width, job.image.height) / 80),
+              ),
+              gridPoints: recoveryContext?.gridPoints ?? [],
+              manualPoint: seed,
+            })
+          }
+        >
+          Recover marked wire (user assisted)
+        </button>
+        {seed && (
+          <p>
+            Reviewer seed: {seed.join(", ")}. This locates a visual hypothesis
+            and does not verify identity or contact.
+          </p>
         )}
       </div>
       {job.recovery && (
@@ -182,6 +253,23 @@ export function WireRecoveryPanel({
           </label>
           <svg
             className="wire-recovery-preview"
+            onClick={(event) => {
+              if (!markPoint || disabled) return;
+              const svg = event.currentTarget,
+                m = svg.getScreenCTM();
+              if (!m) return;
+              const p = svg.createSVGPoint();
+              p.x = event.clientX;
+              p.y = event.clientY;
+              const q = p.matrixTransform(m.inverse());
+              if (
+                q.x >= 0 &&
+                q.y >= 0 &&
+                q.x < report.image.width &&
+                q.y < report.image.height
+              )
+                setSeed([Math.floor(q.x), Math.floor(q.y)]);
+            }}
             viewBox={`0 0 ${report.image.width} ${report.image.height}`}
             role="img"
             aria-label="Original photograph with selected observed wire evidence"
@@ -191,6 +279,16 @@ export function WireRecoveryPanel({
               width={report.image.width}
               height={report.image.height}
             />
+            {seed && (
+              <circle
+                cx={seed[0]}
+                cy={seed[1]}
+                r={Math.max(5, report.image.width / 200)}
+                fill="none"
+                stroke="#e040fb"
+                strokeWidth="3"
+              />
+            )}
             {report.candidates
               .filter(
                 (c) =>
@@ -266,6 +364,12 @@ export function WireRecoveryPanel({
                     · Verified-covered {Math.round(c.verifiedCoverage * 100)}%
                   </span>
                 )}
+                {c.touchesCropBoundary && (
+                  <span>
+                    {" "}
+                    · Truncated at crop boundary; recover continuation
+                  </span>
+                )}
                 {c.touchesImageBoundary && (
                   <span> · Touches photograph boundary</span>
                 )}
@@ -290,7 +394,10 @@ export function WireRecoveryPanel({
             <button
               className="button button-secondary"
               disabled={
-                disabled || selected.length !== 1 || !selectedCandidate?.mask
+                disabled ||
+                selected.length !== 1 ||
+                !selectedCandidate?.mask ||
+                selectedCandidate.touchesCropBoundary
               }
               onClick={() =>
                 onAction("verify-wire", { candidateId: selected[0] })
@@ -361,6 +468,26 @@ export function WireRecoveryPanel({
                 ))}
               </ul>
             </div>
+          )}
+          {!!report.hypotheses.length && (
+            <details>
+              <summary>Unverified fragment associations</summary>
+              <ul>
+                {report.hypotheses.map((h, i) => (
+                  <li key={i}>
+                    {h.candidateIds.join(" + ")} · {h.kind.replaceAll("_", " ")}{" "}
+                    · unverified; no bridge or connection established
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {!!report.shortRegions?.length && (
+            <p>
+              {report.shortRegions.length} native-resolution spatial prompt
+              hypotheses. Selected regions and source are preserved in crop
+              diagnostics; dark traces may be shadows or components.
+            </p>
           )}
           <details>
             <summary>Coverage diagnostics and source provenance</summary>

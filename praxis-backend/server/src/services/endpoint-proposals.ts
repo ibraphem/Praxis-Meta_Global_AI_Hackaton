@@ -1,4 +1,8 @@
 import {
+  localizeInsertions,
+  type EndpointResult,
+} from './endpoint-localization.js';
+import {
   extractFrame,
   focusBox,
   frameToOriginal,
@@ -25,9 +29,26 @@ const groundingWireSchema = z
       z.number().int().positive(),
     ]),
     mask: maskSchema,
+    touchesCropBoundary: z.boolean().optional(),
+    cropOrigin: z
+      .tuple([
+        z.number().int().nonnegative(),
+        z.number().int().nonnegative(),
+        z.number().int().positive(),
+        z.number().int().positive(),
+      ])
+      .optional(),
   })
   .strict();
 
+function pointSchemaForAnchor() {
+  return z
+    .tuple([
+      z.number().finite().nonnegative(),
+      z.number().finite().nonnegative(),
+    ])
+    .nullable();
+}
 const contextSchema = z
   .object({
     analysisId: z.string().min(1).max(100),
@@ -39,7 +60,8 @@ const contextSchema = z
       })
       .strict(),
     wire: groundingWireSchema,
-    view: z.enum(['full', 'candidate_crop']).default('full'),
+    view: z.enum(['full', 'candidate_crop', 'endpoint_crops']).default('full'),
+    coordinateSpace: z.enum(['pixels', 'normalized_1000']).default('pixels'),
     gridPoints: z
       .array(
         z.tuple([
@@ -48,6 +70,9 @@ const contextSchema = z
         ]),
       )
       .max(1000)
+      .optional(),
+    roleAnchors: z
+      .tuple([pointSchemaForAnchor(), pointSchemaForAnchor()])
       .optional(),
     otherWires: z.array(groundingWireSchema).max(99).default([]),
   })
@@ -91,12 +116,12 @@ export function createEndpointProposalService(
   config: Config,
   client: MetaClient = createMetaClient(config),
 ) {
-  return async (
+  const run = async (
     bytes: Buffer,
     signal: AbortSignal,
     trace?: AnalysisTrace,
     context?: unknown,
-  ) => {
+  ): Promise<EndpointResult> => {
     const parsed = contextSchema.safeParse(context);
     if (!parsed.success)
       throw new AppError(
@@ -105,6 +130,26 @@ export function createEndpointProposalService(
         'Select a segmented wire from the current analysis.',
       );
     const input = parsed.data;
+    if (input.view === 'endpoint_crops') {
+      const coarse = await run(bytes, signal, trace, {
+        ...input,
+        view: 'candidate_crop',
+      });
+      if (coarse.localization?.status === 'crop_fragment') return coarse;
+      const original = await prepareImage(bytes, config);
+      return localizeInsertions(
+        config,
+        client,
+        original,
+        input.wire,
+        input.gridPoints ?? [],
+        coarse,
+        signal,
+        trace,
+        input.coordinateSpace,
+      );
+    }
+
     const finishPrepare = trace?.begin('image.prepare');
     let image: PreparedImage;
     try {
@@ -132,6 +177,34 @@ export function createEndpointProposalService(
       );
     signal.throwIfAborted();
     const finishGrounding = trace?.begin('wire.grounding');
+    if (input.wire.touchesCropBoundary) {
+      const endpoints: EndpointResult['endpoints'] = [
+        {
+          role: 'A',
+          proposedImagePosition: null,
+          connectorJunctionPosition: null,
+          evidence: 'insufficient',
+        },
+        {
+          role: 'B',
+          proposedImagePosition: null,
+          connectorJunctionPosition: null,
+          evidence: 'insufficient',
+        },
+      ];
+      return {
+        analysisId: input.analysisId,
+        imageId: input.imageId,
+        wireCandidateId: input.wire.id,
+        model: config.META_REASONING_MODEL,
+        endpoints,
+        localization: {
+          status: 'crop_fragment',
+          coarseEndpoints: endpoints,
+          frames: [],
+        },
+      };
+    }
     let grounded;
     try {
       grounded = await renderWireGrounding(image, input.wire, input.otherWires);
@@ -171,6 +244,25 @@ export function createEndpointProposalService(
       ).image;
       image = frame.image;
     }
+    const roleReferences = input.roleAnchors?.map((p) => {
+      if (!p) return null;
+      const local: [number, number] = frame
+        ? [
+            ((p[0] - frame.bbox[0]) * image.width) / frame.bbox[2],
+            ((p[1] - frame.bbox[1]) * image.height) / frame.bbox[3],
+          ]
+        : p;
+      if (
+        local[0] < 0 ||
+        local[1] < 0 ||
+        local[0] >= image.width ||
+        local[1] >= image.height
+      )
+        return null;
+      return input.coordinateSpace === 'normalized_1000'
+        ? [(local[0] * 1000) / image.width, (local[1] * 1000) / image.height]
+        : local;
+    });
     const raw = await client.post(
       'chat/completions',
       {
@@ -186,7 +278,7 @@ export function createEndpointProposalService(
             content: [
               {
                 type: 'text',
-                text: `Both images are ${image.width}x${image.height} pixels, aligned with each other. Use ${frame ? 'local-crop' : 'original-image'} [x,y] pixels, top-left origin, x<${image.width}, y<${image.height}; never normalized coordinates. Selected candidate: ${input.wire.id}; bbox [x,y,width,height]=${JSON.stringify(frame ? [((input.wire.bbox[0] - frame.bbox[0]) * image.width) / frame.bbox[2], ((input.wire.bbox[1] - frame.bbox[1]) * image.height) / frame.bbox[3], (input.wire.bbox[2] * image.width) / frame.bbox[2], (input.wire.bbox[3] * image.height) / frame.bbox[3]] : input.wire.bbox)}. Use the annotated cyan mask to identify the selected wire; other wire regions are dimmed. Confirm all visual observations against the ORIGINAL photograph. Return endpoints A then B. proposedImagePosition is ONLY the actual visible insertion point at the breadboard surface. Use evidence=visible_insertion and a position only when that physical insertion point is clearly established. connectorJunctionPosition is a separate visible wire-to-connector junction, or null. If a connector body hides the insertion, evidence=occluded_insertion and proposedImagePosition=null, even when its junction is visible. Use visible_connector_junction when only a junction is established without a reliable insertion; proposedImagePosition must be null. If neither is reliable use insufficient and null insertion. Do not substitute a connector top, mask tip, nearby hole or estimated hidden pin. A null insertion is the required unknown result, not a failure. Image 1: original photograph.`,
+                text: `Both images are ${image.width}x${image.height} pixels, aligned with each other. Use ${input.coordinateSpace === 'pixels' ? `${frame ? 'local-crop' : 'original-image'} [x,y] pixels, top-left origin, x<${image.width}, y<${image.height}; never normalized coordinates` : 'normalized [x,y] coordinates in a 0–1000 grid, x<1000 and y<1000; never original-image pixels'}. ${input.roleAnchors ? `Unverified prior role anchors A/B in the SAME INPUT coordinate frame as your response: ${JSON.stringify(roleReferences)}. Use them only to label the same physical ends; they may be wrong and are not insertion evidence. Never copy an anchor in place of visual localization. ` : ''}Selected candidate: ${input.wire.id}; bbox in input-image pixels [x,y,width,height]=${JSON.stringify(frame ? [((input.wire.bbox[0] - frame.bbox[0]) * image.width) / frame.bbox[2], ((input.wire.bbox[1] - frame.bbox[1]) * image.height) / frame.bbox[3], (input.wire.bbox[2] * image.width) / frame.bbox[2], (input.wire.bbox[3] * image.height) / frame.bbox[3]] : input.wire.bbox)}. Use the annotated cyan mask to identify the selected wire; other wire regions are dimmed. Confirm all visual observations against the ORIGINAL photograph. Return endpoints A then B. proposedImagePosition is ONLY the actual visible insertion point at the breadboard surface. Use evidence=visible_insertion and a position only when that physical insertion point is clearly established. connectorJunctionPosition is a separate visible wire-to-connector junction, or null. If a connector body hides the insertion, evidence=occluded_insertion and proposedImagePosition=null, even when its junction is visible. Use visible_connector_junction when only a junction is established without a reliable insertion; proposedImagePosition must be null. If neither is reliable use insufficient and null insertion. Do not substitute a connector top, mask tip, nearby hole or estimated hidden pin. A null insertion is the required unknown result, not a failure. Image 1: original photograph.`,
               },
               { type: 'image_url', image_url: { url: image.dataUrl } },
               {
@@ -255,6 +347,25 @@ export function createEndpointProposalService(
     }
     if (output.endpoints[0].role !== 'A' || output.endpoints[1].role !== 'B')
       throw invalidProviderOutput();
+    const sourceCoordinates = output.endpoints.map((e) =>
+      e.proposedImagePosition ? structuredClone(e.proposedImagePosition) : null,
+    );
+    if (input.coordinateSpace === 'normalized_1000')
+      for (const endpoint of output.endpoints) {
+        for (const key of [
+          'proposedImagePosition',
+          'connectorJunctionPosition',
+        ] as const) {
+          const p = endpoint[key];
+          if (p) {
+            if (p[0] >= 1000 || p[1] >= 1000) throw invalidProviderOutput();
+            endpoint[key] = [
+              (p[0] * image.width) / 1000,
+              (p[1] * image.height) / 1000,
+            ];
+          }
+        }
+      }
     for (const endpoint of output.endpoints) {
       const position = endpoint.proposedImagePosition;
       const junction = endpoint.connectorJunctionPosition;
@@ -295,12 +406,23 @@ export function createEndpointProposalService(
       imageId: input.imageId,
       wireCandidateId: input.wire.id,
       model: config.META_REASONING_MODEL,
+      ...(input.coordinateSpace === 'normalized_1000'
+        ? { coordinateSpace: input.coordinateSpace }
+        : {}),
       endpoints: frame
-        ? output.endpoints.map((endpoint, i) => ({
+        ? (output.endpoints.map((endpoint, i) => ({
             ...endpoint,
-            sourceFramePosition: localPositions[i],
-          }))
-        : output.endpoints,
+            sourceFramePosition: localPositions[i]!,
+            ...(input.coordinateSpace === 'normalized_1000'
+              ? { sourceCoordinates: sourceCoordinates[i]! }
+              : {}),
+          })) as EndpointResult['endpoints'])
+        : input.coordinateSpace === 'normalized_1000'
+          ? (output.endpoints.map((e, i) => ({
+              ...e,
+              sourceCoordinates: sourceCoordinates[i]!,
+            })) as EndpointResult['endpoints'])
+          : output.endpoints,
       ...(frame
         ? {
             inputVariant: 'candidate_crop' as const,
@@ -313,4 +435,5 @@ export function createEndpointProposalService(
         : {}),
     };
   };
+  return run;
 }

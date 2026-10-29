@@ -458,3 +458,73 @@ test("reconciled reviews disclose provenance and pending re-review without promo
   await expect(panel.getByText(/0 human-verified groups/)).toBeVisible();
   await expect(panel.getByText(/Needs re-review: jumper_wire_9/)).toBeVisible();
 });
+
+test("targeted recovery separates automatic scans from an original-image reviewer seed", async ({
+  page,
+}) => {
+  const job = partial(),
+    id = job.analysisId;
+  job.recovery = {
+    status: "succeeded",
+    attempts: [],
+    operation: "audit",
+    budget: { requests: 0, pixels: 0, verificationRequests: 0, rounds: 0 },
+    visited: [],
+    cropAttempts: [],
+    report: recoveryReport(job.sam.attempts[0]!.attemptId),
+  };
+  const bodies: Record<string, unknown>[] = [];
+  await page.route(`**/api/analyses/${id}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${id}/image`, (route) =>
+    route.fulfill({ contentType: "image/png", body: readFileSync(photograph) }),
+  );
+  await page.route(`**/api/analyses/${id}/recover-short-wires`, (route) => {
+    const body = route.request().postDataJSON();
+    bodies.push(body);
+    job.recovery!.operation = "recover_short";
+    job.recovery!.target = body;
+    job.recovery!.budget.requests++;
+    job.recovery!.budget.rounds++;
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto(`/?analysis=${id}`);
+  const panel = page.getByRole("region", {
+    name: "Wire coverage and identity review",
+  });
+  await panel
+    .getByRole("button", { name: "Find short wires automatically" })
+    .click();
+  expect(bodies[0].manualPoint).toBeUndefined();
+  await panel
+    .getByRole("checkbox", {
+      name: "Mark a missing wire body on the photograph",
+    })
+    .check();
+  const svg = panel.getByRole("img", {
+    name: "Original photograph with selected observed wire evidence",
+  });
+  await svg.scrollIntoViewIfNeeded();
+  const screen = await svg.evaluate((element) => {
+    const svg = element as SVGSVGElement,
+      p = svg.createSVGPoint();
+    p.x = 713;
+    p.y = 504;
+    const q = p.matrixTransform(svg.getScreenCTM()!);
+    return { x: q.x, y: q.y, scale: svg.getScreenCTM()!.a };
+  });
+  await page.mouse.click(screen.x, screen.y);
+  await panel
+    .getByRole("button", { name: "Recover marked wire (user assisted)" })
+    .click();
+  const point = bodies[1].manualPoint as number[];
+  // Browser mouse coordinates may round by one CSS pixel; source pixels use the displayed SVG scale.
+  expect(Math.abs(point[0] - 713)).toBeLessThanOrEqual(
+    Math.ceil(1 / screen.scale),
+  );
+  expect(Math.abs(point[1] - 504)).toBeLessThanOrEqual(
+    Math.ceil(1 / screen.scale),
+  );
+  expect(job.recovery.budget.requests).toBe(2);
+});
