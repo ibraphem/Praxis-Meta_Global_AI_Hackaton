@@ -10,11 +10,14 @@ export interface EvaluationWire {
   boardId: string;
   holes: [string, string];
   proposals: [Point | null, Point | null];
+  /** Optional independently marked pixel centers, in the same order as holes. */
+  groundTruthPositions?: [Point, Point];
 }
 /** Match A/B in either order; an unmatched endpoint never makes a complete wire. */
 export function scoreHolePairs(
   truth: [string, string],
   resolved: [string | null, string | null],
+  orderedRoles = false,
 ) {
   const match = (order: [string, string]) =>
     resolved.reduce(
@@ -22,7 +25,9 @@ export function scoreHolePairs(
         sum + Number(hole !== null && hole === order[index]),
       0,
     );
-  const correct = Math.max(match(truth), match([truth[1], truth[0]]));
+  const correct = orderedRoles
+    ? match(truth)
+    : Math.max(match(truth), match([truth[1], truth[0]]));
   const accepted = resolved.filter((hole) => hole !== null).length;
   return {
     correct,
@@ -35,6 +40,7 @@ export function scoreHolePairs(
 export function replayEvaluation(
   wires: EvaluationWire[],
   boards: { calibration: Calibration; rails: Rail[] }[],
+  options: { orderedRoles?: boolean } = {},
 ) {
   const results = wires.map((wire) => {
     if (
@@ -65,6 +71,7 @@ export function replayEvaluation(
       ...scoreHolePairs(
         wire.holes.map((hole) => `${wire.boardId}:${hole}`) as [string, string],
         resolved,
+        options.orderedRoles,
       ),
     };
   });

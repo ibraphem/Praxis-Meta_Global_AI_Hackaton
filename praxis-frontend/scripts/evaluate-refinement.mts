@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { z } from "zod";
@@ -14,6 +15,7 @@ import type { CalibratedBoard } from "../lib/wires/assignments";
 import { compareRefinement } from "../lib/wires/refinement-evaluation";
 import { refineWireTip, REFINEMENT_POLICY } from "../lib/wires/refinement";
 import { type EvaluationWire } from "../lib/wires/evaluation";
+import { refinementTerminalSummary } from "../lib/wires/refinement-report";
 
 // Reuse the project's installed image decoder; no inference/network dependency.
 const sharp = createRequire(
@@ -22,11 +24,35 @@ const sharp = createRequire(
   "sharp",
 ) as typeof import("../../praxis-backend/server/node_modules/sharp").default;
 const args = process.argv.slice(2);
-if (args.length !== 3)
+const positional: string[] = [];
+let allEndpoints = false,
+  outputPath: string | undefined;
+for (let i = 0; i < args.length; i++) {
+  const arg = args[i];
+  if (arg === "--all-endpoints" && !allEndpoints) allEndpoints = true;
+  else if (
+    arg === "--output" &&
+    !outputPath &&
+    args[i + 1] &&
+    !args[i + 1].startsWith("--")
+  )
+    outputPath = args[++i];
+  else if (arg.startsWith("--"))
+    throw new Error(`Unknown, duplicate or incomplete option: ${arg}`);
+  else positional.push(arg);
+}
+if (positional.length !== 3)
   throw new Error(
-    "Usage: npm run benchmark:refine -- bundle.json truth.json original-photo.png. Original SAM masks are required; the frozen baseline report alone is insufficient.",
+    "Usage: npm run benchmark:refine -- bundle.json truth.json original-photo.png [--all-endpoints] [--output new-report.json]. Original SAM masks are required; the frozen baseline report alone is insufficient.",
   );
-const [bundlePath, truthPath, imagePath] = args;
+const [bundlePath, truthPath, imagePath] = positional;
+if (
+  outputPath &&
+  positional.some((path) => resolve(path) === resolve(outputPath!))
+)
+  throw new Error("The report path must not replace an input file.");
+const truthBytes = readFileSync(truthPath),
+  bundleBytes = readFileSync(bundlePath);
 const point = z.object({ x: z.number().finite(), y: z.number().finite() });
 const truth = z
   .object({
@@ -39,12 +65,13 @@ const truth = z
           id: z.string(),
           boardId: z.string(),
           holes: z.tuple([z.string(), z.string()]),
+          positions: z.tuple([point, point]).optional(),
         }),
       )
       .min(1),
   })
-  .parse(JSON.parse(readFileSync(truthPath, "utf8")));
-const bundle = JSON.parse(readFileSync(bundlePath, "utf8"));
+  .parse(JSON.parse(truthBytes.toString("utf8")));
+const bundle = JSON.parse(bundleBytes.toString("utf8"));
 if (
   bundle.schemaVersion !== "praxis-evaluation-v1" ||
   bundle.analysisRunId !== truth.analysisRunId
@@ -121,6 +148,18 @@ for (const wire of truth.wires) {
     throw new Error(
       "Truth must identify two distinct existing physical holes on a known board.",
     );
+  if (
+    wire.positions?.some(
+      (position) =>
+        position.x < 0 ||
+        position.y < 0 ||
+        position.x >= analysis.image.width ||
+        position.y >= analysis.image.height,
+    )
+  )
+    throw new Error(
+      "Independently marked centers must use original-image pixels inside the photograph.",
+    );
 }
 const pixels = await sharp(bytes)
   .rotate()
@@ -186,17 +225,29 @@ const wires: EvaluationWire[] = truth.wires.map((truthWire) => {
     Object.keys(review.proposal.calibrationRevisions).length !== boards.length
   )
     throw new Error("Calibration revision differs from the proposal snapshot.");
+  const proposals = review.proposal.endpoints.map((endpoint) =>
+    endpoint.evidence === "visible_insertion" && endpoint.proposedImagePosition
+      ? {
+          x: endpoint.proposedImagePosition[0],
+          y: endpoint.proposedImagePosition[1],
+        }
+      : null,
+  ) as EvaluationWire["proposals"];
+  if (
+    proposals.some(
+      (position) =>
+        position &&
+        (position.x < 0 ||
+          position.y < 0 ||
+          position.x >= analysis.image.width ||
+          position.y >= analysis.image.height),
+    )
+  )
+    throw new Error("Original Muse coordinates are outside the photograph.");
   return {
     ...truthWire,
-    proposals: review.proposal.endpoints.map((endpoint) =>
-      endpoint.evidence === "visible_insertion" &&
-      endpoint.proposedImagePosition
-        ? {
-            x: endpoint.proposedImagePosition[0],
-            y: endpoint.proposedImagePosition[1],
-          }
-        : null,
-    ) as EvaluationWire["proposals"],
+    proposals,
+    groundTruthPositions: truthWire.positions,
   };
 });
 const comparison = await compareRefinement(
@@ -245,23 +296,45 @@ const comparison = await compareRefinement(
       searchRadius: r,
     });
   },
+  { allEndpoints },
 );
-console.log(
-  JSON.stringify(
-    {
-      inputHashes: {
-        photo: sha(bytes),
-        bundle: sha(readFileSync(bundlePath)),
-        truth: sha(readFileSync(truthPath)),
-      },
-      analysisRunId: truth.analysisRunId,
-      policy: REFINEMENT_POLICY,
-      resolverPolicy: HOLE_RESOLVER_POLICY,
-      archivedResolverPolicy:
-        bundle.resolverPolicy ?? "not_archived_current_policy_assumed",
-      ...comparison,
-    },
-    null,
-    2,
-  ),
-);
+const report = {
+  reportVersion: "praxis-refinement-comparison-v2",
+  runtime: { node: process.version, sharp: sharp.versions.sharp },
+  implementationHashes: {
+    refinement: sha(
+      readFileSync(new URL("../lib/wires/refinement.ts", import.meta.url)),
+    ),
+    resolver: sha(
+      readFileSync(
+        new URL("../lib/breadboard/calibration.ts", import.meta.url),
+      ),
+    ),
+    evaluator: sha(
+      readFileSync(
+        new URL("../lib/wires/refinement-evaluation.ts", import.meta.url),
+      ),
+    ),
+  },
+  inputHashes: {
+    photo: sha(bytes),
+    bundle: sha(bundleBytes),
+    truth: sha(truthBytes),
+  },
+  analysisRunId: truth.analysisRunId,
+  policy: REFINEMENT_POLICY,
+  resolverPolicy: HOLE_RESOLVER_POLICY,
+  archivedResolverPolicy:
+    bundle.resolverPolicy ?? "not_archived_current_policy_assumed",
+  ...comparison,
+};
+const json = JSON.stringify(report, null, 2) + "\n";
+const summary = refinementTerminalSummary(comparison);
+if (outputPath) {
+  // Exclusive creation also rejects existing files, hardlinks and symlinks to input files.
+  writeFileSync(outputPath, json, { flag: "wx" });
+  console.log(summary + `\nJSON report: ${resolve(outputPath)}`);
+} else {
+  console.log(json);
+  console.error(summary);
+}

@@ -625,6 +625,87 @@ The output records input hashes and experiment policy. Node uses the backend's S
 decoder while the browser uses canvas; small rasterization/color differences are
 possible, so archive the implementation/environment for comparisons.
 
+### Controlled refinement of every endpoint
+
+To evaluate regressions in already-resolved predictions as well as unresolved
+ones, use the same offline runner with `--all-endpoints`:
+
+```sh
+npm run benchmark:refine -- \
+  bundle.json \
+  truth.json \
+  jumper_wires_breadboard.png \
+  --all-endpoints
+```
+
+This attempts the unchanged color-tip algorithm at **every original visible-insertion
+coordinate**, including strict matches. It reconstructs the selected SAM masks
+from the bundle and applies the same calibration and snap policy to both results.
+It does not read corrected/reviewed positions as predictions or write to the inputs.
+Null or non-visible-insertion proposals remain explicit skips and unresolved
+endpoints in the denominator. The number of wires/endpoints is taken from the
+recorded truth, rather than assuming five wires or a particular baseline score.
+
+Unlike the default unresolved-only mode, a rejected refinement in this experiment
+is reported as unresolved **without falling back to an originally correct point**.
+This deliberately exposes correct-to-unresolved regressions. Rejected experiments
+retain their algorithm result/reason, and every endpoint's original/refined pixels,
+resolved hole, correctness, coordinate error and transition appear in the report.
+The original bundle, original predictions and frozen baseline remain unchanged.
+
+The JSON and terminal table include correct endpoints, wrong-hole assignments,
+unresolved endpoints, complete wires, correct→wrong, correct→unresolved, and
+unresolved→correct transitions. A/B truth correspondence may reverse, but it is
+chosen once from the raw observations and held fixed during comparison, so the
+refined results cannot be relabelled to conceal regressions.
+
+For independently measured localization error, optionally include raw original-image
+hole-center positions in each truth entry, **in the same order as `holes`**:
+
+```json
+{
+  "id": "jumper_wire_1",
+  "boardId": "board_1",
+  "holes": ["b12", "e14"],
+  "positions": [
+    { "x": 428, "y": 612 },
+    { "x": 886, "y": 538 }
+  ]
+}
+```
+
+These coordinates are illustrative, not measured truth. Record the actual centers
+independently before inference. Without `positions`, error is measured against the
+calibration-projected centers of the labelled truth holes and is explicitly marked
+**calibration-projected**, not independently measured physical localization error.
+Reference basis is retained per endpoint, with totals for each basis.
+Reports include error count, mean, RMS, median, P95 and maximum, plus paired-point
+error improvement/worsening counts. Raw and refined means may cover different
+populations if refinement rejects points; paired means expose the comparable subset.
+
+The dataset acceptance check requires all-endpoint mode, zero refined wrong-hole
+assignments, no originally correct endpoint becoming wrong/unresolved, and either
+more correct strict resolutions or lower mean paired localization error. Error-only
+acceptance requires every raw-coordinate observation to have a comparable refined
+coordinate, preventing removal of hard points from manufacturing an improvement.
+The reported `1e-6` pixel epsilon only filters floating-point noise; it is not a
+claim of statistically or physically significant improvement. Passing this one
+dataset makes the experiment eligible for held-out validation, never automatic
+global enablement. A failed check recommends keeping refinement opt-in.
+
+By default, JSON is written to stdout and the human summary to stderr. To save a
+JSON artifact while showing the terminal summary, use a new output filename:
+
+```sh
+npm run benchmark:refine -- bundle.json truth.json jumper_wires_breadboard.png \
+  --all-endpoints --output refinement-all-report.json
+```
+
+Existing files are never overwritten. The report records input hashes, source
+hashes, mode, runtime/decoder versions and both policies. All processing stays
+offline; this adds no Muse/SAM request, browser workflow change or global refinement
+activation. Without `--all-endpoints`, the existing unresolved-only behavior remains.
+
 Keep separate evaluation bundles for held-out photographs and repeat inference
 runs. Never rewrite the frozen fixture, tune to pass its ten points, infer improved
 precision from synthetic tests, or count a correct abstention as an exact hole.

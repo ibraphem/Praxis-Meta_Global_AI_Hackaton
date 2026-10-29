@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { calibrateBoard } from "../lib/breadboard/calibration";
 const sharp = createRequire(
   new URL("../../praxis-backend/server/package.json", import.meta.url),
@@ -95,7 +95,15 @@ test("offline refinement runner reads archived masks, keeps original evidence fr
       analysisRunId: "run",
       recordedBeforeInference: true,
       wires: [
-        { id: "jumper_wire_1", boardId: "board_1", holes: ["b12", "e12"] },
+        {
+          id: "jumper_wire_1",
+          boardId: "board_1",
+          holes: ["b12", "e12"],
+          positions: [
+            { x: 30, y: 64 },
+            { x: 60, y: 64 },
+          ],
+        },
       ],
     };
     const bundlePath = join(directory, "bundle.json"),
@@ -104,9 +112,11 @@ test("offline refinement runner reads archived masks, keeps original evidence fr
     writeFileSync(bundlePath, JSON.stringify(bundle));
     writeFileSync(truthPath, JSON.stringify(truth));
     writeFileSync(imagePath, image);
-    const before = readFileSync(bundlePath, "utf8");
-    const result = JSON.parse(
-      execFileSync(
+    const before = readFileSync(bundlePath, "utf8"),
+      truthBefore = readFileSync(truthPath, "utf8"),
+      imageBefore = readFileSync(imagePath);
+    const run = (extra: string[] = []) =>
+      spawnSync(
         process.execPath,
         [
           "--import",
@@ -115,16 +125,55 @@ test("offline refinement runner reads archived masks, keeps original evidence fr
           bundlePath,
           truthPath,
           imagePath,
+          ...extra,
         ],
         { encoding: "utf8" },
-      ),
-    );
+      );
+    const execution = run();
+    assert.equal(execution.status, 0, execution.stderr);
+    const result = JSON.parse(execution.stdout);
     assert.equal(result.raw.correct, 1);
     assert.equal(result.refined.correct, 2);
     assert.equal(result.refined.wrong, 0);
     assert.equal(result.raw.completeWires, 0);
     assert.equal(result.refined.completeWires, 1);
+    assert.equal(result.mode, "unresolved_only");
+    assert.match(execution.stderr, /Correct -> wrong/);
+    assert.equal(result.experiments.length, 1);
+    const all = run(["--all-endpoints"]);
+    assert.equal(all.status, 0, all.stderr);
+    const report = JSON.parse(all.stdout);
+    assert.equal(report.mode, "all_endpoints");
+    assert.equal(report.experiments.length, 2);
+    assert.equal(report.skipped.length, 0);
+    assert.equal(report.transitions.unresolvedToCorrect, 1);
+    assert.equal(report.transitions.correctToWrong, 0);
+    assert.equal(report.transitions.correctToUnresolved, 0);
+    assert.equal(report.acceptance.passed, true);
+    assert.equal(
+      report.localizationError.referenceCounts.independentlyMarked,
+      2,
+    );
+    assert.match(all.stderr, /Complete wires/);
+    const reportPath = join(directory, "report.json");
+    const saved = run(["--all-endpoints", "--output", reportPath]);
+    assert.equal(saved.status, 0, saved.stderr);
+    assert.match(saved.stdout, /Refinement experiment: all_endpoints/);
+    assert.match(saved.stdout, /JSON report:/);
+    assert.equal(
+      JSON.parse(readFileSync(reportPath, "utf8")).experiments.length,
+      2,
+    );
+    const savedBefore = readFileSync(reportPath, "utf8");
+    assert.notEqual(run(["--all-endpoints", "--output", bundlePath]).status, 0);
+    assert.notEqual(run(["--all-endpoints", "--output", truthPath]).status, 0);
+    assert.notEqual(run(["--all-endpoints", "--output", imagePath]).status, 0);
+    assert.notEqual(run(["--all-endpoints", "--output", reportPath]).status, 0);
+    assert.notEqual(run(["--unknown-option"]).status, 0);
+    assert.equal(readFileSync(reportPath, "utf8"), savedBefore);
     assert.equal(readFileSync(bundlePath, "utf8"), before);
+    assert.equal(readFileSync(truthPath, "utf8"), truthBefore);
+    assert.deepEqual(readFileSync(imagePath), imageBefore);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
