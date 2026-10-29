@@ -1,3 +1,6 @@
+import { JobStore } from './jobs/store.js';
+import { AnalysisWorker, type VisionStages } from './jobs/worker.js';
+import { registerAnalysisRoutes } from './routes/analyses.js';
 import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import Fastify from 'fastify';
 import multipart from '@fastify/multipart';
@@ -18,6 +21,7 @@ export async function buildApp(
     ? () => undefined
     : logTrace,
   proposeEndpoints = createEndpointProposalService(config),
+  jobOptions?: { store: JobStore; stages?: VisionStages },
 ) {
   const app = Fastify({
     logger: false,
@@ -89,6 +93,27 @@ export async function buildApp(
     status: 'ok',
   }));
   const capacity = { active: 0 };
+  const jobStore =
+    jobOptions?.store ??
+    new JobStore(
+      config,
+      config.NODE_ENV === 'test' ? ':memory:' : config.ANALYSIS_JOB_DIR,
+    );
+  const worker = new AnalysisWorker(
+    jobStore,
+    config,
+    traceLogger,
+    jobOptions?.stages,
+    capacity,
+  );
+  registerAnalysisRoutes(app, config, jobStore, () => worker.tick());
+  app.addHook('onReady', async () => {
+    worker.start();
+  });
+  app.addHook('onClose', async () => {
+    await worker.close();
+    if (!jobOptions?.store) jobStore.close();
+  });
   registerVisionRoute(app, config, analyze, traceLogger, { capacity });
   registerVisionRoute(app, config, proposeEndpoints, traceLogger, {
     path: '/api/vision/endpoints',

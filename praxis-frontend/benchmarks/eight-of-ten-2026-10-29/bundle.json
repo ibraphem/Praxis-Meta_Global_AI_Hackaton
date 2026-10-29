@@ -1,0 +1,2127 @@
+{
+  "schemaVersion": "praxis-evaluation-v1",
+  "resolverPolicy": {
+    "version": "calibrated-grid-v1",
+    "snapRadiusPitch": 0.32,
+    "ambiguityMarginPitch": 0.12
+  },
+  "refinementPolicy": {
+    "version": "color-tip-experiment-v1",
+    "minContrast": 45,
+    "minComponentPixels": 8,
+    "minElongation": 4,
+    "maxMovementFraction": 0.65
+  },
+  "image": {
+    "id": "eae28486-6507-444a-b5e3-eaceeb337c17",
+    "filename": "jumper_wires_breadboard.png",
+    "sha256": "1c92f9b07042ad54720c424a412bc290f76b69e5949f71d13122d73ee5cde736",
+    "width": 1426,
+    "height": 1008
+  },
+  "analysisRunId": "ee4799cd-5424-44b0-86fc-847150977c27",
+  "analysis": {
+    "image": {
+      "width": 1426,
+      "height": 1008
+    },
+    "objects": [
+      {
+        "id": "breadboard_1",
+        "type": "breadboard",
+        "bbox": [
+          105,
+          108,
+          1165,
+          760
+        ],
+        "color": "white",
+        "confidence": 0.9259259104728699,
+        "localizationSource": "sam",
+        "breadboardGrouping": {
+          "candidateIds": [
+            "sam_breadboard_1"
+          ],
+          "geometrySource": "sam_candidate",
+          "wholeCandidateId": "sam_breadboard_1",
+          "reviewSource": "muse"
+        },
+        "interpretation": "confirmed",
+        "geometryStatus": "box_only",
+        "guidanceEligible": false
+      },
+      {
+        "id": "jumper_wire_1",
+        "type": "jumper_wire",
+        "bbox": [
+          1177,
+          161,
+          29,
+          621
+        ],
+        "color": "red",
+        "confidence": 0.8947368264198303,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 29,
+          "height": 621,
+          "path": "M9.5 0L10 -0.5L13 -0.5L14.5 1L14.5 2L18.5 6L19.5 9L22 10.5L23 10.5L27.5 15L27.5 17L28.5 18L28.5 54L27.5 55L27.5 62L28.5 63L28.5 81L27.5 82L27.5 136L26.5 137L26.5 138L27.5 139L27.5 142L26.5 143L26.5 196L25.5 197L25.5 218L24.5 219L24.5 250L23.5 251L23.5 255L24.5 256L24.5 259L23.5 260L23.5 277L22.5 278L22.5 294L21.5 295L21.5 297L22.5 298L22.5 323L21.5 324L21.5 400L22.5 401L21.5 402L21.5 404L22.5 405L22.5 409L21.5 410L21.5 418L22.5 419L22.5 440L23.5 441L23.5 465L24.5 466L24.5 478L23.5 479L23.5 482L24.5 483L24.5 486L23.5 487L23.5 488L24.5 489L24.5 582L23.5 583L23.5 603L22.5 604L22.5 607L21.5 608L21.5 610L20.5 611L20.5 613L19.5 614L19.5 616L18.5 617L18.5 618L17 619.5L14 619.5L13 620.5L12 619.5L10 619.5L7.5 618L7.5 617L5.5 615L5.5 614L3.5 611L3.5 607L2.5 606L2.5 553L3.5 552L3.5 550L4.5 549L4.5 539L3.5 538L3.5 530L2.5 529L2.5 513L1.5 512L1.5 492L0.5 491L0.5 487L1.5 486L1.5 470L0.5 469L0.5 447L-0.5 446L0.5 445L0.5 421L-0.5 420L-0.5 401L0.5 400L0.5 399L-0.5 398L-0.5 364L0.5 363L0.5 347L-0.5 346L-0.5 341L0.5 340L0.5 311L1.5 310L1.5 304L0.5 303L0.5 293L1.5 292L0.5 291L0.5 278L1.5 277L1.5 258L2.5 257L2.5 242L3.5 241L3.5 217L4.5 216L4.5 214L3.5 213L3.5 200L4.5 199L4.5 192L5.5 191L5.5 180L4.5 179L4.5 176L3.5 175L3.5 173L4.5 172L4.5 167L5.5 166L5.5 164L4.5 163L4.5 161L5.5 160L5.5 159L4.5 158L4.5 154L5.5 153L5.5 118L6.5 117L6.5 109L5.5 108L5.5 91L6.5 90L6.5 81L7.5 80L7.5 44L8.5 43L7.5 42L7.5 23L8.5 22L8.5 18L9.5 17L9.5 15L12.5 12L12.5 11L13.5 10L13.5 8L11 5.5L9 5.5L7.5 4L7.5 3L9.5 1Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_2",
+        "type": "jumper_wire",
+        "bbox": [
+          1147,
+          194,
+          31,
+          625
+        ],
+        "color": "black",
+        "confidence": 0.9101123809814453,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 31,
+          "height": 625,
+          "path": "M13.5 0L14 -0.5L22 -0.5L25.5 2L25.5 4L26.5 5L26.5 33L27.5 34L27.5 55L28.5 56L27.5 57L27.5 60L28.5 61L28.5 89L29.5 90L29.5 93L28.5 94L29.5 95L29.5 104L30.5 105L30.5 124L29.5 125L29.5 130L30.5 131L30.5 134L29.5 135L29.5 137L30.5 138L30.5 148L29.5 149L29.5 164L28.5 165L29.5 166L29.5 168L28.5 169L28.5 171L29.5 172L29.5 189L28.5 190L28.5 197L27.5 198L27.5 225L26.5 226L26.5 246L25.5 247L25.5 269L24.5 270L24.5 293L25.5 294L25.5 295L24.5 296L24.5 306L23.5 307L23.5 346L24.5 347L24.5 363L25.5 364L25.5 369L24.5 370L24.5 374L25.5 375L25.5 424L26.5 425L26.5 428L25.5 429L25.5 440L26.5 441L26.5 497L27.5 498L27.5 526L26.5 527L26.5 547L25.5 548L25.5 579L24.5 580L24.5 590L23.5 591L23.5 598L22.5 599L22.5 604L21.5 605L21.5 608L20.5 609L20.5 611L14.5 617L14.5 618L13.5 619L13.5 621L11 623.5L8 624.5L7 623.5L6 623.5L3.5 622L3.5 618L2.5 617L2.5 615L0.5 612L0.5 610L-0.5 609L-0.5 601L0.5 600L0.5 587L1.5 586L1.5 574L2.5 573L2.5 559L3.5 558L3.5 557L2.5 556L2.5 547L3.5 546L3.5 466L2.5 465L2.5 429L1.5 428L1.5 386L0.5 385L0.5 353L-0.5 352L-0.5 347L0.5 346L-0.5 345L-0.5 284L0.5 283L0.5 264L1.5 263L1.5 243L2.5 242L2.5 230L3.5 229L3.5 212L4.5 211L4.5 196L5.5 195L5.5 180L6.5 179L6.5 148L7.5 147L7.5 113L6.5 112L7.5 111L7.5 102L6.5 101L6.5 75L5.5 74L5.5 39L4.5 38L4.5 22L3.5 21L4.5 20L4.5 14L3.5 13L3.5 7L9 1.5L10 1.5L11 0.5L13 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_3",
+        "type": "jumper_wire",
+        "bbox": [
+          186,
+          308,
+          193,
+          26
+        ],
+        "color": "black",
+        "confidence": 0.8552036285400391,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 193,
+          "height": 26,
+          "path": "M13.5 0L14 -0.5L77 -0.5L78 0.5L115 0.5L116 1.5L139 1.5L140 2.5L152 2.5L153 1.5L163 1.5L164 2.5L179 2.5L180 3.5L183 3.5L184 4.5L185 4.5L186.5 6L187.5 9L190.5 12L190.5 13L192.5 15L191 16.5L190 16.5L187.5 18L187.5 19L185.5 22L185.5 23L184 24.5L180 24.5L179 25.5L152 25.5L151 24.5L116 24.5L115 23.5L95 23.5L94 22.5L59 22.5L58 21.5L8 21.5L7 20.5L5 20.5L1.5 17L1.5 16L0.5 15L0.5 13L-0.5 12L0.5 11L0.5 8L1.5 7L2.5 4L4 2.5L5 2.5L8 0.5L13 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_4",
+        "type": "jumper_wire",
+        "bbox": [
+          178,
+          382,
+          182,
+          25
+        ],
+        "color": "black",
+        "confidence": 0.859649121761322,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 182,
+          "height": 25,
+          "path": "M4.5 0L5 -0.5L39 -0.5L40 0.5L62 0.5L63 1.5L140 1.5L141 2.5L146 2.5L147 3.5L150 4.5L155 9.5L158 9.5L159 10.5L177 10.5L180.5 14L180.5 17L181.5 18L180 19.5L169 19.5L168 18.5L162 18.5L161 17.5L160 18.5L155 18.5L154 19.5L152 19.5L151 20.5L150 20.5L148 22.5L147 22.5L146 23.5L143 23.5L142 24.5L92 24.5L91 23.5L47 23.5L46 22.5L28 22.5L27 21.5L8 21.5L7 20.5L5 20.5L4 19.5L1 18.5L-0.5 16L-0.5 9L0.5 8L0.5 5L1.5 4L1.5 2L3 0.5L4 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_5",
+        "type": "jumper_wire",
+        "bbox": [
+          441,
+          521,
+          444,
+          36
+        ],
+        "color": "red",
+        "confidence": 0.9101123809814453,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 444,
+          "height": 36,
+          "path": "M413.5 0L414 -0.5L426 -0.5L427 0.5L429 0.5L436 7.5L439 8.5L439.5 10L441 11.5L443 11.5L443.5 13L443 13.5L441 13.5L440 12.5L432 12.5L428 16.5L427 16.5L426 17.5L425 17.5L420 20.5L417 20.5L416 21.5L390 21.5L389 22.5L368 22.5L367 23.5L342 23.5L341 24.5L323 24.5L322 25.5L312 25.5L311 26.5L303 26.5L302 25.5L282 25.5L281 26.5L263 26.5L262 27.5L238 27.5L237 28.5L190 28.5L189 29.5L177 29.5L176 30.5L140 30.5L139 31.5L114 31.5L113 32.5L84 32.5L83 33.5L66 33.5L65 34.5L21 34.5L20 35.5L12 35.5L11 34.5L5 34.5L1.5 31L1.5 30L0.5 29L0.5 27L-0.5 26L0.5 25L0.5 23L1.5 22L1.5 20L2.5 19L2.5 18L5 15.5L6 15.5L7 14.5L12 14.5L13 13.5L45 13.5L46 12.5L79 12.5L80 11.5L109 11.5L110 10.5L133 10.5L134 9.5L138 9.5L139 10.5L149 10.5L150 9.5L182 9.5L183 8.5L203 8.5L204 7.5L233 7.5L234 6.5L255 6.5L256 5.5L283 5.5L284 4.5L316 4.5L317 3.5L339 3.5L340 2.5L373 2.5L374 1.5L398 1.5L399 0.5L413 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_6",
+        "type": "jumper_wire",
+        "bbox": [
+          437,
+          593,
+          440,
+          36
+        ],
+        "color": "red",
+        "confidence": 0.9179486632347107,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 440,
+          "height": 36,
+          "path": "M410.5 0L411 -0.5L427 -0.5L428 0.5L430 0.5L431 1.5L432 1.5L434.5 4L434.5 5L439.5 10L438.5 11L437.5 14L436 14.5L433 17.5L432 17.5L431 18.5L429 18.5L428 19.5L424 19.5L423 20.5L415 20.5L414 21.5L394 21.5L393 22.5L381 22.5L380 23.5L361 23.5L360 24.5L312 24.5L311 25.5L269 25.5L268 26.5L205 26.5L204 27.5L196 27.5L195 26.5L186 26.5L185 27.5L171 27.5L170 26.5L142 26.5L141 27.5L125 27.5L124 28.5L107 28.5L106 29.5L92 29.5L91 30.5L77 30.5L76 31.5L67 31.5L66 32.5L55 32.5L54 33.5L47 33.5L46 34.5L37 34.5L36 35.5L14 35.5L13 34.5L6 34.5L5 33.5L4 33.5L1.5 31L1.5 29L-0.5 26L-0.5 23L0.5 22L0.5 20L4 16.5L6 16.5L7 15.5L11 15.5L12 14.5L34 14.5L35 13.5L45 13.5L46 12.5L53 12.5L54 11.5L67 11.5L68 10.5L78 10.5L79 9.5L94 9.5L95 8.5L112 8.5L113 7.5L133 7.5L134 6.5L151 6.5L152 5.5L276 5.5L277 4.5L278 4.5L279 5.5L290 5.5L291 4.5L301 4.5L302 3.5L352 3.5L353 2.5L378 2.5L379 1.5L398 1.5L399 0.5L410 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_7",
+        "type": "jumper_wire",
+        "bbox": [
+          164,
+          604,
+          175,
+          24
+        ],
+        "color": "red",
+        "confidence": 0.8947368264198303,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 175,
+          "height": 24,
+          "path": "M23.5 0L24 -0.5L35 -0.5L36 0.5L53 0.5L54 -0.5L65 -0.5L66 0.5L128 0.5L129 1.5L165 1.5L166 2.5L170 2.5L172.5 4L172.5 5L173.5 6L173.5 8L174.5 9L174.5 15L173.5 16L173.5 18L172.5 19L172.5 20L171 21.5L169 21.5L168 22.5L157 22.5L156 23.5L148 23.5L147 22.5L119 22.5L118 21.5L67 21.5L66 20.5L55 20.5L54 21.5L42 21.5L41 20.5L40 21.5L12 21.5L11 22.5L10 21.5L4 21.5L1.5 19L1.5 18L0.5 17L0.5 15L-0.5 14L-0.5 7L0.5 6L0.5 5L4 1.5L6 1.5L7 0.5L23 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_8",
+        "type": "jumper_wire",
+        "bbox": [
+          971,
+          605,
+          36,
+          175
+        ],
+        "color": "red",
+        "confidence": 0.8947368264198303,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 36,
+          "height": 175,
+          "path": "M20.5 0L21 -0.5L27 -0.5L27.5 0L27.5 1L28.5 2L28.5 6L29.5 7L29.5 12L34.5 17L34.5 18L35.5 19L35.5 28L34.5 29L34.5 40L33.5 41L33.5 48L32.5 49L32.5 61L31.5 62L31.5 70L30.5 71L30.5 80L29.5 81L29.5 87L28.5 88L28.5 94L27.5 95L27.5 100L26.5 101L26.5 109L25.5 110L25.5 116L24.5 117L24.5 125L23.5 126L23.5 132L22.5 133L22.5 139L21.5 140L21.5 153L20.5 154L20.5 158L19.5 159L19.5 161L18.5 162L18.5 163L12.5 169L12.5 170L11.5 171L11.5 173L10 174.5L5 174.5L2.5 173L2.5 170L0.5 167L0.5 165L-0.5 164L-0.5 144L0.5 143L0.5 137L1.5 136L1.5 130L2.5 129L2.5 124L3.5 123L3.5 112L4.5 111L4.5 104L5.5 103L5.5 98L6.5 97L6.5 94L7.5 93L7.5 84L8.5 83L8.5 78L9.5 77L9.5 64L10.5 63L10.5 58L11.5 57L11.5 54L12.5 53L12.5 43L13.5 42L13.5 34L14.5 33L14.5 19L15.5 18L15.5 15L18.5 12L18.5 2L20 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_9",
+        "type": "jumper_wire",
+        "bbox": [
+          937,
+          639,
+          38,
+          182
+        ],
+        "color": "black",
+        "confidence": 0.8709677457809448,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 38,
+          "height": 182,
+          "path": "M19.5 0L20 -0.5L22 -0.5L23 0.5L25 0.5L27.5 3L27.5 5L28.5 6L28.5 15L29.5 16L29.5 17L33 20.5L34 20.5L36.5 23L36.5 24L37.5 25L37.5 33L36.5 34L37.5 35L37.5 38L36.5 39L36.5 60L35.5 61L35.5 64L34.5 65L34.5 71L33.5 72L33.5 94L32.5 95L32.5 104L31.5 105L31.5 109L30.5 110L30.5 118L29.5 119L29.5 128L28.5 129L28.5 135L27.5 136L27.5 140L26.5 141L26.5 147L25.5 148L25.5 151L24.5 152L24.5 156L23.5 157L23.5 161L22.5 162L22.5 164L21.5 165L21.5 166L12.5 175L11.5 178L8 181.5L3 181.5L0.5 180L0.5 178L-0.5 177L-0.5 172L1.5 169L1.5 166L0.5 165L0.5 154L1.5 153L1.5 149L2.5 148L2.5 145L3.5 144L3.5 135L4.5 134L4.5 131L5.5 130L5.5 125L6.5 124L6.5 119L7.5 118L7.5 115L8.5 114L8.5 106L9.5 105L9.5 90L10.5 89L10.5 77L11.5 76L11.5 64L12.5 63L12.5 53L13.5 52L13.5 37L14.5 36L14.5 26L15.5 25L15.5 23L19.5 19L19.5 18L20.5 17L20.5 15L19.5 14L19.5 11L18.5 10L18.5 7L17.5 6L17.5 3L19 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_10",
+        "type": "jumper_wire",
+        "bbox": [
+          545,
+          663,
+          324,
+          27
+        ],
+        "color": "red",
+        "confidence": 0.8865247964859009,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 324,
+          "height": 27,
+          "path": "M226.5 0L227 -0.5L308 -0.5L309 0.5L318 0.5L321.5 4L321.5 5L322.5 6L322.5 8L323.5 9L323.5 11L322.5 12L322.5 14L321.5 15L321.5 17L318 20.5L314 20.5L313 21.5L309 21.5L308 20.5L292 20.5L291 19.5L287 19.5L286 20.5L246 20.5L245 21.5L210 21.5L209 22.5L169 22.5L168 23.5L144 23.5L143 24.5L97 24.5L96 25.5L90 25.5L89 24.5L78 24.5L77 25.5L28 25.5L27 26.5L7 26.5L6 25.5L3 24.5L0.5 22L0.5 21L-0.5 20L-0.5 13L1.5 11L2 9.5L3 9.5L5 7.5L7 7.5L8 6.5L14 6.5L15 5.5L37 5.5L38 4.5L103 4.5L104 3.5L125 3.5L126 2.5L157 2.5L158 1.5L189 1.5L190 0.5L226 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      },
+      {
+        "id": "jumper_wire_11",
+        "type": "jumper_wire",
+        "bbox": [
+          166,
+          676,
+          202,
+          24
+        ],
+        "color": "red",
+        "confidence": 0.8632478713989258,
+        "localizationSource": "sam",
+        "interpretation": "confirmed",
+        "detectionSource": "sam",
+        "geometryStatus": "segmented",
+        "mask": {
+          "format": "svg_path",
+          "width": 202,
+          "height": 24,
+          "path": "M8.5 0L9 -0.5L13 -0.5L14 0.5L37 0.5L38 1.5L80 1.5L81 2.5L104 2.5L105 1.5L142 1.5L143 0.5L173 0.5L174 -0.5L193 -0.5L195.5 2L196.5 5L199 7.5L200.5 8L200.5 10L201.5 11L200 11.5L198.5 13L197.5 16L195 18.5L194 18.5L193 19.5L184 19.5L183 20.5L155 20.5L154 21.5L133 21.5L132 22.5L105 22.5L104 23.5L100 23.5L99 22.5L34 22.5L33 21.5L19 21.5L18 20.5L5 20.5L4 19.5L3 19.5L1.5 18L1.5 17L0.5 16L0.5 14L-0.5 13L-0.5 4L3 0.5L8 0.5Z"
+        },
+        "guidanceEligible": false,
+        "identityStatus": "unverified"
+      }
+    ],
+    "proposals": [],
+    "breadboardAudit": {
+      "candidates": [
+        {
+          "id": "sam_breadboard_1",
+          "bbox": [
+            105,
+            108,
+            1165,
+            760
+          ],
+          "confidence": 0.9259259104728699,
+          "decision": "confirmed",
+          "extent": "whole"
+        }
+      ],
+      "unresolvedCandidateIds": []
+    },
+    "diagnostics": {
+      "requestId": "aac64b29-6f6f-4289-a19e-e0fb54e24f09",
+      "elapsedMs": 18913,
+      "timings": [
+        {
+          "stage": "upload",
+          "startedAtMs": 3,
+          "durationMs": 9,
+          "status": "completed",
+          "kind": "work"
+        },
+        {
+          "stage": "image.prepare",
+          "startedAtMs": 12,
+          "durationMs": 63,
+          "status": "completed",
+          "kind": "work"
+        },
+        {
+          "stage": "sam.breadboard",
+          "startedAtMs": 76,
+          "durationMs": 2093,
+          "status": "completed",
+          "kind": "request",
+          "model": "sam-3.1",
+          "attempt": 1,
+          "timeoutMs": 45000,
+          "upstreamStatus": 200
+        },
+        {
+          "stage": "sam.led",
+          "startedAtMs": 84,
+          "durationMs": 1848,
+          "status": "completed",
+          "kind": "request",
+          "model": "sam-3.1",
+          "attempt": 1,
+          "timeoutMs": 45000,
+          "upstreamStatus": 200
+        },
+        {
+          "stage": "sam.resistor",
+          "startedAtMs": 1934,
+          "durationMs": 2166,
+          "status": "completed",
+          "kind": "request",
+          "model": "sam-3.1",
+          "attempt": 1,
+          "timeoutMs": 45000,
+          "upstreamStatus": 200
+        },
+        {
+          "stage": "sam.jumper_wire",
+          "startedAtMs": 2171,
+          "durationMs": 2938,
+          "status": "completed",
+          "kind": "request",
+          "model": "sam-3.1",
+          "attempt": 1,
+          "timeoutMs": 45000,
+          "upstreamStatus": 200
+        },
+        {
+          "stage": "muse.interpret",
+          "startedAtMs": 5118,
+          "durationMs": 13711,
+          "status": "completed",
+          "kind": "request",
+          "model": "muse-spark-1.3",
+          "attempt": 1,
+          "timeoutMs": 45000,
+          "upstreamStatus": 200
+        },
+        {
+          "stage": "wire.geometry",
+          "startedAtMs": 18832,
+          "durationMs": 80,
+          "status": "completed",
+          "kind": "work"
+        },
+        {
+          "stage": "response.validate",
+          "startedAtMs": 18912,
+          "durationMs": 1,
+          "status": "completed",
+          "kind": "work"
+        }
+      ]
+    },
+    "provenance": {
+      "mode": "combined",
+      "segmentationModel": "sam-3.1",
+      "reasoningModel": "muse-spark-1.3",
+      "wireAudit": {
+        "samCandidates": 11,
+        "acceptedSam": 11,
+        "recoveredByMuse": 0,
+        "regionsProposedByMuse": 0,
+        "refinementAttempts": 0,
+        "unresolvedRegions": 0
+      }
+    }
+  },
+  "boards": [
+    {
+      "calibration": {
+        "breadboardId": "board_1",
+        "templateId": "standard-10-column-v1",
+        "rows": 30,
+        "image": {
+          "width": 1426,
+          "height": 1008
+        },
+        "anchors": [
+          {
+            "x": 1205,
+            "y": 296
+          },
+          {
+            "x": 1202,
+            "y": 680
+          },
+          {
+            "x": 170,
+            "y": 685
+          },
+          {
+            "x": 181,
+            "y": 290
+          }
+        ],
+        "forward": [
+          -0.008388673468002594,
+          -0.7216153038814936,
+          0.8450210378681627,
+          0.3759224631496673,
+          -0.013937082166715298,
+          0.29365079365079366,
+          -0.007456113448728485,
+          -0.02775372008292753,
+          1
+        ],
+        "inverse": [
+          -0.02192148628795275,
+          2.6445982672433828,
+          -0.7580642629688744,
+          -1.4322650644332289,
+          -0.007909598444889131,
+          1.2126167711104792,
+          -0.03991413277156372,
+          0.019498903925669622,
+          1.0280024132871413
+        ]
+      },
+      "rails": [],
+      "revision": 1
+    }
+  ],
+  "reviews": [
+    {
+      "proposal": {
+        "id": "bdf81d74-f0b3-42e1-808c-c304fe7c09bb",
+        "analysisId": "ee4799cd-5424-44b0-86fc-847150977c27",
+        "imageId": "eae28486-6507-444a-b5e3-eaceeb337c17",
+        "wireCandidateId": "jumper_wire_5",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "d24e6c76-5fbc-4989-93af-f9491c39bbeb",
+          "elapsedMs": 9025,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 0,
+              "durationMs": 10,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 14,
+              "durationMs": 54,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 68,
+              "durationMs": 89,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 158,
+              "durationMs": 8866,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              442,
+              540
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "rejected",
+              "reason": "no_strict_match",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "outside_snap_radius",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.2105385094572293,
+                    "candidates": [
+                      {
+                        "holeId": "f23",
+                        "imagePosition": {
+                          "x": 427.785794667476,
+                          "y": 540.4221685398437
+                        },
+                        "normalizedDistance": 0.39486782857075464,
+                        "distancePx": 14.220473252011944
+                      },
+                      {
+                        "holeId": "f22",
+                        "imagePosition": {
+                          "x": 463.75348014671175,
+                          "y": 540.3885701973757
+                        },
+                        "normalizedDistance": 0.6054063380279839,
+                        "distancePx": 21.75695027552508
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              885,
+              533
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "f10",
+              "snapDistancePx": 8.550111362248696
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.6351459540019212,
+                    "candidates": [
+                      {
+                        "holeId": "f10",
+                        "imagePosition": {
+                          "x": 889.923177454563,
+                          "y": 539.9904740939179
+                        },
+                        "normalizedDistance": 0.24445512627065827,
+                        "distancePx": 8.550111362248696
+                      },
+                      {
+                        "holeId": "f11",
+                        "imagePosition": {
+                          "x": 854.7883327299915,
+                          "y": 540.0232944583615
+                        },
+                        "normalizedDistance": 0.8796010802725794,
+                        "distancePx": 31.017277512421323
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "spatialConsistency": {
+          "status": "near_mask",
+          "reasons": [],
+          "distancesPx": [
+            1.0606601717798214,
+            0.7905694150420949
+          ],
+          "tolerancePx": 70.71650671300124,
+          "basis": "mask_proximity_only",
+          "physicalWireIdentity": "unverified"
+        },
+        "clientElapsedMs": 9505.900000002235
+      },
+      "endpoints": [
+        {
+          "role": "A",
+          "originalProposal": {
+            "role": "A",
+            "proposedImagePosition": [
+              442,
+              540
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "rejected",
+              "reason": "no_strict_match",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "outside_snap_radius",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.2105385094572293,
+                    "candidates": [
+                      {
+                        "holeId": "f23",
+                        "imagePosition": {
+                          "x": 427.785794667476,
+                          "y": 540.4221685398437
+                        },
+                        "normalizedDistance": 0.39486782857075464,
+                        "distancePx": 14.220473252011944
+                      },
+                      {
+                        "holeId": "f22",
+                        "imagePosition": {
+                          "x": 463.75348014671175,
+                          "y": 540.3885701973757
+                        },
+                        "normalizedDistance": 0.6054063380279839,
+                        "distancePx": 21.75695027552508
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        },
+        {
+          "role": "B",
+          "originalProposal": {
+            "role": "B",
+            "proposedImagePosition": [
+              885,
+              533
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "f10",
+              "snapDistancePx": 8.550111362248696
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.6351459540019212,
+                    "candidates": [
+                      {
+                        "holeId": "f10",
+                        "imagePosition": {
+                          "x": 889.923177454563,
+                          "y": 539.9904740939179
+                        },
+                        "normalizedDistance": 0.24445512627065827,
+                        "distancePx": 8.550111362248696
+                      },
+                      {
+                        "holeId": "f11",
+                        "imagePosition": {
+                          "x": 854.7883327299915,
+                          "y": 540.0232944583615
+                        },
+                        "normalizedDistance": 0.8796010802725794,
+                        "distancePx": 31.017277512421323
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        }
+      ],
+      "pendingCorrections": [
+        null,
+        null
+      ],
+      "savedAssignmentId": null,
+      "dirty": true,
+      "refinementExperiments": {
+        "A": {
+          "method": "color-tip-experiment-v1",
+          "status": "supported_tip",
+          "originalPosition": {
+            "x": 442,
+            "y": 540
+          },
+          "refinedPosition": {
+            "x": 443.5,
+            "y": 550.3333333333334
+          },
+          "physicalInsertion": "unverified",
+          "reason": "color_supported_tip_not_proof_of_insertion",
+          "evidence": {
+            "contrast": 159.62455951387932,
+            "componentPixels": 606,
+            "elongation": 9.03610024525998,
+            "movementPx": 10.441636738451427
+          },
+          "elapsedMs": 8.199999999254942,
+          "resolutionDiagnostics": {
+            "decision": "rejected",
+            "reason": "no_strict_match",
+            "boards": [
+              {
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "diagnosis": {
+                  "reason": "outside_snap_radius",
+                  "policy": {
+                    "version": "calibrated-grid-v1",
+                    "snapRadiusPitch": 0.32,
+                    "ambiguityMarginPitch": 0.12
+                  },
+                  "ambiguityMargin": 0.0997211456220406,
+                  "candidates": [
+                    {
+                      "holeId": "f23",
+                      "imagePosition": {
+                        "x": 427.785794667476,
+                        "y": 540.4221685398437
+                      },
+                      "normalizedDistance": 0.5228187529504587,
+                      "distancePx": 18.57868232131747
+                    },
+                    {
+                      "holeId": "f22",
+                      "imagePosition": {
+                        "x": 463.75348014671175,
+                        "y": 540.3885701973757
+                      },
+                      "normalizedDistance": 0.6225398985724993,
+                      "distancePx": 22.563283712340066
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "proposal": {
+        "id": "b79474ba-5983-4658-8fb6-4103eaef5de1",
+        "analysisId": "ee4799cd-5424-44b0-86fc-847150977c27",
+        "imageId": "eae28486-6507-444a-b5e3-eaceeb337c17",
+        "wireCandidateId": "jumper_wire_6",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "2c8c242d-5f20-48ec-84ee-01b4938c7db4",
+          "elapsedMs": 16488,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 0,
+              "durationMs": 4,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 7,
+              "durationMs": 41,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 49,
+              "durationMs": 89,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 141,
+              "durationMs": 16344,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              421,
+              613
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h23",
+              "snapDistancePx": 5.243524176504566
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.7136179272240442,
+                    "candidates": [
+                      {
+                        "holeId": "h23",
+                        "imagePosition": {
+                          "x": 426.1462493651224,
+                          "y": 611.9946825070829
+                        },
+                        "normalizedDistance": 0.1447449168877146,
+                        "distancePx": 5.243524176504566
+                      },
+                      {
+                        "holeId": "h24",
+                        "imagePosition": {
+                          "x": 390.0559439241243,
+                          "y": 612.0988718350486
+                        },
+                        "normalizedDistance": 0.8583628441117588,
+                        "distancePx": 30.957174263756855
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              893,
+              603
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h10",
+              "snapDistancePx": 8.668149584624015
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.5481419331943918,
+                    "candidates": [
+                      {
+                        "holeId": "h10",
+                        "imagePosition": {
+                          "x": 888.9401904264877,
+                          "y": 610.6586397909965
+                        },
+                        "normalizedDistance": 0.24370598787582473,
+                        "distancePx": 8.668149584624015
+                      },
+                      {
+                        "holeId": "g10",
+                        "imagePosition": {
+                          "x": 889.4320218314209,
+                          "y": 575.3002655437829
+                        },
+                        "normalizedDistance": 0.7918479210702165,
+                        "distancePx": 27.92858315698094
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "spatialConsistency": {
+          "status": "near_mask",
+          "reasons": [],
+          "distancesPx": [
+            15.787653403846946,
+            16.5
+          ],
+          "tolerancePx": 70.71650671300124,
+          "basis": "mask_proximity_only",
+          "physicalWireIdentity": "unverified"
+        },
+        "clientElapsedMs": 16643.300000000745
+      },
+      "endpoints": [
+        {
+          "role": "A",
+          "originalProposal": {
+            "role": "A",
+            "proposedImagePosition": [
+              421,
+              613
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h23",
+              "snapDistancePx": 5.243524176504566
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.7136179272240442,
+                    "candidates": [
+                      {
+                        "holeId": "h23",
+                        "imagePosition": {
+                          "x": 426.1462493651224,
+                          "y": 611.9946825070829
+                        },
+                        "normalizedDistance": 0.1447449168877146,
+                        "distancePx": 5.243524176504566
+                      },
+                      {
+                        "holeId": "h24",
+                        "imagePosition": {
+                          "x": 390.0559439241243,
+                          "y": 612.0988718350486
+                        },
+                        "normalizedDistance": 0.8583628441117588,
+                        "distancePx": 30.957174263756855
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        },
+        {
+          "role": "B",
+          "originalProposal": {
+            "role": "B",
+            "proposedImagePosition": [
+              893,
+              603
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h10",
+              "snapDistancePx": 8.668149584624015
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.5481419331943918,
+                    "candidates": [
+                      {
+                        "holeId": "h10",
+                        "imagePosition": {
+                          "x": 888.9401904264877,
+                          "y": 610.6586397909965
+                        },
+                        "normalizedDistance": 0.24370598787582473,
+                        "distancePx": 8.668149584624015
+                      },
+                      {
+                        "holeId": "g10",
+                        "imagePosition": {
+                          "x": 889.4320218314209,
+                          "y": 575.3002655437829
+                        },
+                        "normalizedDistance": 0.7918479210702165,
+                        "distancePx": 27.92858315698094
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        }
+      ],
+      "pendingCorrections": [
+        null,
+        null
+      ],
+      "savedAssignmentId": null,
+      "dirty": true
+    },
+    {
+      "proposal": {
+        "id": "805ae496-4f8e-410a-a03e-5188fb28c37b",
+        "analysisId": "ee4799cd-5424-44b0-86fc-847150977c27",
+        "imageId": "eae28486-6507-444a-b5e3-eaceeb337c17",
+        "wireCandidateId": "jumper_wire_7",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "ed334d25-cdb4-4515-959e-2d357b2af52c",
+          "elapsedMs": 13683,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 0,
+              "durationMs": 4,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 8,
+              "durationMs": 42,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 50,
+              "durationMs": 66,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 118,
+              "durationMs": 13561,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              168,
+              616
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h30",
+              "snapDistancePx": 5.177347791480818
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.7757308657758719,
+                    "candidates": [
+                      {
+                        "holeId": "h30",
+                        "imagePosition": {
+                          "x": 172.01262843829562,
+                          "y": 612.7283424430218
+                        },
+                        "normalizedDistance": 0.14023536642517928,
+                        "distancePx": 5.177347791480818
+                      },
+                      {
+                        "holeId": "i30",
+                        "imagePosition": {
+                          "x": 171.0070207246524,
+                          "y": 648.8388012511167
+                        },
+                        "normalizedDistance": 0.9159662322010512,
+                        "distancePx": 32.976189004323
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              346,
+              616
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h25",
+              "snapDistancePx": 8.760033313739875
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.5517502816154447,
+                    "candidates": [
+                      {
+                        "holeId": "h25",
+                        "imagePosition": {
+                          "x": 353.89449167597087,
+                          "y": 612.2032665571759
+                        },
+                        "normalizedDistance": 0.23975524044234592,
+                        "distancePx": 8.760033313739875
+                      },
+                      {
+                        "holeId": "h26",
+                        "imagePosition": {
+                          "x": 317.66168202965736,
+                          "y": 612.307867281421
+                        },
+                        "normalizedDistance": 0.7915055220577907,
+                        "distancePx": 28.577825484103
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "spatialConsistency": {
+          "status": "near_mask",
+          "reasons": [],
+          "distancesPx": [
+            0,
+            7.5
+          ],
+          "tolerancePx": 70.71650671300124,
+          "basis": "mask_proximity_only",
+          "physicalWireIdentity": "unverified"
+        },
+        "clientElapsedMs": 13878
+      },
+      "endpoints": [
+        {
+          "role": "A",
+          "originalProposal": {
+            "role": "A",
+            "proposedImagePosition": [
+              168,
+              616
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h30",
+              "snapDistancePx": 5.177347791480818
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.7757308657758719,
+                    "candidates": [
+                      {
+                        "holeId": "h30",
+                        "imagePosition": {
+                          "x": 172.01262843829562,
+                          "y": 612.7283424430218
+                        },
+                        "normalizedDistance": 0.14023536642517928,
+                        "distancePx": 5.177347791480818
+                      },
+                      {
+                        "holeId": "i30",
+                        "imagePosition": {
+                          "x": 171.0070207246524,
+                          "y": 648.8388012511167
+                        },
+                        "normalizedDistance": 0.9159662322010512,
+                        "distancePx": 32.976189004323
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        },
+        {
+          "role": "B",
+          "originalProposal": {
+            "role": "B",
+            "proposedImagePosition": [
+              346,
+              616
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h25",
+              "snapDistancePx": 8.760033313739875
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.5517502816154447,
+                    "candidates": [
+                      {
+                        "holeId": "h25",
+                        "imagePosition": {
+                          "x": 353.89449167597087,
+                          "y": 612.2032665571759
+                        },
+                        "normalizedDistance": 0.23975524044234592,
+                        "distancePx": 8.760033313739875
+                      },
+                      {
+                        "holeId": "h26",
+                        "imagePosition": {
+                          "x": 317.66168202965736,
+                          "y": 612.307867281421
+                        },
+                        "normalizedDistance": 0.7915055220577907,
+                        "distancePx": 28.577825484103
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        }
+      ],
+      "pendingCorrections": [
+        null,
+        null
+      ],
+      "savedAssignmentId": null,
+      "dirty": true
+    },
+    {
+      "proposal": {
+        "id": "3c5226f8-39e5-48a0-977b-25f7065c56a2",
+        "analysisId": "ee4799cd-5424-44b0-86fc-847150977c27",
+        "imageId": "eae28486-6507-444a-b5e3-eaceeb337c17",
+        "wireCandidateId": "jumper_wire_10",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "3b037b19-0891-4ddc-8fac-b00532274d9e",
+          "elapsedMs": 12021,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 3,
+              "durationMs": 2,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 10,
+              "durationMs": 47,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 57,
+              "durationMs": 77,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 136,
+              "durationMs": 11882,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              535,
+              682
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j20",
+              "snapDistancePx": 2.7894458641033673
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.8548216025881289,
+                    "candidates": [
+                      {
+                        "holeId": "j20",
+                        "imagePosition": {
+                          "x": 532.503151454045,
+                          "y": 683.2436862817149
+                        },
+                        "normalizedDistance": 0.07695946890075697,
+                        "distancePx": 2.7894458641033673
+                      },
+                      {
+                        "holeId": "j19",
+                        "imagePosition": {
+                          "x": 568.36219197104,
+                          "y": 683.0699506202953
+                        },
+                        "normalizedDistance": 0.9317810714888859,
+                        "distancePx": 33.379344622721376
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              883,
+              677
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j10",
+              "snapDistancePx": 6.707557393545727
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.6753161301550531,
+                    "candidates": [
+                      {
+                        "holeId": "j10",
+                        "imagePosition": {
+                          "x": 887.9544946847066,
+                          "y": 681.5215383009463
+                        },
+                        "normalizedDistance": 0.19165803823351715,
+                        "distancePx": 6.707557393545727
+                      },
+                      {
+                        "holeId": "j11",
+                        "imagePosition": {
+                          "x": 852.7208215986727,
+                          "y": 681.6922440814019
+                        },
+                        "normalizedDistance": 0.8669741683885702,
+                        "distancePx": 30.640590711976408
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "spatialConsistency": {
+          "status": "near_mask",
+          "reasons": [],
+          "distancesPx": [
+            9.5,
+            14.807092894960846
+          ],
+          "tolerancePx": 70.71650671300124,
+          "basis": "mask_proximity_only",
+          "physicalWireIdentity": "unverified"
+        },
+        "clientElapsedMs": 12160.39999999851
+      },
+      "endpoints": [
+        {
+          "role": "A",
+          "originalProposal": {
+            "role": "A",
+            "proposedImagePosition": [
+              535,
+              682
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j20",
+              "snapDistancePx": 2.7894458641033673
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.8548216025881289,
+                    "candidates": [
+                      {
+                        "holeId": "j20",
+                        "imagePosition": {
+                          "x": 532.503151454045,
+                          "y": 683.2436862817149
+                        },
+                        "normalizedDistance": 0.07695946890075697,
+                        "distancePx": 2.7894458641033673
+                      },
+                      {
+                        "holeId": "j19",
+                        "imagePosition": {
+                          "x": 568.36219197104,
+                          "y": 683.0699506202953
+                        },
+                        "normalizedDistance": 0.9317810714888859,
+                        "distancePx": 33.379344622721376
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        },
+        {
+          "role": "B",
+          "originalProposal": {
+            "role": "B",
+            "proposedImagePosition": [
+              883,
+              677
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j10",
+              "snapDistancePx": 6.707557393545727
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.6753161301550531,
+                    "candidates": [
+                      {
+                        "holeId": "j10",
+                        "imagePosition": {
+                          "x": 887.9544946847066,
+                          "y": 681.5215383009463
+                        },
+                        "normalizedDistance": 0.19165803823351715,
+                        "distancePx": 6.707557393545727
+                      },
+                      {
+                        "holeId": "j11",
+                        "imagePosition": {
+                          "x": 852.7208215986727,
+                          "y": 681.6922440814019
+                        },
+                        "normalizedDistance": 0.8669741683885702,
+                        "distancePx": 30.640590711976408
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        }
+      ],
+      "pendingCorrections": [
+        null,
+        null
+      ],
+      "savedAssignmentId": null,
+      "dirty": true
+    },
+    {
+      "proposal": {
+        "id": "a4c66695-3b66-4340-afb6-0b3f4435ed55",
+        "analysisId": "ee4799cd-5424-44b0-86fc-847150977c27",
+        "imageId": "eae28486-6507-444a-b5e3-eaceeb337c17",
+        "wireCandidateId": "jumper_wire_11",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "cf57834d-04a7-42ef-9247-d61eb58870e9",
+          "elapsedMs": 12515,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 1,
+              "durationMs": 5,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 7,
+              "durationMs": 37,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 44,
+              "durationMs": 76,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 122,
+              "durationMs": 12391,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              158,
+              687
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "rejected",
+              "reason": "no_strict_match",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "outside_snap_radius",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.7724171349795248,
+                    "candidates": [
+                      {
+                        "holeId": "j30",
+                        "imagePosition": {
+                          "x": 170.00000000000003,
+                          "y": 685
+                        },
+                        "normalizedDistance": 0.3305676919952298,
+                        "distancePx": 12.165525060596467
+                      },
+                      {
+                        "holeId": "i30",
+                        "imagePosition": {
+                          "x": 171.0070207246524,
+                          "y": 648.8388012511167
+                        },
+                        "normalizedDistance": 1.1029848269747546,
+                        "distancePx": 40.31698994323992
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              379,
+              686
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j24",
+              "snapDistancePx": 9.583360871075344
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.4814412436580602,
+                    "candidates": [
+                      {
+                        "holeId": "j24",
+                        "imagePosition": {
+                          "x": 388.35979001466046,
+                          "y": 683.9420552809368
+                        },
+                        "normalizedDistance": 0.26333627813299876,
+                        "distancePx": 9.583360871075344
+                      },
+                      {
+                        "holeId": "j25",
+                        "imagePosition": {
+                          "x": 352.14610274419283,
+                          "y": 684.1175091921308
+                        },
+                        "normalizedDistance": 0.7447775217910589,
+                        "distancePx": 26.919798837791486
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "spatialConsistency": {
+          "status": "near_mask",
+          "reasons": [],
+          "distancesPx": [
+            7.5,
+            11.543396380615198
+          ],
+          "tolerancePx": 70.71650671300124,
+          "basis": "mask_proximity_only",
+          "physicalWireIdentity": "unverified"
+        },
+        "clientElapsedMs": 12680.900000002235
+      },
+      "endpoints": [
+        {
+          "role": "A",
+          "originalProposal": {
+            "role": "A",
+            "proposedImagePosition": [
+              158,
+              687
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "rejected",
+              "reason": "no_strict_match",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "outside_snap_radius",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.7724171349795248,
+                    "candidates": [
+                      {
+                        "holeId": "j30",
+                        "imagePosition": {
+                          "x": 170.00000000000003,
+                          "y": 685
+                        },
+                        "normalizedDistance": 0.3305676919952298,
+                        "distancePx": 12.165525060596467
+                      },
+                      {
+                        "holeId": "i30",
+                        "imagePosition": {
+                          "x": 171.0070207246524,
+                          "y": 648.8388012511167
+                        },
+                        "normalizedDistance": 1.1029848269747546,
+                        "distancePx": 40.31698994323992
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        },
+        {
+          "role": "B",
+          "originalProposal": {
+            "role": "B",
+            "proposedImagePosition": [
+              379,
+              686
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j24",
+              "snapDistancePx": 9.583360871075344
+            },
+            "reviewStatus": "proposed",
+            "resolutionDiagnostics": {
+              "decision": "accepted",
+              "reason": "accepted",
+              "boards": [
+                {
+                  "boardId": "board_1",
+                  "calibrationRevision": 1,
+                  "diagnosis": {
+                    "reason": "accepted",
+                    "policy": {
+                      "version": "calibrated-grid-v1",
+                      "snapRadiusPitch": 0.32,
+                      "ambiguityMarginPitch": 0.12
+                    },
+                    "ambiguityMargin": 0.4814412436580602,
+                    "candidates": [
+                      {
+                        "holeId": "j24",
+                        "imagePosition": {
+                          "x": 388.35979001466046,
+                          "y": 683.9420552809368
+                        },
+                        "normalizedDistance": 0.26333627813299876,
+                        "distancePx": 9.583360871075344
+                      },
+                      {
+                        "holeId": "j25",
+                        "imagePosition": {
+                          "x": 352.14610274419283,
+                          "y": 684.1175091921308
+                        },
+                        "normalizedDistance": 0.7447775217910589,
+                        "distancePx": 26.919798837791486
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "finalPosition": null,
+          "finalHole": null,
+          "reviewStatus": "proposed",
+          "source": null,
+          "observation": null
+        }
+      ],
+      "pendingCorrections": [
+        null,
+        null
+      ],
+      "savedAssignmentId": null,
+      "dirty": true,
+      "refinementExperiments": {
+        "A": {
+          "method": "color-tip-experiment-v1",
+          "status": "supported_tip",
+          "originalPosition": {
+            "x": 158,
+            "y": 687
+          },
+          "refinedPosition": {
+            "x": 167.6,
+            "y": 690.4
+          },
+          "physicalInsertion": "unverified",
+          "reason": "color_supported_tip_not_proof_of_insertion",
+          "evidence": {
+            "contrast": 159.03144343179432,
+            "componentPixels": 595,
+            "elongation": 7.188477327288405,
+            "movementPx": 10.184301645179199
+          },
+          "elapsedMs": 13.699999999254942,
+          "resolutionDiagnostics": {
+            "decision": "accepted",
+            "reason": "accepted",
+            "boards": [
+              {
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "diagnosis": {
+                  "reason": "accepted",
+                  "policy": {
+                    "version": "calibrated-grid-v1",
+                    "snapRadiusPitch": 0.32,
+                    "ambiguityMarginPitch": 0.12
+                  },
+                  "ambiguityMargin": 0.9107586746799996,
+                  "candidates": [
+                    {
+                      "holeId": "j30",
+                      "imagePosition": {
+                        "x": 170.00000000000003,
+                        "y": 685
+                      },
+                      "normalizedDistance": 0.16108092201924126,
+                      "distancePx": 5.909314681077656
+                    },
+                    {
+                      "holeId": "j29",
+                      "imagePosition": {
+                        "x": 206.57362135655774,
+                        "y": 684.8228022221099
+                      },
+                      "normalizedDistance": 1.071839596699241,
+                      "distancePx": 39.370652733959545
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "assignments": [],
+  "calibrationAudits": [],
+  "notes": "Archive the original image separately. SAM masks are retained in analysis. Refinement is experimental; original proposals and user decisions remain separate."
+}

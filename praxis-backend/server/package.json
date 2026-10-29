@@ -5,14 +5,15 @@
   "type": "module",
   "description": "Photograph-based component perception for Praxis",
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "dev": "node --env-file-if-exists=.env --import tsx --watch src/index.ts",
+    "experiment:muse": "node --env-file-if-exists=.env --import tsx scripts/experiment-muse.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "node --import tsx --test test/*.test.ts",
     "format": "prettier --write . ../README.md",
     "format:check": "prettier --check . ../README.md",
     "check": "npm run typecheck && npm test && npm run build && npm run format:check"

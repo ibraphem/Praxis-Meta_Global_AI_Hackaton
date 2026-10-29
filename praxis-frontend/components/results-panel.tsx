@@ -48,9 +48,11 @@ export function ResultsPanel({
               style={{ background: categories[type].color }}
             />
             <span>
-              {type === "jumper_wire"
-                ? "Wire candidates"
-                : categories[type].plural}
+              {type === "breadboard" && result?.provenance.mode === "sam-only"
+                ? "Board regions — unverified"
+                : type === "jumper_wire"
+                  ? "Wire candidates"
+                  : categories[type].plural}
             </span>
             <span className="mono">
               {result
@@ -101,7 +103,11 @@ export function ResultsPanel({
         ) : (
           <>
             <div className="list-heading">
-              <span>VISIBLE COMPONENTS</span>
+              <span>
+                {result.provenance.mode === "sam-only"
+                  ? "SAM CANDIDATES — UNVERIFIED"
+                  : "VISIBLE COMPONENTS"}
+              </span>
               <span>SELECT TO INSPECT</span>
             </div>
             <ul className="detection-list">
@@ -123,7 +129,10 @@ export function ResultsPanel({
                     </span>
                     <span className="detection-details">
                       <span className="detection-name">
-                        {componentLabel(object)}
+                        {object.reviewStatus === "sam_unverified" &&
+                        object.type === "breadboard"
+                          ? `SAM board region ${object.id.split("_").at(-1)}`
+                          : componentLabel(object)}
                         {object.interpretation === "uncertain" && (
                           <span className="uncertain-label">Uncertain</span>
                         )}
@@ -239,7 +248,11 @@ export function ResultsPanel({
       {result && (
         <div className="run-info">
           <span className="status-dot" />
-          <span>Analysis complete</span>
+          <span>
+            {result.provenance.mode === "sam-only"
+              ? "Segmentation only · unverified"
+              : "Analysis complete"}
+          </span>
           {elapsed !== null && (
             <span className="mono">{elapsed.toFixed(1)}s</span>
           )}

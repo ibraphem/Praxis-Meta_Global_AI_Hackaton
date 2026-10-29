@@ -33,6 +33,7 @@ export const componentSchema = z
     localizationSource: z.enum(['sam', 'muse', 'derived']).optional(),
     breadboardGrouping: breadboardGroupingSchema.optional(),
     interpretation: z.enum(['confirmed', 'uncertain']),
+    reviewStatus: z.literal('sam_unverified').optional(),
     detectionSource: z.enum(['sam', 'muse']).optional(),
     geometryStatus: z.enum(['segmented', 'box_only']).optional(),
     mask: maskSchema.optional(),
@@ -55,7 +56,7 @@ export const analysisSchema = z
     breadboardAudit: breadboardAuditSchema.optional(),
     provenance: z
       .object({
-        mode: z.enum(['combined', 'reasoning-only']),
+        mode: z.enum(['combined', 'reasoning-only', 'sam-only']),
         segmentationModel: z.string().optional(),
         reasoningModel: z.string(),
         wireAudit: z
@@ -75,6 +76,21 @@ export const analysisSchema = z
   .strict()
   .superRefine((analysis, context) => {
     validateBreadboards(analysis, context);
+    if (
+      analysis.provenance.mode === 'sam-only' &&
+      (analysis.breadboardAudit ||
+        analysis.objects.some(
+          (o) =>
+            o.interpretation !== 'uncertain' ||
+            o.reviewStatus !== 'sam_unverified' ||
+            o.localizationSource !== 'sam' ||
+            o.breadboardGrouping,
+        ))
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'SAM-only results must remain unverified.',
+      });
     const ids = new Set<string>();
     for (const [index, object] of analysis.objects.entries()) {
       const [x, y, width, height] = object.bbox;
@@ -128,7 +144,7 @@ export type Analysis = z.infer<typeof analysisSchema>;
 export interface PreparedImage {
   width: number;
   height: number;
-  /** Orientation-corrected, metadata-stripped JPEG. Never log or persist. */
+  /** Orientation-corrected, metadata-stripped JPEG. Never log; persisted only in the private job store. */
   dataUrl: string;
 }
 
@@ -137,7 +153,7 @@ export interface Detection {
   bbox: BoundingBox;
   confidence?: number;
   localizationSource?: 'sam' | 'muse';
-  /** Internal only. Never serialize encoded provider masks or sampler IDs. */
+  /** Private checkpoints only. Never expose encoded provider masks or sampler IDs in API responses. */
   encodedMask?: EncodedMask;
   samObjectId?: number;
 }

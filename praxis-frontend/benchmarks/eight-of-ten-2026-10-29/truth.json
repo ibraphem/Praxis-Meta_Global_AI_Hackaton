@@ -1,0 +1,52 @@
+{
+  "imageSha256": "1c92f9b07042ad54720c424a412bc290f76b69e5949f71d13122d73ee5cde736",
+  "analysisRunId": "ee4799cd-5424-44b0-86fc-847150977c27",
+  "recordedBeforeInference": true,
+  "wires": [
+    {
+      "id": "jumper_wire_5",
+      "boardId": "board_1",
+      "holes": [
+        "f23",
+        "f10"
+      ]
+    },
+    {
+      "id": "jumper_wire_6",
+      "boardId": "board_1",
+      "holes": [
+        "h23",
+        "h10"
+      ]
+    },
+    {
+      "id": "jumper_wire_7",
+      "boardId": "board_1",
+      "holes": [
+        "h30",
+        "h25"
+      ]
+    },
+    {
+      "id": "jumper_wire_10",
+      "boardId": "board_1",
+      "holes": [
+        "j20",
+        "j10"
+      ]
+    },
+    {
+      "id": "jumper_wire_11",
+      "boardId": "board_1",
+      "holes": [
+        "j30",
+        "j24"
+      ]
+    }
+  ],
+  "provenance": {
+    "physicalHoleLabelsSource": "../../test/fixtures/exact-hole-v1/praxis-exact-hole-benchmark.md",
+    "sourceReportSha256": "8e464c5aa978714e99583010a9a5121f60fa21c7169c1260c5e939f3af947c86",
+    "notes": "Physical-hole labels were recorded before the original benchmark and reused for the same immutable photograph. Selected-wire regions and calibration were checked against the report. No labels or pixel centers were derived from predictions or reviewer corrections. This is a subsequent Muse run, not the frozen 7/10 baseline."
+  }
+}

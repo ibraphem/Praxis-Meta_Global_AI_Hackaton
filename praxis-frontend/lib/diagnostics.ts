@@ -38,6 +38,29 @@ export const timingSchema = z
     timeoutMs: milliseconds.optional(),
     code: code.optional(),
     upstreamStatus: z.number().int().min(100).max(599).optional(),
+    payloadBytes: z.number().int().nonnegative().optional(),
+    encodedImageBytes: z.number().int().nonnegative().optional(),
+    promptChars: z.number().int().nonnegative().optional(),
+    outputTokenBudget: z.number().int().nonnegative().nullable().optional(),
+    imageDimensions: z
+      .array(
+        z
+          .object({
+            width: z.number().int().positive(),
+            height: z.number().int().positive(),
+          })
+          .strict(),
+      )
+      .max(4)
+      .optional(),
+    headersMs: milliseconds.optional(),
+    providerRequestId: z
+      .string()
+      .regex(/^[a-zA-Z0-9_.:-]{1,128}$/)
+      .optional(),
+    timeoutType: z
+      .enum(["local_deadline", "upstream_504", "stage_deadline"])
+      .optional(),
   })
   .strict();
 export const diagnosticsSchema = z

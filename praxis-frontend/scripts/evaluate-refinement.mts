@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
@@ -46,6 +46,36 @@ if (positional.length !== 3)
     "Usage: npm run benchmark:refine -- bundle.json truth.json original-photo.png [--all-endpoints] [--output new-report.json]. Original SAM masks are required; the frozen baseline report alone is insufficient.",
   );
 const [bundlePath, truthPath, imagePath] = positional;
+const invalidInputs = positional.flatMap((path, index) => {
+  const label = [
+    "evaluation bundle",
+    "pre-recorded ground truth",
+    "original photograph",
+  ][index];
+  try {
+    return statSync(path).isFile()
+      ? []
+      : [`- ${label}: ${resolve(path)} (not a file)`];
+  } catch (error) {
+    return [
+      `- ${label}: ${resolve(path)} (${(error as NodeJS.ErrnoException).code === "ENOENT" ? "not found" : "cannot be accessed"})`,
+    ];
+  }
+});
+if (invalidInputs.length) {
+  console.error(
+    [
+      "Benchmark input files are missing or inaccessible:",
+      ...invalidInputs,
+      `Relative paths are resolved from: ${process.cwd()}`,
+      "bundle.json and truth.json in the README command are example filenames, not generated files.",
+      "Export the evaluation bundle from Praxis and supply a separate truth JSON containing the physical holes recorded before inference. Do not derive truth from reviewed corrections.",
+      "The photograph is the third argument. Use its actual path, such as ../jumper_wires_breadboard.png when it is in the repository root.",
+      "See README.md: Archive complete inputs and evaluate unfamiliar photographs.",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
 if (
   outputPath &&
   positional.some((path) => resolve(path) === resolve(outputPath!))

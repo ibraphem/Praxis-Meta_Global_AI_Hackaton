@@ -1,0 +1,208 @@
+import { randomUUID } from 'node:crypto';
+import type { Config } from '../config.js';
+import { AppError } from '../lib/errors.js';
+import { AnalysisTrace, type TraceLogger } from '../lib/diagnostics.js';
+import { createVisionStages } from '../services/vision.js';
+import { partialAnalysis } from '../services/partial-analysis.js';
+import { JobStore, newAttempt } from './store.js';
+
+export type VisionStages = ReturnType<typeof createVisionStages>;
+/** Bounded, persisted queue. No worker lifetime depends on an HTTP connection. */
+export class AnalysisWorker {
+  readonly owner = randomUUID();
+  private timer: ReturnType<typeof setInterval> | undefined;
+  private active = new Map<
+    string,
+    { controller: AbortController; promise: Promise<void> }
+  >();
+  private stopped = false;
+  constructor(
+    readonly store: JobStore,
+    readonly config: Config,
+    readonly logger: TraceLogger,
+    readonly stages?: VisionStages,
+    readonly capacity = { active: 0 },
+  ) {}
+  start() {
+    this.timer = setInterval(() => this.tick(), 250);
+    this.timer.unref();
+    this.tick();
+  }
+  tick() {
+    if (this.stopped) return;
+    while (this.capacity.active < this.config.MAX_CONCURRENT_ANALYSES) {
+      let claim: ReturnType<JobStore['claim']>;
+      try {
+        claim = this.store.claim(this.owner);
+      } catch {
+        this.logger({
+          event: 'analysis.worker_storage_failure',
+          requestId: this.owner,
+        });
+        return;
+      }
+      if (!claim) break;
+      this.capacity.active++;
+      const controller = new AbortController();
+      const promise = this.run(claim, controller)
+        .catch(() => {
+          // Storage failures never turn an uncertain attempt into a retryable queue item.
+          this.logger({
+            event: 'analysis.worker_storage_failure',
+            requestId: claim.attemptId,
+          });
+        })
+        .finally(() => {
+          this.active.delete(claim.attemptId);
+          this.capacity.active--;
+        });
+      this.active.set(claim.attemptId, { controller, promise });
+    }
+  }
+  private async run(
+    claim: NonNullable<ReturnType<JobStore['claim']>>,
+    controller: AbortController,
+  ) {
+    const { job, stage, attemptId } = claim;
+    const trace = new AnalysisTrace(attemptId, this.logger);
+    const settings = {
+      ...this.config,
+      VISION_MODE: job.settings.mode,
+      META_SAM_MODEL: job.settings.samModel,
+      META_REASONING_MODEL: job.settings.museModel,
+      MUSE_MAX_DIMENSION: job.settings.maxDimension,
+      MUSE_MINIMAL_PROMPT: job.settings.minimalPrompt,
+    };
+    const stages = this.stages ?? createVisionStages(settings);
+    const heartbeat = setInterval(() => {
+      try {
+        if (
+          !this.store.renewLease(job.analysisId, this.owner, stage, attemptId)
+        )
+          controller.abort(
+            new AppError(
+              503,
+              'WORKER_INTERRUPTED',
+              'Worker ownership was lost.',
+            ),
+          );
+      } catch {
+        controller.abort(
+          new AppError(
+            503,
+            'WORKER_INTERRUPTED',
+            'Worker ownership could not be renewed.',
+          ),
+        );
+      }
+    }, 3000);
+    const timer = setTimeout(
+      () =>
+        controller.abort(
+          new AppError(504, 'ANALYSIS_TIMEOUT', 'The stage deadline expired.'),
+        ),
+      this.config.ANALYSIS_TIMEOUT_MS,
+    );
+    let abort: (() => void) | undefined;
+    try {
+      // Race even a misbehaving adapter that ignores AbortSignal. Late responses have no write path.
+      const aborted = new Promise<never>((_, reject) => {
+        abort = () => reject(controller.signal.reason);
+        controller.signal.addEventListener('abort', abort, { once: true });
+      });
+      const snapshot = job.sam.snapshot!;
+      const result = await Promise.race([
+        stage === 'sam'
+          ? settings.VISION_MODE === 'combined'
+            ? stages.segment(snapshot.image, controller.signal, trace)
+            : Promise.resolve(snapshot)
+          : stages.interpret(snapshot, controller.signal, trace),
+        aborted,
+      ]);
+      controller.signal.throwIfAborted();
+      const partial =
+        stage === 'sam' &&
+        'candidates' in result &&
+        settings.VISION_MODE === 'combined'
+          ? partialAnalysis(result, settings)
+          : undefined;
+      this.store.owned(job.analysisId, this.owner, stage, attemptId, (j, a) => {
+        a.status = 'succeeded';
+        a.upstreamOutcome = 'response_received';
+        a.retryPolicy = 'not_retryable';
+        a.finishedAt = Date.now();
+        a.diagnostics = trace.snapshot();
+        j[stage].status = 'succeeded';
+        delete j.owner;
+        delete j.leaseUntil;
+        if (stage === 'sam' && 'candidates' in result) {
+          j.sam.snapshot = result;
+          if (partial) j.sam.result = partial;
+          j.muse.attempts.push(newAttempt());
+          j.muse.status = 'queued';
+          j.status = partial ? 'partial' : 'queued';
+        } else if ('objects' in result) {
+          j.muse.result = result;
+          j.revision = attemptId;
+          j.status = 'completed';
+        }
+      });
+    } catch (error) {
+      const e =
+        error instanceof AppError
+          ? error
+          : new AppError(502, 'STAGE_FAILED', 'The analysis stage failed.');
+      this.store.owned(job.analysisId, this.owner, stage, attemptId, (j, a) => {
+        a.status =
+          e.code === 'WORKER_INTERRUPTED'
+            ? 'interrupted'
+            : [
+                  'PROVIDER_TIMEOUT',
+                  'META_API_TIMEOUT',
+                  'ANALYSIS_TIMEOUT',
+                ].includes(e.code)
+              ? 'timed_out'
+              : 'failed';
+        a.upstreamOutcome =
+          stage === 'sam' ||
+          a.status === 'interrupted' ||
+          a.status === 'timed_out' ||
+          ['PROVIDER_CONNECTION_ERROR', 'STAGE_FAILED'].includes(e.code)
+            ? 'unknown'
+            : 'response_received';
+        a.retryPolicy = [
+          'INVALID_IMAGE',
+          'UNSUPPORTED_IMAGE',
+          'IMAGE_TOO_LARGE',
+        ].includes(e.code)
+          ? 'not_retryable'
+          : 'manual_only';
+        a.errorCode = e.code;
+        a.finishedAt = Date.now();
+        a.diagnostics = trace.snapshot();
+        j[stage].status = a.status;
+        delete j.owner;
+        delete j.leaseUntil;
+        j.status = j.sam.result ? 'partial' : 'failed';
+      });
+    } finally {
+      clearInterval(heartbeat);
+      clearTimeout(timer);
+      if (abort) controller.signal.removeEventListener('abort', abort);
+    }
+  }
+  async close() {
+    this.stopped = true;
+    clearInterval(this.timer);
+    for (const a of this.active.values())
+      a.controller.abort(
+        new AppError(
+          503,
+          'WORKER_INTERRUPTED',
+          'The worker shut down before completing this attempt.',
+        ),
+      );
+    await Promise.all([...this.active.values()].map((a) => a.promise));
+    // No implicit retries during shutdown or subsequent recovery.
+  }
+}

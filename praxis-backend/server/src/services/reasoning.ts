@@ -1,3 +1,4 @@
+import { museInput } from './muse-image.js';
 import { z } from 'zod';
 import type { Config } from '../config.js';
 import { invalidProviderOutput } from '../lib/errors.js';
@@ -120,7 +121,12 @@ export function createReasoningService(config: Config, client: MetaClient) {
         },
       },
       signal,
-      { stage, ...(trace ? { trace } : {}) },
+      {
+        stage,
+        maxRetries: 0,
+        imageDimensions: [{ width: image.width, height: image.height }],
+        ...(trace ? { trace } : {}),
+      },
     );
     const envelope = completionSchema.safeParse(raw);
     if (!envelope.success) throw invalidProviderOutput();
@@ -142,15 +148,34 @@ export function createReasoningService(config: Config, client: MetaClient) {
       signal: AbortSignal,
       trace?: AnalysisTrace,
     ) {
+      const input = await museInput(
+        image,
+        candidates,
+        config.MUSE_MAX_DIMENSION,
+      );
+      const originalCandidates = candidates;
+      image = input.image;
+      candidates = input.candidates;
+      const prompt = `Review every candidate against the photograph. The image is ${image.width}x${image.height} pixels. Candidate bbox is [x,y,width,height] in image pixels. In objects, return exactly one decision per candidate ID. For LEDs, resistors and wires, confirm only if the proposed category matches the visible region. For breadboards, confirm valid board-region evidence even when it is only a terminal strip or attached rail section, and classify its extent separately; confirmed region evidence alone must not count as a physical board. Use uncertain if ambiguous and reject clearly wrong candidates. Do not rename, move, or reclassify these candidates. For every breadboard candidate (including rejected ones), return exactly one breadboardCandidates entry with extent whole, part, or uncertain. In breadboardGroups, group accepted candidates only when the photograph supports ONE physical board assembly. Account for both whole-board and overlapping part candidates in the same group. A group may contain a single whole-board candidate. Never treat a single part as a complete board. Set decision confirmed only when both the physical-board grouping and member categories are clear; otherwise uncertain. wholeCandidateId must identify a member classified whole, or null if no complete-board candidate exists. Do not merge separate adjacent, touching, stacked or overlapping boards based on proximity, alignment, color or box overlap alone. Leave ambiguous accepted candidates ungrouped or in uncertain groups; they will remain unresolved rather than count as physical boards. Each candidate may belong to at most one group. Do not invent candidate IDs or groups for missing boards. Use empty breadboardCandidates and breadboardGroups arrays when there are no breadboard candidates. Then independently inspect the WHOLE photograph for potentially missed insulated jumper wires, including arched jumpers and loose connector leads. In missingWires, return at most 16 SEARCH REGIONS as box=[left,top,right,bottom] on a NORMALIZED 0–1000 grid. These regions are hypotheses, not verified individual wires. For each hypothesis supply positivePoints: 1–3 [x,y] points on clearly visible INSULATION of the SAME intended wire, preferably away from crossings or connectors. Supply up to 3 negativePoints on neighboring wires/background to exclude. All points use the same normalized grid. If you cannot distinguish an individual wire or place a trustworthy point, return positivePoints=[] rather than guessing. Keep positive points inside that region. Enclose the intended wire's visible path; do not duplicate an accepted candidate, split one wire into several objects, or count bare component legs. Use missingWires=[] if nothing additional is visible. Do not add other categories. Candidates: ${JSON.stringify(candidates.map(({ id, type, bbox }) => ({ id, type, bbox })))}`;
+      const candidateList = JSON.stringify(
+        candidates.map(({ id, type, bbox }) => ({ id, type, bbox })),
+      );
+      const minimal =
+        prompt.split(' Then independently inspect')[0] +
+        ` Return missingWires=[]. Do not search for additional wires or infer insertion points. Candidates: ${candidateList}`;
       const result = await complete(
         image,
-        `Review every candidate against the photograph. The image is ${image.width}x${image.height} pixels. Candidate bbox is [x,y,width,height] in image pixels. In objects, return exactly one decision per candidate ID. For LEDs, resistors and wires, confirm only if the proposed category matches the visible region. For breadboards, confirm valid board-region evidence even when it is only a terminal strip or attached rail section, and classify its extent separately; confirmed region evidence alone must not count as a physical board. Use uncertain if ambiguous and reject clearly wrong candidates. Do not rename, move, or reclassify these candidates. For every breadboard candidate (including rejected ones), return exactly one breadboardCandidates entry with extent whole, part, or uncertain. In breadboardGroups, group accepted candidates only when the photograph supports ONE physical board assembly. Account for both whole-board and overlapping part candidates in the same group. A group may contain a single whole-board candidate. Never treat a single part as a complete board. Set decision confirmed only when both the physical-board grouping and member categories are clear; otherwise uncertain. wholeCandidateId must identify a member classified whole, or null if no complete-board candidate exists. Do not merge separate adjacent, touching, stacked or overlapping boards based on proximity, alignment, color or box overlap alone. Leave ambiguous accepted candidates ungrouped or in uncertain groups; they will remain unresolved rather than count as physical boards. Each candidate may belong to at most one group. Do not invent candidate IDs or groups for missing boards. Use empty breadboardCandidates and breadboardGroups arrays when there are no breadboard candidates. Then independently inspect the WHOLE photograph for potentially missed insulated jumper wires, including arched jumpers and loose connector leads. In missingWires, return at most 16 SEARCH REGIONS as box=[left,top,right,bottom] on a NORMALIZED 0–1000 grid. These regions are hypotheses, not verified individual wires. For each hypothesis supply positivePoints: 1–3 [x,y] points on clearly visible INSULATION of the SAME intended wire, preferably away from crossings or connectors. Supply up to 3 negativePoints on neighboring wires/background to exclude. All points use the same normalized grid. If you cannot distinguish an individual wire or place a trustworthy point, return positivePoints=[] rather than guessing. Keep positive points inside that region. Enclose the intended wire's visible path; do not duplicate an accepted candidate, split one wire into several objects, or count bare component legs. Use missingWires=[] if nothing additional is visible. Do not add other categories. Candidates: ${JSON.stringify(candidates.map(({ id, type, bbox }) => ({ id, type, bbox })))}`,
+        config.MUSE_MINIMAL_PROMPT ? minimal : prompt,
         interpretationSchema,
         signal,
         'muse.interpret',
         trace,
       );
-      const expected = new Set(candidates.map((candidate) => candidate.id));
+      if (config.MUSE_MINIMAL_PROMPT && result.missingWires.length)
+        throw invalidProviderOutput();
+      const expected = new Set(
+        originalCandidates.map((candidate) => candidate.id),
+      );
       const seen = new Set<string>();
       for (const object of result.objects) {
         if (!expected.has(object.id) || seen.has(object.id))
@@ -165,8 +190,9 @@ export function createReasoningService(config: Config, client: MetaClient) {
       signal: AbortSignal,
       trace?: AnalysisTrace,
     ) {
+      const input = await museInput(image, [], config.MUSE_MAX_DIMENSION);
       const result = await complete(
-        image,
+        input.image,
         'Locate the supported components. Return box as [left,top,right,bottom] on a normalized 0–1000 grid, top-left origin, right>left and bottom>top. Describe each physical component once. Exclude unsupported objects. Return an empty array if none are visible.',
         sceneSchema,
         signal,

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
 import {
-  analysisSchema,
   categories,
   componentTypes,
   IMAGE_TYPES,
@@ -11,6 +10,13 @@ import {
   MAX_IMAGE_PIXELS,
   type Analysis,
 } from "@/lib/vision";
+import {
+  analysisJobSchema,
+  jobIsActive,
+  jobMessage,
+  retryStage,
+  type AnalysisJob,
+} from "@/lib/analysis-jobs";
 import { Icon, PraxisMark } from "./icons";
 import { ImagePreview, type Photograph } from "./image-preview";
 import { ResultsPanel } from "./results-panel";
@@ -29,6 +35,9 @@ export function VisionWorkspace() {
   const selectionVersion = useRef(0);
   const dragDepth = useRef(0);
   const [photograph, setPhotograph] = useState<Photograph | null>(null);
+  const [job, setJob] = useState<AnalysisJob | null>(null);
+  const [usingPartial, setUsingPartial] = useState(false);
+  const resultKeyRef = useRef<string | null>(null);
   const [result, setResult] = useState<Analysis | null>(null);
   const [analysisRunId, setAnalysisRunId] = useState<string | null>(null);
   const [error, setErrorState] = useState<Failure | null>(null);
@@ -52,6 +61,7 @@ export function VisionWorkspace() {
   useEffect(
     () => () => {
       requestRef.current?.abort();
+      requestRef.current = null;
       selectionVersion.current++;
     },
     [],
@@ -96,6 +106,10 @@ export function VisionWorkspace() {
         height: image.naturalHeight,
       });
       setResult(null);
+      setJob(null);
+      setUsingPartial(false);
+      resultKeyRef.current = null;
+      window.history.replaceState(null, "", window.location.pathname);
       setAnalysisRunId(null);
       setSelectedId(null);
       setElapsed(null);
@@ -118,6 +132,10 @@ export function VisionWorkspace() {
     requestRef.current?.abort();
     requestRef.current = null;
     setPhotograph(null);
+    setJob(null);
+    setUsingPartial(false);
+    resultKeyRef.current = null;
+    window.history.replaceState(null, "", window.location.pathname);
     setAnalysisRunId(null);
     setResult(null);
     setError(null);
@@ -128,55 +146,141 @@ export function VisionWorkspace() {
     if (inputRef.current) inputRef.current.value = "";
   }
 
-  async function analyze() {
-    if (!photograph || loading || selecting) return;
+  async function readJob(response: Response) {
+    const payload: unknown = await response.json();
+    if (!response.ok) {
+      const failure = failureSchema.safeParse(payload);
+      if (failure.success) throw new AnalysisRequestError(failure.data.error);
+      throw new Error("The saved analysis could not be read.");
+    }
+    return analysisJobSchema.parse(payload);
+  }
+
+  async function observeJob(
+    id: string,
+    controller: AbortController,
+    initial?: AnalysisJob,
+  ) {
+    let current = initial;
+    while (!controller.signal.aborted && requestRef.current === controller) {
+      current ??= await readJob(
+        await fetch(`/api/analyses/${id}`, {
+          signal: controller.signal,
+          cache: "no-store",
+        }),
+      );
+      if (requestRef.current !== controller) return;
+      setJob(current);
+      setElapsed((current.updatedAt - current.createdAt) / 1000);
+      if (current.result) {
+        const key = `${current.analysisId}:${current.revision}`;
+        if (resultKeyRef.current !== key) {
+          resultKeyRef.current = key;
+          setAnalysisRunId(
+            current.revision === "sam" ? current.analysisId : current.revision,
+          );
+          setResult(current.result);
+          setSelectedId(
+            current.result.objects[0]?.id ??
+              current.result.proposals?.[0]?.id ??
+              null,
+          );
+        }
+      }
+      if (!jobIsActive(current)) return;
+      await new Promise<void>((resolve, reject) => {
+        const onAbort = () => {
+          clearTimeout(timer);
+          reject(controller.signal.reason);
+        };
+        const timer = setTimeout(() => {
+          controller.signal.removeEventListener("abort", onAbort);
+          resolve();
+        }, 1500);
+        controller.signal.addEventListener("abort", onAbort, { once: true });
+      });
+      current = undefined;
+    }
+  }
+
+  async function runJob(
+    action: "create" | "reconnect" | "retry-sam" | "retry-muse",
+    savedId?: string,
+  ) {
+    if (requestRef.current || selecting) return;
+    if (action === "create" && !photograph) return;
     const controller = new AbortController();
-    // Candidate numbers can repeat. A fresh run ID invalidates old associations
-    // immediately, including when this request is later cancelled or fails.
-    setAnalysisRunId(crypto.randomUUID());
     requestRef.current = controller;
     setLoading(true);
     setError(null);
-    setResult(null);
-    setSelectedId(null);
-    setElapsed(null);
-    const started = performance.now();
     try {
-      const body = new FormData();
-      body.set("image", photograph.file);
-      const response = await fetch("/api/vision/analyze", {
-        method: "POST",
-        body,
-        signal: controller.signal,
-      });
-      const payload: unknown = await response.json();
-      if (requestRef.current !== controller) return;
-      if (!response.ok) {
-        // The same-origin proxy returns curated error messages, never provider text.
-        const parsed = failureSchema.safeParse(payload);
-        if (parsed.success) throw new AnalysisRequestError(parsed.data.error);
-        throw new Error("Analysis could not be completed. Please try again.");
-      }
-      const parsed = analysisSchema.safeParse(payload);
-      if (!parsed.success)
-        throw new Error(
-          "The analysis result could not be read. Please try again.",
+      let current: AnalysisJob;
+      if (action === "create") {
+        setJob(null);
+        setResult(null);
+        setSelectedId(null);
+        setElapsed(null);
+        setUsingPartial(false);
+        resultKeyRef.current = null;
+        setAnalysisRunId(crypto.randomUUID());
+        const body = new FormData();
+        body.set("image", photograph!.file);
+        current = await readJob(
+          await fetch("/api/analyses", {
+            method: "POST",
+            body,
+            signal: controller.signal,
+          }),
         );
-      setResult(parsed.data);
-      setElapsed((performance.now() - started) / 1000);
-      setSelectedId(
-        parsed.data.objects[0]?.id ?? parsed.data.proposals?.[0]?.id ?? null,
+      } else {
+        const id = savedId ?? job?.analysisId;
+        if (!id) return;
+        current = await readJob(
+          await fetch(
+            `/api/analyses/${id}${action === "reconnect" ? "" : `/${action}`}`,
+            {
+              method: action === "reconnect" ? "GET" : "POST",
+              signal: controller.signal,
+              cache: "no-store",
+            },
+          ),
+        );
+        if (savedId) {
+          const response = await fetch(`/api/analyses/${id}/image`, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          if (!response.ok)
+            throw new Error("The saved photograph could not be loaded.");
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          if (requestRef.current !== controller) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          setPhotograph({
+            id: current.imageHash,
+            file: new File([blob], "saved-circuit", { type: blob.type }),
+            url,
+            width: current.image.width,
+            height: current.image.height,
+          });
+        }
+      }
+      if (requestRef.current !== controller) return;
+      setJob(current);
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}?analysis=${current.analysisId}`,
       );
+      await observeJob(current.analysisId, controller, current);
     } catch (cause) {
       if (!controller.signal.aborted && requestRef.current === controller) {
         if (cause instanceof AnalysisRequestError) setErrorState(cause.failure);
         else
           setError(
-            cause instanceof Error &&
-              !(cause instanceof TypeError) &&
-              !(cause instanceof SyntaxError)
-              ? cause.message
-              : "The connection was interrupted. Please try again.",
+            "The connection was interrupted. Reconnect to the saved analysis to check its status.",
           );
       }
     } finally {
@@ -184,6 +288,31 @@ export function VisionWorkspace() {
         requestRef.current = null;
         setLoading(false);
       }
+    }
+  }
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("analysis");
+    const timer = setTimeout(() => {
+      if (id && /^[0-9a-f-]{36}$/i.test(id)) void runJob("reconnect", id);
+    }, 0);
+    return () => clearTimeout(timer);
+    // Restore the server job once on mount; subsequent updates use explicit controls.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function deleteSavedJob() {
+    if (!job || loading) return;
+    try {
+      const response = await fetch(`/api/analyses/${job.analysisId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error();
+      clear();
+    } catch {
+      setError(
+        "The saved analysis could not be deleted. An attempt may still be running; reconnect and try again when it finishes.",
+      );
     }
   }
 
@@ -234,6 +363,78 @@ export function VisionWorkspace() {
             </div>
           </div>
         </div>
+        {job && (
+          <section
+            className="analysis-job-status"
+            aria-label="Saved analysis"
+            aria-live="polite"
+          >
+            <p>
+              <strong>{jobMessage(job)}</strong>
+            </p>
+            <p>
+              Saved photograph and segmentation are retained for{" "}
+              {Math.max(
+                1,
+                Math.round((job.expiresAt - job.createdAt) / 3600000),
+              )}{" "}
+              hours. This page link reopens the analysis. Server work continues
+              when updates are paused.
+            </p>
+            <div className="analysis-job-actions">
+              {job.result?.provenance.mode === "sam-only" && !usingPartial && (
+                <button
+                  className="button button-secondary"
+                  onClick={() => setUsingPartial(true)}
+                >
+                  Continue with SAM candidates
+                </button>
+              )}
+              {!loading && (
+                <button
+                  className="button button-secondary"
+                  onClick={() => void runJob("reconnect")}
+                >
+                  Reconnect to saved analysis
+                </button>
+              )}
+              {!loading && retryStage(job) && (
+                <button
+                  className="button button-primary"
+                  onClick={() => void runJob(`retry-${retryStage(job)!}`)}
+                >
+                  Retry{" "}
+                  {retryStage(job) === "muse"
+                    ? "Muse interpretation"
+                    : "SAM segmentation"}
+                </button>
+              )}
+              {!loading && !jobIsActive(job) && (
+                <button
+                  className="button button-secondary"
+                  onClick={() => void deleteSavedJob()}
+                >
+                  Delete saved analysis
+                </button>
+              )}
+            </div>
+            <details>
+              <summary>Stage attempts and timings</summary>
+              <pre>
+                {JSON.stringify(
+                  {
+                    analysisId: job.analysisId,
+                    settings: job.settings,
+                    sam: job.sam,
+                    muse: job.muse,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          </section>
+        )}
         <div className="workspace-layout">
           <section
             className="workspace-panel"
@@ -292,7 +493,7 @@ export function VisionWorkspace() {
               <ImagePreview
                 photograph={photograph}
                 result={result}
-                loading={loading}
+                loading={loading && !usingPartial}
                 selecting={selecting}
                 dragging={dragging}
                 showOverlays={showOverlays}
@@ -344,13 +545,13 @@ export function VisionWorkspace() {
                     setLoading(false);
                   }}
                 >
-                  Cancel analysis
+                  Pause updates
                 </button>
               ) : (
                 <button
                   type="button"
                   className="button button-primary"
-                  onClick={() => void analyze()}
+                  onClick={() => void runJob("create")}
                   disabled={!photograph || selecting}
                 >
                   <Icon name="scan" width="17" height="17" />
@@ -381,7 +582,7 @@ export function VisionWorkspace() {
           </section>
           <ResultsPanel
             result={result}
-            loading={loading}
+            loading={loading && !usingPartial}
             selectedId={selectedId}
             onSelect={setSelectedId}
             elapsed={elapsed}
@@ -405,7 +606,11 @@ export function VisionWorkspace() {
               <Icon name="code" width="17" height="17" />
               <span>Inspect response JSON</span>
               <span className="mono">
-                {result.provenance.mode === "combined" ? "SAM + MUSE" : "MUSE"}
+                {result.provenance.mode === "combined"
+                  ? "SAM + MUSE"
+                  : result.provenance.mode === "sam-only"
+                    ? "SAM · UNVERIFIED"
+                    : "MUSE"}
               </span>
               <span className="details-chevron">⌄</span>
             </summary>

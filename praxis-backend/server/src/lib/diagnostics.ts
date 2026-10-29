@@ -29,6 +29,14 @@ export interface StageTiming {
   timeoutMs?: number;
   code?: string;
   upstreamStatus?: number;
+  payloadBytes?: number;
+  encodedImageBytes?: number;
+  promptChars?: number;
+  outputTokenBudget?: number | null;
+  imageDimensions?: { width: number; height: number }[];
+  headersMs?: number;
+  providerRequestId?: string;
+  timeoutType?: 'local_deadline' | 'upstream_504' | 'stage_deadline';
 }
 export interface ErrorDetails {
   source:
@@ -76,7 +84,7 @@ export class AnalysisTrace {
   begin(
     stage: Stage,
     metadata: Partial<
-      Pick<StageTiming, 'model' | 'attempt' | 'timeoutMs' | 'kind'>
+      Omit<StageTiming, 'stage' | 'startedAtMs' | 'durationMs' | 'status'>
     > = {},
   ) {
     const start = performance.now();
@@ -92,7 +100,7 @@ export class AnalysisTrace {
     this.emit('vision.stage_started', { ...timing });
     return (
       status: Exclude<TimingStatus, 'running'>,
-      extra: Pick<StageTiming, 'code' | 'upstreamStatus'> = {},
+      extra: Partial<StageTiming> = {},
     ) => {
       if (timing.status !== 'running') return;
       Object.assign(timing, extra, {

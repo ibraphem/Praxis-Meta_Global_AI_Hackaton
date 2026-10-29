@@ -1,0 +1,1384 @@
+{
+  "reportVersion": "praxis-refinement-comparison-v2",
+  "runtime": {
+    "node": "v25.9.0",
+    "sharp": "0.35.5"
+  },
+  "implementationHashes": {
+    "refinement": "6c82061319cc0ce27f90d63ca75d29d35c92eddd2b1c2b04e3d4656236988b7a",
+    "resolver": "06526101abd572baa7e4cb453ce4deb72f4be8c2317ae1c9f65120304059d209",
+    "evaluator": "5e5cbf1e9e467b86596776a19f2dc5810280c3a3f9400fd007978ba5528b2255"
+  },
+  "inputHashes": {
+    "photo": "1c92f9b07042ad54720c424a412bc290f76b69e5949f71d13122d73ee5cde736",
+    "bundle": "257c90eb3ba88047aa74bdb3e6c15db96502936da8b2f9dca870c32dcbbb1d2d",
+    "truth": "a024dfc5e7c8208d5440129e3cbbcbfd619dc1c9d95948f410388d12e2693f87"
+  },
+  "analysisRunId": "ee4799cd-5424-44b0-86fc-847150977c27",
+  "policy": {
+    "version": "color-tip-experiment-v1",
+    "minContrast": 45,
+    "minComponentPixels": 8,
+    "minElongation": 4,
+    "maxMovementFraction": 0.65
+  },
+  "resolverPolicy": {
+    "version": "calibrated-grid-v1",
+    "snapRadiusPitch": 0.32,
+    "ambiguityMarginPitch": 0.12
+  },
+  "archivedResolverPolicy": {
+    "version": "calibrated-grid-v1",
+    "snapRadiusPitch": 0.32,
+    "ambiguityMarginPitch": 0.12
+  },
+  "mode": "all_endpoints",
+  "raw": {
+    "correct": 8,
+    "accepted": 8,
+    "wrong": 0,
+    "unresolved": 2,
+    "completeWires": 3,
+    "endpoints": 10,
+    "wires": 5,
+    "endpointYield": 0.8,
+    "resolvedPrecision": 1,
+    "completeWireYield": 0.6,
+    "results": [
+      {
+        "id": "jumper_wire_5",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.2105385094572293,
+                "candidates": [
+                  {
+                    "holeId": "f23",
+                    "imagePosition": {
+                      "x": 427.785794667476,
+                      "y": 540.4221685398437
+                    },
+                    "normalizedDistance": 0.39486782857075464,
+                    "distancePx": 14.220473252011944
+                  },
+                  {
+                    "holeId": "f22",
+                    "imagePosition": {
+                      "x": 463.75348014671175,
+                      "y": 540.3885701973757
+                    },
+                    "normalizedDistance": 0.6054063380279839,
+                    "distancePx": 21.75695027552508
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.6351459540019212,
+                "candidates": [
+                  {
+                    "holeId": "f10",
+                    "imagePosition": {
+                      "x": 889.923177454563,
+                      "y": 539.9904740939179
+                    },
+                    "normalizedDistance": 0.24445512627065827,
+                    "distancePx": 8.550111362248696
+                  },
+                  {
+                    "holeId": "f11",
+                    "imagePosition": {
+                      "x": 854.7883327299915,
+                      "y": 540.0232944583615
+                    },
+                    "normalizedDistance": 0.8796010802725794,
+                    "distancePx": 31.017277512421323
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          null,
+          "board_1:f10"
+        ],
+        "correct": 1,
+        "accepted": 1,
+        "wrong": 0,
+        "unresolved": 1,
+        "complete": false
+      },
+      {
+        "id": "jumper_wire_6",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.7136179272240442,
+                "candidates": [
+                  {
+                    "holeId": "h23",
+                    "imagePosition": {
+                      "x": 426.1462493651224,
+                      "y": 611.9946825070829
+                    },
+                    "normalizedDistance": 0.1447449168877146,
+                    "distancePx": 5.243524176504566
+                  },
+                  {
+                    "holeId": "h24",
+                    "imagePosition": {
+                      "x": 390.0559439241243,
+                      "y": 612.0988718350486
+                    },
+                    "normalizedDistance": 0.8583628441117588,
+                    "distancePx": 30.957174263756855
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.5481419331943918,
+                "candidates": [
+                  {
+                    "holeId": "h10",
+                    "imagePosition": {
+                      "x": 888.9401904264877,
+                      "y": 610.6586397909965
+                    },
+                    "normalizedDistance": 0.24370598787582473,
+                    "distancePx": 8.668149584624015
+                  },
+                  {
+                    "holeId": "g10",
+                    "imagePosition": {
+                      "x": 889.4320218314209,
+                      "y": 575.3002655437829
+                    },
+                    "normalizedDistance": 0.7918479210702165,
+                    "distancePx": 27.92858315698094
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          "board_1:h23",
+          "board_1:h10"
+        ],
+        "correct": 2,
+        "accepted": 2,
+        "wrong": 0,
+        "unresolved": 0,
+        "complete": true
+      },
+      {
+        "id": "jumper_wire_7",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.7757308657758719,
+                "candidates": [
+                  {
+                    "holeId": "h30",
+                    "imagePosition": {
+                      "x": 172.01262843829562,
+                      "y": 612.7283424430218
+                    },
+                    "normalizedDistance": 0.14023536642517928,
+                    "distancePx": 5.177347791480818
+                  },
+                  {
+                    "holeId": "i30",
+                    "imagePosition": {
+                      "x": 171.0070207246524,
+                      "y": 648.8388012511167
+                    },
+                    "normalizedDistance": 0.9159662322010512,
+                    "distancePx": 32.976189004323
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.5517502816154447,
+                "candidates": [
+                  {
+                    "holeId": "h25",
+                    "imagePosition": {
+                      "x": 353.89449167597087,
+                      "y": 612.2032665571759
+                    },
+                    "normalizedDistance": 0.23975524044234592,
+                    "distancePx": 8.760033313739875
+                  },
+                  {
+                    "holeId": "h26",
+                    "imagePosition": {
+                      "x": 317.66168202965736,
+                      "y": 612.307867281421
+                    },
+                    "normalizedDistance": 0.7915055220577907,
+                    "distancePx": 28.577825484103
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          "board_1:h30",
+          "board_1:h25"
+        ],
+        "correct": 2,
+        "accepted": 2,
+        "wrong": 0,
+        "unresolved": 0,
+        "complete": true
+      },
+      {
+        "id": "jumper_wire_10",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.8548216025881289,
+                "candidates": [
+                  {
+                    "holeId": "j20",
+                    "imagePosition": {
+                      "x": 532.503151454045,
+                      "y": 683.2436862817149
+                    },
+                    "normalizedDistance": 0.07695946890075697,
+                    "distancePx": 2.7894458641033673
+                  },
+                  {
+                    "holeId": "j19",
+                    "imagePosition": {
+                      "x": 568.36219197104,
+                      "y": 683.0699506202953
+                    },
+                    "normalizedDistance": 0.9317810714888859,
+                    "distancePx": 33.379344622721376
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.6753161301550531,
+                "candidates": [
+                  {
+                    "holeId": "j10",
+                    "imagePosition": {
+                      "x": 887.9544946847066,
+                      "y": 681.5215383009463
+                    },
+                    "normalizedDistance": 0.19165803823351715,
+                    "distancePx": 6.707557393545727
+                  },
+                  {
+                    "holeId": "j11",
+                    "imagePosition": {
+                      "x": 852.7208215986727,
+                      "y": 681.6922440814019
+                    },
+                    "normalizedDistance": 0.8669741683885702,
+                    "distancePx": 30.640590711976408
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          "board_1:j20",
+          "board_1:j10"
+        ],
+        "correct": 2,
+        "accepted": 2,
+        "wrong": 0,
+        "unresolved": 0,
+        "complete": true
+      },
+      {
+        "id": "jumper_wire_11",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.7724171349795248,
+                "candidates": [
+                  {
+                    "holeId": "j30",
+                    "imagePosition": {
+                      "x": 170.00000000000003,
+                      "y": 685
+                    },
+                    "normalizedDistance": 0.3305676919952298,
+                    "distancePx": 12.165525060596467
+                  },
+                  {
+                    "holeId": "i30",
+                    "imagePosition": {
+                      "x": 171.0070207246524,
+                      "y": 648.8388012511167
+                    },
+                    "normalizedDistance": 1.1029848269747546,
+                    "distancePx": 40.31698994323992
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.4814412436580602,
+                "candidates": [
+                  {
+                    "holeId": "j24",
+                    "imagePosition": {
+                      "x": 388.35979001466046,
+                      "y": 683.9420552809368
+                    },
+                    "normalizedDistance": 0.26333627813299876,
+                    "distancePx": 9.583360871075344
+                  },
+                  {
+                    "holeId": "j25",
+                    "imagePosition": {
+                      "x": 352.14610274419283,
+                      "y": 684.1175091921308
+                    },
+                    "normalizedDistance": 0.7447775217910589,
+                    "distancePx": 26.919798837791486
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          null,
+          "board_1:j24"
+        ],
+        "correct": 1,
+        "accepted": 1,
+        "wrong": 0,
+        "unresolved": 1,
+        "complete": false
+      }
+    ]
+  },
+  "refined": {
+    "correct": 2,
+    "accepted": 2,
+    "wrong": 0,
+    "unresolved": 8,
+    "completeWires": 0,
+    "endpoints": 10,
+    "wires": 5,
+    "endpointYield": 0.2,
+    "resolvedPrecision": 1,
+    "completeWireYield": 0,
+    "results": [
+      {
+        "id": "jumper_wire_5",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.0997211456220406,
+                "candidates": [
+                  {
+                    "holeId": "f23",
+                    "imagePosition": {
+                      "x": 427.785794667476,
+                      "y": 540.4221685398437
+                    },
+                    "normalizedDistance": 0.5228187529504587,
+                    "distancePx": 18.57868232131747
+                  },
+                  {
+                    "holeId": "f22",
+                    "imagePosition": {
+                      "x": 463.75348014671175,
+                      "y": 540.3885701973757
+                    },
+                    "normalizedDistance": 0.6225398985724993,
+                    "distancePx": 22.563283712340066
+                  }
+                ]
+              }
+            }
+          ],
+          []
+        ],
+        "resolved": [
+          null,
+          null
+        ],
+        "correct": 0,
+        "accepted": 0,
+        "wrong": 0,
+        "unresolved": 2,
+        "complete": false
+      },
+      {
+        "id": "jumper_wire_6",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.333350955276174,
+                "candidates": [
+                  {
+                    "holeId": "h23",
+                    "imagePosition": {
+                      "x": 426.1462493651224,
+                      "y": 611.9946825070829
+                    },
+                    "normalizedDistance": 0.375002292850254,
+                    "distancePx": 13.34099421540817
+                  },
+                  {
+                    "holeId": "h22",
+                    "imagePosition": {
+                      "x": 462.16561776211876,
+                      "y": 611.8906979677122
+                    },
+                    "normalizedDistance": 0.708353248126428,
+                    "distancePx": 25.66972681921722
+                  }
+                ]
+              }
+            }
+          ],
+          []
+        ],
+        "resolved": [
+          null,
+          null
+        ],
+        "correct": 0,
+        "accepted": 0,
+        "wrong": 0,
+        "unresolved": 2,
+        "complete": false
+      },
+      {
+        "id": "jumper_wire_7",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.6611028495097047,
+                "candidates": [
+                  {
+                    "holeId": "h30",
+                    "imagePosition": {
+                      "x": 172.01262843829562,
+                      "y": 612.7283424430218
+                    },
+                    "normalizedDistance": 0.22238811683609522,
+                    "distancePx": 8.213397726606141
+                  },
+                  {
+                    "holeId": "i30",
+                    "imagePosition": {
+                      "x": 171.0070207246524,
+                      "y": 648.8388012511167
+                    },
+                    "normalizedDistance": 0.8834909663457999,
+                    "distancePx": 31.738011673913206
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.021646166567997227,
+                "candidates": [
+                  {
+                    "holeId": "h26",
+                    "imagePosition": {
+                      "x": 317.66168202965736,
+                      "y": 612.307867281421
+                    },
+                    "normalizedDistance": 0.5016041427638037,
+                    "distancePx": 18.067367814712266
+                  },
+                  {
+                    "holeId": "h25",
+                    "imagePosition": {
+                      "x": 353.89449167597087,
+                      "y": 612.2032665571759
+                    },
+                    "normalizedDistance": 0.523250309331801,
+                    "distancePx": 19.051324768014787
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          "board_1:h30",
+          null
+        ],
+        "correct": 1,
+        "accepted": 1,
+        "wrong": 0,
+        "unresolved": 1,
+        "complete": false
+      },
+      {
+        "id": "jumper_wire_10",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.19255611459254285,
+                "candidates": [
+                  {
+                    "holeId": "j20",
+                    "imagePosition": {
+                      "x": 532.503151454045,
+                      "y": 683.2436862817149
+                    },
+                    "normalizedDistance": 0.40408906465517735,
+                    "distancePx": 14.515911512887111
+                  },
+                  {
+                    "holeId": "j19",
+                    "imagePosition": {
+                      "x": 568.36219197104,
+                      "y": 683.0699506202953
+                    },
+                    "normalizedDistance": 0.5966451792477202,
+                    "distancePx": 21.369793857619275
+                  }
+                ]
+              }
+            }
+          ],
+          []
+        ],
+        "resolved": [
+          null,
+          null
+        ],
+        "correct": 0,
+        "accepted": 0,
+        "wrong": 0,
+        "unresolved": 2,
+        "complete": false
+      },
+      {
+        "id": "jumper_wire_11",
+        "boardId": "board_1",
+        "endpoints": [
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "accepted",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.9107586746799996,
+                "candidates": [
+                  {
+                    "holeId": "j30",
+                    "imagePosition": {
+                      "x": 170.00000000000003,
+                      "y": 685
+                    },
+                    "normalizedDistance": 0.16108092201924126,
+                    "distancePx": 5.909314681077656
+                  },
+                  {
+                    "holeId": "j29",
+                    "imagePosition": {
+                      "x": 206.57362135655774,
+                      "y": 684.8228022221099
+                    },
+                    "normalizedDistance": 1.071839596699241,
+                    "distancePx": 39.370652733959545
+                  }
+                ]
+              }
+            }
+          ],
+          [
+            {
+              "boardId": "board_1",
+              "diagnosis": {
+                "reason": "outside_snap_radius",
+                "policy": {
+                  "version": "calibrated-grid-v1",
+                  "snapRadiusPitch": 0.32,
+                  "ambiguityMarginPitch": 0.12
+                },
+                "ambiguityMargin": 0.4408431834901416,
+                "candidates": [
+                  {
+                    "holeId": "j25",
+                    "imagePosition": {
+                      "x": 352.14610274419283,
+                      "y": 684.1175091921308
+                    },
+                    "normalizedDistance": 0.32774550422258597,
+                    "distancePx": 11.682179759565441
+                  },
+                  {
+                    "holeId": "j24",
+                    "imagePosition": {
+                      "x": 388.35979001466046,
+                      "y": 683.9420552809368
+                    },
+                    "normalizedDistance": 0.7685886877127276,
+                    "distancePx": 28.018928459088023
+                  }
+                ]
+              }
+            }
+          ]
+        ],
+        "resolved": [
+          "board_1:j30",
+          null
+        ],
+        "correct": 1,
+        "accepted": 1,
+        "wrong": 0,
+        "unresolved": 1,
+        "complete": false
+      }
+    ]
+  },
+  "experiments": [
+    {
+      "wireId": "jumper_wire_5",
+      "index": 0,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 442,
+          "y": 540
+        },
+        "refinedPosition": {
+          "x": 443.5,
+          "y": 550.3333333333334
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 161.8177987738061,
+          "componentPixels": 616,
+          "elongation": 8.770018900506896,
+          "movementPx": 10.441636738451427
+        },
+        "elapsedMs": 7.8940000000000055
+      }
+    },
+    {
+      "wireId": "jumper_wire_5",
+      "index": 1,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "rejected",
+        "originalPosition": {
+          "x": 885,
+          "y": 533
+        },
+        "refinedPosition": null,
+        "physicalInsertion": "unverified",
+        "reason": "insufficient_wire_pixels",
+        "evidence": {
+          "contrast": 163.07666908543356,
+          "componentPixels": 1,
+          "elongation": null,
+          "movementPx": null
+        },
+        "elapsedMs": 5.581209000000058
+      }
+    },
+    {
+      "wireId": "jumper_wire_6",
+      "index": 0,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 421,
+          "y": 613
+        },
+        "refinedPosition": {
+          "x": 437.5,
+          "y": 619
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 152.31874474272692,
+          "componentPixels": 407,
+          "elongation": 4.930114886526172,
+          "movementPx": 17.55704986607944
+        },
+        "elapsedMs": 6.963041999999973
+      }
+    },
+    {
+      "wireId": "jumper_wire_6",
+      "index": 1,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "rejected",
+        "originalPosition": {
+          "x": 893,
+          "y": 603
+        },
+        "refinedPosition": null,
+        "physicalInsertion": "unverified",
+        "reason": "ambiguous_local_shape",
+        "evidence": {
+          "contrast": 154.06816673148285,
+          "componentPixels": 409,
+          "elongation": 3.9716663215604457,
+          "movementPx": null
+        },
+        "elapsedMs": 4.845250000000078
+      }
+    },
+    {
+      "wireId": "jumper_wire_7",
+      "index": 0,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 168,
+          "y": 616
+        },
+        "refinedPosition": {
+          "x": 165.4,
+          "y": 617.6
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 173.60011520733505,
+          "componentPixels": 805,
+          "elongation": 11.554868137711283,
+          "movementPx": 3.052867504494757
+        },
+        "elapsedMs": 5.716832999999951
+      }
+    },
+    {
+      "wireId": "jumper_wire_7",
+      "index": 1,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 346,
+          "y": 616
+        },
+        "refinedPosition": {
+          "x": 335.2857142857143,
+          "y": 616.2857142857143
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 150.63200191194431,
+          "componentPixels": 462,
+          "elongation": 6.33296821277527,
+          "movementPx": 10.718094561087263
+        },
+        "elapsedMs": 5.0798750000000155
+      }
+    },
+    {
+      "wireId": "jumper_wire_10",
+      "index": 0,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 535,
+          "y": 682
+        },
+        "refinedPosition": {
+          "x": 547,
+          "y": 682.5
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 148.25316185498372,
+          "componentPixels": 232,
+          "elongation": 52.58597042132714,
+          "movementPx": 12.010412149464313
+        },
+        "elapsedMs": 5.310042000000067
+      }
+    },
+    {
+      "wireId": "jumper_wire_10",
+      "index": 1,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "rejected",
+        "originalPosition": {
+          "x": 883,
+          "y": 677
+        },
+        "refinedPosition": null,
+        "physicalInsertion": "unverified",
+        "reason": "ambiguous_local_shape",
+        "evidence": {
+          "contrast": 160.97204726287106,
+          "componentPixels": 529,
+          "elongation": 3.670350744104091,
+          "movementPx": null
+        },
+        "elapsedMs": 5.1820410000000265
+      }
+    },
+    {
+      "wireId": "jumper_wire_11",
+      "index": 0,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 158,
+          "y": 687
+        },
+        "refinedPosition": {
+          "x": 167.6,
+          "y": 690.4
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 162.4130536625674,
+          "componentPixels": 596,
+          "elongation": 7.08525688234521,
+          "movementPx": 10.184301645179199
+        },
+        "elapsedMs": 4.971042000000011
+      }
+    },
+    {
+      "wireId": "jumper_wire_11",
+      "index": 1,
+      "result": {
+        "method": "color-tip-experiment-v1",
+        "status": "supported_tip",
+        "originalPosition": {
+          "x": 379,
+          "y": 686
+        },
+        "refinedPosition": {
+          "x": 361.3333333333333,
+          "y": 691.3333333333334
+        },
+        "physicalInsertion": "unverified",
+        "reason": "color_supported_tip_not_proof_of_insertion",
+        "evidence": {
+          "contrast": 145.03103116229988,
+          "componentPixels": 311,
+          "elongation": 5.7970393461282415,
+          "movementPx": 18.454147380888575
+        },
+        "elapsedMs": 4.780999999999949
+      }
+    }
+  ],
+  "skipped": [],
+  "endpoints": [
+    {
+      "wireId": "jumper_wire_5",
+      "role": "A",
+      "truth": "board_1:f23",
+      "truthPosition": {
+        "x": 427.785794667476,
+        "y": 540.4221685398437
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 442,
+          "y": 540
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 14.220473252011944
+      },
+      "refined": {
+        "position": {
+          "x": 443.5,
+          "y": 550.3333333333334
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 18.57868232131747
+      },
+      "transition": "unresolved_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_5",
+      "role": "B",
+      "truth": "board_1:f10",
+      "truthPosition": {
+        "x": 889.923177454563,
+        "y": 539.9904740939179
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 885,
+          "y": 533
+        },
+        "resolved": "board_1:f10",
+        "outcome": "correct",
+        "errorPx": 8.550111362248696
+      },
+      "refined": {
+        "position": null,
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": null
+      },
+      "transition": "correct_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_6",
+      "role": "A",
+      "truth": "board_1:h23",
+      "truthPosition": {
+        "x": 426.1462493651224,
+        "y": 611.9946825070829
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 421,
+          "y": 613
+        },
+        "resolved": "board_1:h23",
+        "outcome": "correct",
+        "errorPx": 5.243524176504566
+      },
+      "refined": {
+        "position": {
+          "x": 437.5,
+          "y": 619
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 13.34099421540817
+      },
+      "transition": "correct_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_6",
+      "role": "B",
+      "truth": "board_1:h10",
+      "truthPosition": {
+        "x": 888.9401904264877,
+        "y": 610.6586397909965
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 893,
+          "y": 603
+        },
+        "resolved": "board_1:h10",
+        "outcome": "correct",
+        "errorPx": 8.668149584624015
+      },
+      "refined": {
+        "position": null,
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": null
+      },
+      "transition": "correct_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_7",
+      "role": "A",
+      "truth": "board_1:h30",
+      "truthPosition": {
+        "x": 172.01262843829562,
+        "y": 612.7283424430218
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 168,
+          "y": 616
+        },
+        "resolved": "board_1:h30",
+        "outcome": "correct",
+        "errorPx": 5.177347791480818
+      },
+      "refined": {
+        "position": {
+          "x": 165.4,
+          "y": 617.6
+        },
+        "resolved": "board_1:h30",
+        "outcome": "correct",
+        "errorPx": 8.213397726606141
+      },
+      "transition": "correct_to_correct"
+    },
+    {
+      "wireId": "jumper_wire_7",
+      "role": "B",
+      "truth": "board_1:h25",
+      "truthPosition": {
+        "x": 353.89449167597087,
+        "y": 612.2032665571759
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 346,
+          "y": 616
+        },
+        "resolved": "board_1:h25",
+        "outcome": "correct",
+        "errorPx": 8.760033313739875
+      },
+      "refined": {
+        "position": {
+          "x": 335.2857142857143,
+          "y": 616.2857142857143
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 19.051324768014787
+      },
+      "transition": "correct_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_10",
+      "role": "A",
+      "truth": "board_1:j20",
+      "truthPosition": {
+        "x": 532.503151454045,
+        "y": 683.2436862817149
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 535,
+          "y": 682
+        },
+        "resolved": "board_1:j20",
+        "outcome": "correct",
+        "errorPx": 2.7894458641033673
+      },
+      "refined": {
+        "position": {
+          "x": 547,
+          "y": 682.5
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 14.515911512887111
+      },
+      "transition": "correct_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_10",
+      "role": "B",
+      "truth": "board_1:j10",
+      "truthPosition": {
+        "x": 887.9544946847066,
+        "y": 681.5215383009463
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 883,
+          "y": 677
+        },
+        "resolved": "board_1:j10",
+        "outcome": "correct",
+        "errorPx": 6.707557393545727
+      },
+      "refined": {
+        "position": null,
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": null
+      },
+      "transition": "correct_to_unresolved"
+    },
+    {
+      "wireId": "jumper_wire_11",
+      "role": "A",
+      "truth": "board_1:j30",
+      "truthPosition": {
+        "x": 170.00000000000003,
+        "y": 685
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 158,
+          "y": 687
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 12.165525060596467
+      },
+      "refined": {
+        "position": {
+          "x": 167.6,
+          "y": 690.4
+        },
+        "resolved": "board_1:j30",
+        "outcome": "correct",
+        "errorPx": 5.909314681077656
+      },
+      "transition": "unresolved_to_correct"
+    },
+    {
+      "wireId": "jumper_wire_11",
+      "role": "B",
+      "truth": "board_1:j24",
+      "truthPosition": {
+        "x": 388.35979001466046,
+        "y": 683.9420552809368
+      },
+      "referenceBasis": "calibration_projected_centers",
+      "truthOrderReversed": false,
+      "raw": {
+        "position": {
+          "x": 379,
+          "y": 686
+        },
+        "resolved": "board_1:j24",
+        "outcome": "correct",
+        "errorPx": 9.583360871075344
+      },
+      "refined": {
+        "position": {
+          "x": 361.3333333333333,
+          "y": 691.3333333333334
+        },
+        "resolved": null,
+        "outcome": "unresolved",
+        "errorPx": 28.018928459088023
+      },
+      "transition": "correct_to_unresolved"
+    }
+  ],
+  "transitions": {
+    "correctToWrong": 0,
+    "correctToUnresolved": 7,
+    "unresolvedToCorrect": 1,
+    "unresolvedToWrong": 0,
+    "wrongToCorrect": 0,
+    "wrongToUnresolved": 0,
+    "correctToCorrect": 1
+  },
+  "localizationError": {
+    "raw": {
+      "count": 10,
+      "meanPx": 8.186552866993082,
+      "rmsPx": 8.798374171644227,
+      "medianPx": 8.609130473436355,
+      "p95Px": 14.220473252011944,
+      "maxPx": 14.220473252011944
+    },
+    "refined": {
+      "count": 7,
+      "meanPx": 15.375507669199907,
+      "rmsPx": 16.836416653574148,
+      "medianPx": 14.515911512887111,
+      "p95Px": 28.018928459088023,
+      "maxPx": 28.018928459088023
+    },
+    "referenceCounts": {
+      "independentlyMarked": 0,
+      "calibrationProjected": 10
+    },
+    "paired": {
+      "count": 7,
+      "rawMeanPx": 8.277101475644626,
+      "refinedMeanPx": 15.375507669199907,
+      "meanImprovementPx": -7.098406193555281,
+      "improved": 1,
+      "worsened": 6,
+      "unchanged": 0
+    }
+  },
+  "acceptance": {
+    "allEndpointsTested": true,
+    "zeroWrongHoleAssignments": true,
+    "noCorrectEndpointRegressions": false,
+    "resolvedEndpointImprovement": false,
+    "completePairedErrorCoverage": false,
+    "localizationImprovement": false,
+    "localizationErrorEpsilonPx": 0.000001,
+    "passed": false,
+    "recommendation": "keep_opt_in"
+  },
+  "adoption": "experimental_only_not_evidence_of_electrical_contact"
+}

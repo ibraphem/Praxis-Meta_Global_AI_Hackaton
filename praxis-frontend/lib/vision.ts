@@ -49,6 +49,7 @@ const componentSchema = z
     localizationSource: z.enum(["sam", "muse", "derived"]).optional(),
     breadboardGrouping: breadboardGroupingSchema.optional(),
     interpretation: z.enum(["confirmed", "uncertain"]),
+    reviewStatus: z.literal("sam_unverified").optional(),
     detectionSource: z.enum(["sam", "muse"]).optional(),
     geometryStatus: z.enum(["segmented", "box_only"]).optional(),
     mask: maskSchema.optional(),
@@ -71,7 +72,7 @@ export const analysisSchema = z
     diagnostics: diagnosticsSchema.optional(),
     provenance: z
       .object({
-        mode: z.enum(["combined", "reasoning-only"]),
+        mode: z.enum(["combined", "reasoning-only", "sam-only"]),
         segmentationModel: z.string().min(1).max(100).optional(),
         reasoningModel: z.string().min(1).max(100),
         wireAudit: z
@@ -91,6 +92,21 @@ export const analysisSchema = z
   .strict()
   .superRefine((analysis, context) => {
     validateBreadboards(analysis, context);
+    if (
+      analysis.provenance.mode === "sam-only" &&
+      (analysis.breadboardAudit ||
+        analysis.objects.some(
+          (o) =>
+            o.interpretation !== "uncertain" ||
+            o.reviewStatus !== "sam_unverified" ||
+            o.localizationSource !== "sam" ||
+            o.breadboardGrouping,
+        ))
+    )
+      context.addIssue({
+        code: "custom",
+        message: "SAM-only results must remain unverified.",
+      });
     const ids = new Set<string>();
     for (const object of analysis.objects) {
       const [x, y, width, height] = object.bbox;
@@ -142,6 +158,11 @@ export const analysisSchema = z
 export type Analysis = z.infer<typeof analysisSchema>;
 export type Component = z.infer<typeof componentSchema>;
 
-export function componentLabel(object: Pick<Component, "id" | "type">): string {
+export function componentLabel(
+  object: Pick<Component, "id" | "type"> &
+    Partial<Pick<Component, "reviewStatus">>,
+): string {
+  if (object.reviewStatus === "sam_unverified" && object.type === "breadboard")
+    return `SAM board region ${object.id.split("_").at(-1)}`;
   return `${categories[object.type].label} ${object.id.split("_").at(-1)}`;
 }

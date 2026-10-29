@@ -170,6 +170,33 @@ test("offline refinement runner reads archived masks, keeps original evidence fr
     assert.notEqual(run(["--all-endpoints", "--output", imagePath]).status, 0);
     assert.notEqual(run(["--all-endpoints", "--output", reportPath]).status, 0);
     assert.notEqual(run(["--unknown-option"]).status, 0);
+    const missing = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        resolve("scripts/evaluate-refinement.mts"),
+        join(directory, "missing-bundle.json"),
+        join(directory, "missing-truth.json"),
+        join(directory, "missing-photo.png"),
+        "--all-endpoints",
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(missing.status, 1);
+    assert.match(missing.stderr, /evaluation bundle: .*missing-bundle.json/);
+    assert.match(
+      missing.stderr,
+      /pre-recorded ground truth: .*missing-truth.json/,
+    );
+    assert.match(missing.stderr, /original photograph: .*missing-photo.png/);
+    assert.match(missing.stderr, /Relative paths are resolved from:/);
+    assert.match(missing.stderr, /example filenames, not generated files/);
+    assert.doesNotMatch(
+      missing.stderr,
+      /at Object.openSync|at ModuleJob|node:fs:/,
+    );
+    assert.equal(missing.stdout, "");
     assert.equal(readFileSync(reportPath, "utf8"), savedBefore);
     assert.equal(readFileSync(bundlePath, "utf8"), before);
     assert.equal(readFileSync(truthPath, "utf8"), truthBefore);

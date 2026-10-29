@@ -10,6 +10,7 @@ import {
   type BoundingBox,
   type PreparedImage,
   type ComponentType,
+  type Candidate,
 } from '../schemas/vision.js';
 import { prepareImage } from './image.js';
 import { createReasoningService } from './reasoning.js';
@@ -61,7 +62,7 @@ export function deduplicate<T extends Detection>(objects: T[]): T[] {
   );
 }
 
-function withIds<T extends { type: ComponentType; bbox: BoundingBox }>(
+export function withIds<T extends { type: ComponentType; bbox: BoundingBox }>(
   objects: T[],
 ) {
   const counters = new Map<string, number>();
@@ -84,11 +85,12 @@ export function createVisionService(
     bytes: Buffer,
     signal: AbortSignal,
     trace?: AnalysisTrace,
+    snapshot?: SamSnapshot,
   ): Promise<Analysis> => {
     const finishPrepare = trace?.begin('image.prepare');
     let image: PreparedImage;
     try {
-      image = await prepareImage(bytes, config);
+      image = snapshot?.image ?? (await prepareImage(bytes, config));
       if (signal.aborted) throw abortError(signal);
       finishPrepare?.('completed');
     } catch (error) {
@@ -101,14 +103,16 @@ export function createVisionService(
     let wireAudit: Analysis['provenance']['wireAudit'];
     let breadboardAudit: Analysis['breadboardAudit'];
     if (config.VISION_MODE === 'combined') {
-      const candidates = withIds(
-        deduplicate(
-          (await segment(image, signal, trace)).map((detection) => ({
-            ...detection,
-            localizationSource: 'sam' as const,
-          })),
-        ),
-      );
+      const candidates =
+        snapshot?.candidates ??
+        withIds(
+          deduplicate(
+            (await segment(image, signal, trace)).map((detection) => ({
+              ...detection,
+              localizationSource: 'sam' as const,
+            })),
+          ),
+        );
       // Review the whole image even when SAM found no candidates. Missing wires
       // must not be hidden by the same detection bottleneck being audited.
       const review = await reasoning.interpret(
@@ -234,5 +238,47 @@ export function createVisionService(
     }
     finishValidation?.('completed');
     return result.data;
+  };
+}
+
+/** Durable checkpoint in the original, orientation-corrected image frame. */
+export interface SamSnapshot {
+  image: PreparedImage;
+  candidates: Candidate[];
+}
+export function createVisionStages(
+  config: Config,
+  client = createMetaClient(config),
+) {
+  const sam = createSamService(config, client);
+  // Missing-wire proposals stay unresolved; interpretation retries must never invoke SAM.
+  const analyze = createVisionService(
+    { ...config, MAX_WIRE_REFINEMENTS: 0 },
+    client,
+  );
+  return {
+    async segment(
+      image: PreparedImage,
+      signal: AbortSignal,
+      trace?: AnalysisTrace,
+    ): Promise<SamSnapshot> {
+      const candidates = withIds(
+        deduplicate(
+          (await sam(image, signal, trace)).map((d) => ({
+            ...d,
+            localizationSource: 'sam' as const,
+          })),
+        ),
+      );
+      if (candidates.length > 100) throw invalidProviderOutput();
+      return { image, candidates };
+    },
+    interpret(
+      snapshot: SamSnapshot,
+      signal: AbortSignal,
+      trace?: AnalysisTrace,
+    ) {
+      return analyze(Buffer.alloc(0), signal, trace, snapshot);
+    },
   };
 }

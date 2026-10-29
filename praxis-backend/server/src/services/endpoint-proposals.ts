@@ -159,7 +159,15 @@ export function createEndpointProposalService(
         },
       },
       signal,
-      { stage: 'muse.endpoints', maxRetries: 0, ...(trace ? { trace } : {}) },
+      {
+        stage: 'muse.endpoints',
+        maxRetries: 0,
+        imageDimensions: [
+          { width: image.width, height: image.height },
+          { width: image.width, height: image.height },
+        ],
+        ...(trace ? { trace } : {}),
+      },
     );
     const envelope = completionSchema.safeParse(raw);
     if (!envelope.success) throw invalidProviderOutput();

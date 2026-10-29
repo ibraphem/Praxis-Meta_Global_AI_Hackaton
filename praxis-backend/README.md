@@ -19,7 +19,7 @@ adds no backend endpoint or automatic connector analysis.
 
 ## Requirements and setup
 
-- Node.js **22.12 or later**, with npm. An active Node.js LTS release is recommended.
+- Node.js **22.13 or later**, with npm. An active Node.js LTS release is recommended.
 - A Meta Model API key and access to the configured models. The defaults are
   `sam-3.1` and `muse-spark-1.3`; confirm IDs and availability in your hackathon account.
 - A photograph you own or have permission to submit to Meta.
@@ -51,6 +51,90 @@ npm start
 
 `GET /health` returns `{"status":"ok"}`. It is a process health check, not a check
 of Meta credentials or model access.
+
+## Recoverable analysis jobs
+
+The frontend uses a persisted job API. Run on Node.js **22.13 or later** for built-in
+[`node:sqlite`](https://nodejs.org/download/release/v22.13.0/docs/api/cli.html#--no-experimental-sqlite).
+The existing synchronous `/api/vision/analyze` endpoint remains for compatibility.
+
+- `POST /api/analyses`: one multipart `image`; validates and saves the photograph,
+  then returns **202** with `analysisId`. Provider execution starts independently.
+- `GET /api/analyses/:id`: saved state, stage attempts, diagnostics, and the latest
+  full result or explicit `sam-only` partial result. Poll every 1.5 seconds.
+- `GET /api/analyses/:id/image`: original uploaded bytes for reopening the workspace.
+- `POST /api/analyses/:id/retry-muse`: explicit interpretation retry using the exact
+  saved SAM snapshot. **Zero SAM calls**, including missed-wire recovery. Missed
+  wires remain unresolved search regions. No original attempt/result is replaced.
+- `POST /api/analyses/:id/retry-sam`: explicit segmentation retry after a failure.
+- `DELETE /api/analyses/:id`: remove a saved inactive job and its photograph.
+
+All routes use the existing backend authentication, origin rejection, and no-store
+policy. This remains a local evaluation application: the shared backend token does
+not provide per-user ownership or authorization for public deployment.
+
+Each attempt has an immutable ID and transitions `queued → running → succeeded`,
+`timed_out`, `interrupted`, or `failed`. Status is separate from `retryPolicy` and
+`upstreamOutcome`: a local timeout or worker interruption means upstream execution
+is **unknown**, not cancelled. Terminal failures require an explicit manual retry;
+no interrupted/timed-out attempt is automatically put back in the queue. An already
+queued, unsent attempt can be dispatched after a restart. Definitive input errors
+are not retryable; configuration/provider failures may be retried manually after
+addressing the cause. Concurrent retries return 409 rather than duplicate work.
+
+SQLite commits photographs, original-resolution SAM candidates/native masks,
+reviewable SVG geometry, settings/model IDs, and attempt history. Worker claims are
+transactional, renewed every 3 seconds with a 15-second lease. Expired running
+attempts become interrupted; graceful shutdown interrupts immediately. Attempt and
+owner checks fence stale completions. Multiple processes sharing the **same local
+SQLite database** share job capacity; legacy endpoints/rate limits remain local.
+This is a bounded worker inside the long-running backend, not a serverless task or
+an external queue. Keep the backend running and mount durable local storage.
+
+`ANALYSIS_JOB_DIR` defaults to `.praxis-jobs` relative to the backend working directory
+and is gitignored. New directories use 0700, the database 0600. Defaults retain up
+to 100 jobs for 24 hours and at most 20 attempts per stage. Expired inactive jobs
+are cleaned by the worker/admission path; active jobs finish before cleanup. A full
+store rejects new uploads rather than silently evicting another user's work.
+Database deletion removes application access, not a forensic erasure guarantee.
+Browser pause/disconnect does not cancel server execution or delete persisted data.
+
+SAM-only objects are explicitly `uncertain`, `sam_unverified`, and ineligible for
+automatic electrical guidance. Breadboard detections are labelled **board regions**,
+not confirmed physical boards. The reviewer can manually calibrate the photograph
+and assign endpoints. Muse completion creates a new review run identity, so previous
+endpoint associations cannot silently attach to renumbered candidates.
+
+Muse uses one attempt, with the default 45-second provider deadline; SAM retains its
+configured transient retry policy. `ANALYSIS_TIMEOUT_MS` now also bounds each worker
+stage. Changing image size/prompt is experimental: defaults preserve the original
+input and prompt. `MUSE_MAX_DIMENSION=1280` (or `1024`) makes a separate JPEG at quality
+82; SAM, calibration, and dedicated endpoint input remain at original resolution.
+Candidate boxes are transformed into the resized input frame. Normalized Muse
+outputs are projected directly into the original frame, without double scaling.
+`MUSE_MINIMAL_PROMPT=true` defers missed-wire search but keeps candidate validation
+and physical-board grouping safeguards. Job settings are frozen when uploaded.
+
+### Controlled Muse timeout comparison
+
+After a job has saved SAM results and no active/queued Muse attempt, from `server`:
+
+```sh
+npm run experiment:muse -- ACTUAL_ANALYSIS_UUID --output new-muse-comparison.json
+```
+
+This explicitly makes **three provider requests**, sequentially, without automatic
+retries: original/current prompt, 1280/current prompt, 1280/minimal prompt. It reuses
+the same saved SAM snapshot and model; it preserves the source job and every
+prediction. The report records the image/snapshot hashes, settings, success or
+failure, latency, results and diagnostics. Do not repeatedly rerun until success.
+Three observations are exploratory, not an accuracy or availability estimate.
+
+Per-request diagnostics include stage/model, actual image dimensions, encoded image
+and full JSON payload bytes, prompt character count, configured output-token budget
+(or null when provider-default), response-header latency when available, total
+latency, retry number, timeout type, status, and an allowlisted provider request ID.
+Photographs, prompts and raw responses are never written to diagnostic logs.
 
 ## Analyze a photograph
 
@@ -298,7 +382,7 @@ existing environment variables take precedence. The real `.env` is ignored by Gi
 | `SAM_CONCURRENCY`         | `2`                      | Maximum simultaneous SAM concept calls per analysis (1–4)                                   |
 | `ANALYSIS_TIMEOUT_MS`     | `180000`                 | Overall upload/analysis deadline (maximum 300000)                                           |
 | `PROVIDER_TIMEOUT_MS`     | `45000`                  | Per-attempt provider deadline, including response reading (maximum 120000)                  |
-| `PROVIDER_MAX_RETRIES`    | `1`                      | Extra attempts for network failures, timeouts, HTTP 429 and 5xx                             |
+| `PROVIDER_MAX_RETRIES`    | `1`                      | Extra SAM attempts for network failures, timeouts, HTTP 429 and 5xx; Muse uses zero         |
 | `RATE_LIMIT_MAX`          | `20`                     | Requests per client IP per window                                                           |
 | `RATE_LIMIT_WINDOW_MS`    | `60000`                  | Rate-limit window                                                                           |
 
@@ -311,10 +395,11 @@ existing environment variables take precedence. The real `.env` is ignored by Gi
 - Browser Origin requests are currently rejected, and CORS is disabled. Add an
   explicit origin allowlist when integrating the frontend. A shared backend token
   is not a substitute for user authentication in a public application.
-- Uploads are processed in memory and are not saved. Image metadata is stripped
-  before submission, but **the photograph is sent to Meta**; provider handling and
-  retention depend on your account's terms. Memory is reclaimed normally, not
-  guaranteed to be securely erased.
+- The job API persists original photographs, masks and results in its private local
+  SQLite store for recovery. Legacy synchronous uploads remain memory-only. Image
+  metadata is stripped before provider submission, but **the photograph is sent to
+  Meta**; provider handling depends on your account's terms. Local retention and
+  deletion are described above.
 - File size, decoded pixels, multipart fields, request duration, response size
   (16 MiB per provider response), rate, and concurrent analyses are bounded.
 - There is no user-supplied URL fetch, tool execution, or model-generated code
@@ -360,8 +445,9 @@ Restart both services after updating. Existing environment overrides take
 precedence over the new defaults. If using `npm start`, rebuild before restarting.
 The frontend must allow more time than the backend: defaults are **45 seconds per
 Meta attempt, 180 seconds per backend analysis, and 190 seconds at the proxy**.
-One retry is allowed for transient failures; the overall deadline still bounds
-the entire operation. These limits reduce premature timeouts, not provider latency.
+SAM allows its configured transient retries. Initial Muse interpretation has one
+attempt with no automatic retry, including after a deadline expiration. The legacy
+overall deadline and each worker stage remain bounded. These limits reduce premature timeouts, not provider latency.
 The backend's idle socket limit stays 15 seconds beyond its analysis budget;
 the separate incoming-upload deadline remains 15 seconds.
 
@@ -509,7 +595,7 @@ out-of-image positions and invented hole fields fail closed. The response echoes
 the analysis/image/wire IDs and configured model, with `image.prepare`,
 `wire.grounding`, and `muse.endpoints` timing. Endpoint requests override automatic
 provider retries to zero; their one attempt still uses the configured provider
-timeout. Main analysis retries are unaffected. Two images may increase provider
+timeout. Initial Muse interpretation also uses one attempt; SAM retries remain configurable. Two images may increase provider
 latency; local rendering tests do not establish an inference speed improvement.
 The frontend, using user-confirmed calibration and registered rails, resolves
 pixels to holes and obtains independent user review. This API does not confirm

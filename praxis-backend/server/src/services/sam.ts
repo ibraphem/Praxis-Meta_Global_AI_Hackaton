@@ -33,7 +33,7 @@ const concepts: ReadonlyArray<readonly [ComponentType, string]> = [
 
 /**
  * Read the documented single-image SAM wire grammar, not an assumed JSON list.
- * Retain wire masks for bounded geometry validation. Other categories remain box-only.
+ * Retain native masks in private checkpoints. Only wire geometry is published; other categories remain box-only.
  * https://dev.meta.ai/docs/sam/reading-segmentation
  */
 export function parseSamOutput(
@@ -262,6 +262,7 @@ export function createWireRefiner(config: Config, client: MetaClient) {
       signal,
       {
         stage: 'sam.wire_refine',
+        imageDimensions: [{ width: image.width, height: image.height }],
         timeoutMs,
         maxRetries: 0,
         ...(trace ? { trace } : {}),
@@ -317,9 +318,13 @@ export function createSamService(config: Config, client: MetaClient) {
             metadata: { include_confidence: 'true', mask_encoding: 'one_bit' },
           },
           groupSignal,
-          { stage, ...(trace ? { trace } : {}) },
+          {
+            stage,
+            imageDimensions: [{ width: image.width, height: image.height }],
+            ...(trace ? { trace } : {}),
+          },
         );
-        return decodeSamResponse(raw, type, image, type === 'jumper_wire');
+        return decodeSamResponse(raw, type, image, true);
       } catch (error) {
         if (error instanceof AppError && !error.details)
           throw new AppError(error.statusCode, error.code, error.message, {

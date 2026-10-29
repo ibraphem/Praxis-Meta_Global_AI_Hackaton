@@ -15,6 +15,7 @@ export interface ProviderOperation {
   /** Optional refinement uses one bounded attempt and does not consume primary retries. */
   timeoutMs?: number;
   maxRetries?: number;
+  imageDimensions?: { width: number; height: number }[];
 }
 
 export interface MetaClient {
@@ -34,6 +35,18 @@ export function createMetaClient(
   return {
     async post(path, body, signal, operation) {
       const payload = JSON.stringify(body);
+      const inputStats = { encodedImageBytes: 0, promptChars: 0 };
+      const inspect = (value: unknown, key = '') => {
+        if (typeof value === 'string') {
+          if (value.startsWith('data:image/'))
+            inputStats.encodedImageBytes += Buffer.byteLength(value);
+          else if (key === 'text' || key === 'content')
+            inputStats.promptChars += value.length;
+        } else if (Array.isArray(value)) value.forEach((v) => inspect(v));
+        else if (value && typeof value === 'object')
+          Object.entries(value).forEach(([k, v]) => inspect(v, k));
+      };
+      inspect(body);
       const maxRetries = operation?.maxRetries ?? config.PROVIDER_MAX_RETRIES;
       const timeoutMs = Math.min(
         operation?.timeoutMs ?? config.PROVIDER_TIMEOUT_MS,
@@ -67,10 +80,21 @@ export function createMetaClient(
         });
         const finish = operation?.trace?.begin(operation.stage, {
           kind: 'request',
+          payloadBytes: Buffer.byteLength(payload),
+          ...inputStats,
+          outputTokenBudget:
+            typeof body.max_completion_tokens === 'number'
+              ? body.max_completion_tokens
+              : null,
+          ...(operation?.imageDimensions
+            ? { imageDimensions: operation.imageDimensions }
+            : {}),
           attempt: attempt + 1,
           timeoutMs,
           ...(model === undefined ? {} : { model }),
         });
+        let headersMs: number | undefined;
+        let providerRequestId: string | undefined;
         let upstreamStatus: number | undefined;
         let failure: AppError | undefined;
         try {
@@ -89,6 +113,12 @@ export function createMetaClient(
             },
           );
           if (attemptSignal.aborted) throw attemptSignal.reason;
+          headersMs = Math.round(performance.now() - started);
+          const suppliedId =
+            response.headers.get('x-request-id') ??
+            response.headers.get('request-id');
+          if (suppliedId && /^[a-zA-Z0-9_.:-]{1,128}$/.test(suppliedId))
+            providerRequestId = suppliedId;
           upstreamStatus = response.status;
           if (!response.ok) {
             // The HTTP failure is already known. Cleanup must not obscure it
@@ -157,7 +187,11 @@ export function createMetaClient(
               Buffer.concat(chunks).toString('utf8'),
             );
             if (attemptSignal.aborted) throw attemptSignal.reason;
-            finish?.('completed', { upstreamStatus: response.status });
+            finish?.('completed', {
+              upstreamStatus: response.status,
+              headersMs,
+              ...(providerRequestId ? { providerRequestId } : {}),
+            });
             return result;
           } catch {
             if (attemptSignal.aborted) throw attemptSignal.reason;
@@ -199,6 +233,15 @@ export function createMetaClient(
               ? 'cancelled'
               : 'failed';
           finish?.(status, {
+            ...(headersMs === undefined ? {} : { headersMs }),
+            ...(providerRequestId ? { providerRequestId } : {}),
+            ...(failure.code === 'PROVIDER_TIMEOUT'
+              ? { timeoutType: 'local_deadline' as const }
+              : failure.code === 'META_API_TIMEOUT'
+                ? { timeoutType: 'upstream_504' as const }
+                : failure.code === 'ANALYSIS_TIMEOUT'
+                  ? { timeoutType: 'stage_deadline' as const }
+                  : {}),
             code: failure.code,
             ...(upstreamStatus === undefined ? {} : { upstreamStatus }),
           });

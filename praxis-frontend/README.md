@@ -4,9 +4,43 @@ A mobile-friendly Next.js interface for Praxis's first perception milestone.
 Upload a photograph, send it to the backend, and inspect the returned breadboards,
 LEDs, resistors, and jumper wires directly over the image.
 
+## Recoverable analysis and partial results
+
+**Analyze image** now uploads once to `/api/analyses`. The backend saves the photograph
+and creates a job, then the UI polls progress. SAM results survive Muse timeouts,
+browser disconnects and backend restarts. The page URL contains `?analysis=UUID`;
+reopen that link to reload the saved photograph and results without another upload
+or model call. Only queued work is dispatched automatically after restart. Running
+attempts with an expired worker lease become **interrupted**, requiring manual retry.
+
+When interpretation fails, use **Continue with SAM candidates** for calibration and
+manual endpoint assignment, or **Retry Muse interpretation** to reuse saved masks.
+Candidates remain explicitly unverified, including board regions that might be
+fragments of one physical board. Muse retry performs zero SAM requests. An uncertain
+upstream outcome is disclosed; manual retry may duplicate provider work that outlived
+the local deadline. Duplicate clicks cannot create concurrent attempts for one job.
+
+**Pause updates** stops browser observation; server execution continues. **Reconnect
+to saved analysis** fetches current state. **Delete saved analysis** removes an inactive
+job. Clearing the photograph only clears the local workspace; it does not delete the
+server job. Stage attempts and timings appear in the saved-analysis panel.
+
+By default the backend retains up to 100 jobs for 24 hours in its private, gitignored
+`.praxis-jobs` SQLite directory. Mount persistent local storage when deploying the
+long-running backend. Endpoint reviews/calibrations remain browser-memory state and
+are not restored by the job link; export evaluation bundles to retain those. Muse
+completion changes the review run identity so old assignments cannot silently follow
+renumbered candidates. Each stage is limited to 20 attempts.
+
+Muse uses one automatic attempt and a default 45-second deadline, with no automatic
+retry on timeout. Full-size imagery and the existing prompt remain the defaults;
+resized inputs and a minimal prompt are opt-in server experiments. See the
+[backend recovery and controlled comparison guide](../praxis-backend/README.md#recoverable-analysis-jobs).
+The dedicated endpoint API and opt-in local color-tip refinement remain separate.
+
 ## Run locally
 
-Use Node.js 22.12 or later and install the frontend dependencies with `npm ci`.
+Use Node.js 22.13 or later (the backend uses built-in SQLite) and install the frontend dependencies with `npm ci`.
 
 First, start the backend in a separate terminal:
 
@@ -221,7 +255,7 @@ image dimensions, forward/inverse matrices, local image-axis orientation angles,
 rail definitions and the user-confirmed status. Angles are clockwise from image
 right at the grid center; a single angle does not describe perspective everywhere.
 
-Calibration, selections and photographs stay in component memory. Replacing or
+Calibration and selections stay in component memory; analyzed photographs also persist in the backend job store. Replacing or
 removing the image, or reloading the page, clears them. Reanalyzing the same photo
 preserves calibration. Recalibrating a board clears its rails to avoid stale
 geometry. **Inspect components** restores ordinary detection selection without
@@ -324,11 +358,11 @@ The route's `maxDuration=360` is a deployment hint, not another local applicatio
 timer. Your hosting platform may impose its own limits; those cutoffs cannot always
 be classified by application code. See the [backend diagnostics guide](../praxis-backend/README.md#diagnose-a-timeout).
 
-Photographs and results stay in component memory. Blob preview URLs are revoked
-on replacement/removal, no photographs are written to disk or browser storage,
-and responses are marked `no-store`. An analyzed photograph is sent to the backend
-and Meta, subject to the provider's account terms. Cancellation stops the browser
-request; propagation to upstream work depends on the hosting runtime.
+Browser previews stay in component memory and blob URLs are revoked on replacement.
+The job API now persists photographs and results in the backend's private store for
+recovery; photos do not enter browser storage. Responses are `no-store`. Provider
+requests send the photograph to Meta, subject to your account terms. Pausing browser
+updates does not cancel provider execution.
 
 This milestone is a **local evaluation UI**, not a public authenticated service.
 Before public deployment, protect the Next route with user authentication and
@@ -463,7 +497,7 @@ analysis is separate and is not included in this endpoint timer. Unknown stage
 durations are omitted rather than shown as measured zeroes.
 
 Endpoint inference uses one attempt without automatic retries, under the configured
-provider deadline. The main image-analysis retry policy is unchanged. The two-image
+provider deadline. Initial Muse interpretation also uses one attempt; SAM retries remain configurable. The two-image
 input may increase model latency; improved speed or accuracy must be measured in a
 live comparison rather than inferred from local tests. Restart both services (and
 rebuild compiled deployments) before evaluating this updated response contract.
@@ -491,7 +525,7 @@ a newer request or manual editing are discarded. AI never automatically replaces
 an existing assignment. Stale records remain inspectable.
 
 Storage remains in photograph-local component memory, capped at 100 assignments.
-There is no database or browser persistence: replacing the photograph or reloading
+Reviewer assignments have no database or browser persistence: replacing the photograph or reloading
 clears assignments and reviews.
 
 Run the repeatable browser regression with the supplied `Complete-Circuit-5.jpg`
@@ -598,6 +632,24 @@ original photograph separately; the JSON does not embed or upload its bytes.
 
 Record a separate blinded truth file **before endpoint inference**, for example:
 
+`bundle.json` and `truth.json` are example filenames; this command does not create
+them. Relative paths are resolved from the directory where you run the command
+(normally `praxis-frontend`). In particular:
+
+- **Bundle:** click **Export evaluation bundle** in Praxis. The browser normally
+  saves `praxis-evaluation-bundle.json` (or a numbered copy) in Downloads. Use the
+  actual export containing all wire proposals; an export taken before requesting
+  endpoints has no proposals to evaluate.
+- **Truth:** create a separate JSON using the schema below and your pre-recorded
+  physical hole labels. Copy `imageSha256` and `analysisRunId` from that bundle's
+  `image.sha256` and `analysisRunId`. These identify the inputs, not the answers.
+  Do not fill in hole labels from model predictions or corrected assignments.
+- **Photograph:** use its real path. A photo at the repository root is
+  `../jumper_wires_breadboard.png` when running inside `praxis-frontend`.
+
+Save the JSON below to an actual file such as `benchmarks/my-run/truth.json`,
+replacing its placeholder metadata and illustrative hole labels with your data.
+
 ```json
 {
   "imageSha256": "<64-character SHA-256 of the original photograph>",
@@ -629,6 +681,9 @@ possible, so archive the implementation/environment for comparisons.
 
 To evaluate regressions in already-resolved predictions as well as unresolved
 ones, use the same offline runner with `--all-endpoints`:
+
+The following command assumes you already saved the two JSON input files in the
+current directory. Otherwise replace each example filename with its actual path.
 
 ```sh
 npm run benchmark:refine -- \

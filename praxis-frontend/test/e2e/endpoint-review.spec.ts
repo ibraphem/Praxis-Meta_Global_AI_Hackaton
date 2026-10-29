@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { resolve } from "node:path";
+import { completedJob } from "../fixtures/analysis-job";
 import { randomUUID } from "node:crypto";
 import {
   calibrateBoard,
@@ -110,8 +111,8 @@ async function enterCalibrationPoint(page: Page, p: { x: number; y: number }) {
   await page.getByRole("button", { name: /^Set [aj]\d+$/ }).click();
 }
 async function setup(page: Page, withRail = false, endpointReply = reply) {
-  await page.route("**/api/vision/analyze", (route) =>
-    route.fulfill({ json: analysis }),
+  await page.route("**/api/analyses", (route) =>
+    route.fulfill({ status: 202, json: completedJob(analysis) }),
   );
   await page.route("**/api/vision/endpoints", endpointReply);
   await page.goto("/");

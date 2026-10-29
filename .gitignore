@@ -47,3 +47,6 @@ SKILL.md
 **/.github/instructions/
 **/.github/agents/
 **/.github/prompts/
+
+# Private persisted analysis jobs (photographs, masks, attempt history)
+.praxis-jobs/

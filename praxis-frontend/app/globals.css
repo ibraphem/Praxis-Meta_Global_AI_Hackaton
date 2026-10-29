@@ -1454,3 +1454,9 @@ h1 > span {
     transition: none !important;
   }
 }
+
+.analysis-job-status { margin-bottom: 20px; padding: 18px 22px; border: 1px solid #c9d5cf; border-radius: 10px; background: #f3f7f4; color: #34483d; font-size: 14px; }
+.analysis-job-status p { margin: 0 0 10px; }
+.analysis-job-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
+.analysis-job-status details { margin-top: 12px; }
+.analysis-job-status pre { max-height: 260px; overflow: auto; font-size: 12px; }

@@ -32,6 +32,14 @@ const environmentSchema = z.object({
   ANALYSIS_TIMEOUT_MS: integer(180_000, 300_000),
   PROVIDER_TIMEOUT_MS: integer(45_000, 120_000),
   PROVIDER_MAX_RETRIES: z.coerce.number().int().min(0).max(2).default(1),
+  ANALYSIS_JOB_DIR: z.string().min(1).default('.praxis-jobs'),
+  MAX_STORED_JOBS: integer(100, 1000),
+  JOB_RETENTION_HOURS: integer(24, 168),
+  MUSE_MAX_DIMENSION: z.coerce.number().int().min(0).max(4096).default(0),
+  MUSE_MINIMAL_PROMPT: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
   RATE_LIMIT_MAX: integer(20, 1000),
   RATE_LIMIT_WINDOW_MS: integer(60_000, 3_600_000),
 });

@@ -1,0 +1,169 @@
+import { test, expect } from "@playwright/test";
+import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { completedJob } from "../fixtures/analysis-job";
+
+const photograph = resolve(
+  process.cwd(),
+  "test/fixtures/exact-hole-v1/jumper_wires_breadboard.png",
+);
+const result = {
+  image: { width: 1426, height: 1008 },
+  objects: [
+    {
+      id: "breadboard_1",
+      type: "breadboard",
+      bbox: [100, 100, 1000, 700],
+      interpretation: "uncertain",
+      localizationSource: "sam",
+      reviewStatus: "sam_unverified",
+      geometryStatus: "box_only",
+      guidanceEligible: false,
+    },
+  ],
+  provenance: {
+    mode: "sam-only",
+    reasoningModel: "muse-test",
+    segmentationModel: "sam-test",
+  },
+};
+function partial() {
+  const job = completedJob(result);
+  job.status = "partial";
+  job.revision = "sam";
+  job.muse.status = "timed_out";
+  Object.assign(job.muse.attempts[0]!, {
+    status: "timed_out",
+    upstreamOutcome: "unknown",
+    retryPolicy: "manual_only",
+    errorCode: "PROVIDER_TIMEOUT",
+  });
+  return job;
+}
+
+test("Muse timeout keeps reviewable SAM candidates; saved link reloads image and retry keeps the job identity", async ({
+  page,
+}) => {
+  let job = partial(),
+    creates = 0,
+    retries = 0,
+    images = 0;
+  const id = job.analysisId;
+  await page.route("**/api/analyses", async (route) => {
+    creates++;
+    await route.fulfill({ status: 202, json: job });
+  });
+  await page.route(`**/api/analyses/${id}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${id}/image`, (route) => {
+    images++;
+    return route.fulfill({
+      contentType: "image/png",
+      body: readFileSync(photograph),
+    });
+  });
+  await page.route(`**/api/analyses/${id}/retry-muse`, (route) => {
+    retries++;
+    const completed = completedJob({
+      ...result,
+      objects: [],
+      provenance: { ...result.provenance, mode: "combined" },
+    });
+    job = { ...completed, analysisId: id };
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("Upload a workspace photograph")
+    .setInputFiles(photograph);
+  await page
+    .getByRole("button", { name: "Analyze image", exact: true })
+    .click();
+  await expect(page.getByText(/Muse interpretation timed out/)).toBeVisible();
+  await expect(
+    page.getByText(/provider may still have processed/),
+  ).toBeVisible();
+  await expect(
+    page.getByText("SAM board region 1", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("Board regions — unverified")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Continue with SAM candidates" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Calibrate a board", exact: true }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "Retry Muse interpretation" }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("SAM board region 1", { exact: true }).first(),
+  ).toBeVisible();
+  expect(creates).toBe(1);
+  expect(images).toBe(1);
+  await page.getByRole("button", { name: "Retry Muse interpretation" }).click();
+  await expect(
+    page.getByText("Analysis complete. Interpretation is saved."),
+  ).toBeVisible();
+  expect(retries).toBe(1);
+  expect(creates).toBe(1);
+  await expect(page).toHaveURL(new RegExp(`analysis=${id}`));
+});
+
+test("pausing observation leaves the saved job available for reconnection", async ({
+  page,
+}) => {
+  const job = partial();
+  job.muse.status = "running";
+  job.status = "interpreting";
+  Object.assign(job.muse.attempts[0]!, {
+    status: "running",
+    retryPolicy: "blocked",
+  });
+  await page.route("**/api/analyses", (route) =>
+    route.fulfill({ status: 202, json: job }),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.goto("/");
+  await page
+    .getByLabel("Upload a workspace photograph")
+    .setInputFiles(photograph);
+  await page
+    .getByRole("button", { name: "Analyze image", exact: true })
+    .click();
+  await expect(
+    page.getByText("Segmentation saved. Muse interpretation is running."),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Pause updates" }).click();
+  await expect(
+    page.getByRole("button", { name: "Reconnect to saved analysis" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry Muse interpretation" }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Continue with SAM candidates" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Calibrate a board", exact: true }),
+  ).toBeEnabled();
+  job.status = "partial";
+  job.muse.status = "interrupted";
+  Object.assign(job.muse.attempts[0]!, {
+    status: "interrupted",
+    retryPolicy: "manual_only",
+  });
+  await page
+    .getByRole("button", { name: "Reconnect to saved analysis" })
+    .click();
+  await expect(
+    page.getByText(/Muse interpretation was interrupted/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Retry Muse interpretation" }),
+  ).toBeEnabled();
+});

@@ -1,3 +1,4 @@
+import { readBounded, BoundedReadError } from "./bounded-body";
 import { randomUUID } from "node:crypto";
 import { analysisSchema, MAX_FILE_BYTES } from "../vision";
 import { upstreamTimeoutSchema, type ErrorDetails } from "../diagnostics";
@@ -14,44 +15,6 @@ class ProxyError extends Error {
     readonly details?: ErrorDetails,
   ) {
     super(message);
-  }
-}
-
-/** Bound chunked uploads too; Content-Length alone cannot enforce a limit. */
-async function readBounded(
-  stream: ReadableStream<Uint8Array> | null,
-  limit: number,
-  signal: AbortSignal,
-): Promise<Uint8Array<ArrayBuffer>> {
-  if (!stream) return new Uint8Array();
-  const reader = stream.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  const abort = () => {
-    void reader.cancel().catch(() => undefined);
-  };
-  signal.addEventListener("abort", abort, { once: true });
-  try {
-    signal.throwIfAborted();
-    for (;;) {
-      const { done, value } = await reader.read();
-      signal.throwIfAborted();
-      if (done) break;
-      size += value.byteLength;
-      if (size > limit) {
-        await reader.cancel();
-        throw new ProxyError(
-          413,
-          "BODY_TOO_LARGE",
-          "The photograph is too large. Use a file under 8 MB.",
-        );
-      }
-      chunks.push(value);
-    }
-    return new Uint8Array(Buffer.concat(chunks));
-  } finally {
-    signal.removeEventListener("abort", abort);
-    reader.releaseLock();
   }
 }
 
@@ -365,6 +328,10 @@ export function createVisionProxy(
               ...(signal.reason === timeoutReason ? { timeoutMs } : {}),
             },
           ),
+        );
+      if (error instanceof BoundedReadError)
+        return errorResponse(
+          new ProxyError(error.status, error.code, error.message),
         );
       if (error instanceof ProxyError) return errorResponse(error);
       return errorResponse(
