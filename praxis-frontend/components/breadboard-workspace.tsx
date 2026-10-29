@@ -13,6 +13,7 @@ import {
 } from "react";
 import {
   allHoles,
+  project,
   boardOrientation,
   calibrateBoard,
   clientPointToImage,
@@ -715,7 +716,7 @@ export function BreadboardWorkspace({
       setNotice(message(error));
     }
   }
-  async function proposeEndpoints() {
+  async function proposeEndpoints(focused = false) {
     if (
       !assignmentContext ||
       !selectedWireId ||
@@ -792,6 +793,19 @@ export function BreadboardWorkspace({
           analysisId: assignmentContext.analysisRunId,
           imageId: assignmentContext.photoId,
           image: assignmentContext.analysis!.image,
+          ...(focused
+            ? {
+                view: "candidate_crop",
+                gridPoints: boards
+                  .flatMap((board) =>
+                    allHoles(board.calibration, board.rails).map((hole) => {
+                      const p = project(board.calibration, hole.grid);
+                      return [p.x, p.y];
+                    }),
+                  )
+                  .slice(0, 1000),
+              }
+            : {}),
           wire: {
             id: candidate.id,
             bbox: candidate.bbox,
@@ -1264,7 +1278,7 @@ export function BreadboardWorkspace({
                   : ""
               }
               canPropose={!!imageFile}
-              onPropose={() => void proposeEndpoints()}
+              onPropose={(focused) => void proposeEndpoints(focused)}
               onReviewConfirm={(index) => {
                 if (!visibleReview) return;
                 updateReview(visibleReview, (review) =>

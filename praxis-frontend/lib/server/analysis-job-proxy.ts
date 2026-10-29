@@ -4,7 +4,17 @@ import { IMAGE_TYPES, MAX_FILE_BYTES } from "../vision";
 import { readBounded, BoundedReadError } from "./bounded-body";
 
 type Action =
-  "create" | "get" | "image" | "retry-sam" | "retry-muse" | "delete";
+  | "create"
+  | "get"
+  | "image"
+  | "retry-sam"
+  | "retry-muse"
+  | "delete"
+  | "audit-wires"
+  | "recover-wires"
+  | "verify-wire"
+  | "wire-identities"
+  | "interpret-recovery";
 /** Only fixed job operations and validated IDs cross this private backend boundary. */
 export function createAnalysisJobProxy(
   options: {
@@ -86,7 +96,7 @@ export function createAnalysisJobProxy(
           "INVALID_PROXY_CONFIG",
           "Check the private backend connection settings.",
         );
-      endpoint.pathname = `/api/analyses${id ? `/${id}` : ""}${["image", "retry-sam", "retry-muse"].includes(action) ? `/${action}` : ""}`;
+      endpoint.pathname = `/api/analyses${id ? `/${id}` : ""}${!["create", "get", "delete"].includes(action) ? `/${action}` : ""}`;
       const upstreamHeaders: Record<string, string> = {
         "X-Request-Id": requestId,
       };
@@ -123,13 +133,18 @@ export function createAnalysisJobProxy(
         upstreamHeaders["Content-Type"] = contentType;
       }
       phase = "backend.connect";
+      if (action === "verify-wire" || action === "wire-identities") {
+        phase = "upload";
+        body = await readBounded(request.body, 8192, signal);
+        upstreamHeaders["Content-Type"] = "application/json";
+        phase = "backend.connect";
+      }
       const upstream = await fetcher(endpoint, {
-        method:
-          action === "create" || action.startsWith("retry-")
-            ? "POST"
-            : action === "delete"
-              ? "DELETE"
-              : "GET",
+        method: !["get", "image", "delete"].includes(action)
+          ? "POST"
+          : action === "delete"
+            ? "DELETE"
+            : "GET",
         headers: upstreamHeaders,
         ...(body ? { body } : {}),
         signal,
@@ -226,7 +241,9 @@ export function createAnalysisJobProxy(
         );
       }
       return Response.json(parsed.data, {
-        status: action === "create" || action.startsWith("retry-") ? 202 : 200,
+        status: !["get", "image", "wire-identities"].includes(action)
+          ? 202
+          : 200,
         headers,
       });
     } catch (e) {

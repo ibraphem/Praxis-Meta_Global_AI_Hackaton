@@ -2,6 +2,7 @@ import { test, expect } from "@playwright/test";
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
 import { completedJob } from "../fixtures/analysis-job";
+import { recoveryReport } from "../fixtures/wire-recovery";
 
 const photograph = resolve(
   process.cwd(),
@@ -222,4 +223,124 @@ test("experiment reservations leave SAM review available and suppress model retr
   await expect(
     page.getByRole("button", { name: "Calibrate a board", exact: true }),
   ).toBeEnabled();
+});
+
+test("wire identity verification and timed-out crop recovery preserve review and never create electrical connections", async ({
+  page,
+}) => {
+  const job = partial(),
+    id = job.analysisId,
+    originalRevision = job.revision;
+  job.recovery = {
+    status: "succeeded",
+    attempts: [],
+    operation: "audit",
+    budget: { requests: 0, pixels: 0, verificationRequests: 0, rounds: 0 },
+    visited: [],
+    report: recoveryReport(job.sam.attempts[0]!.attemptId),
+  };
+  let verifyCalls = 0,
+    recoverCalls = 0,
+    identityCalls = 0;
+  await page.route("**/api/analyses", (route) =>
+    route.fulfill({ status: 202, json: job }),
+  );
+  await page.route(`**/api/analyses/${id}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${id}/image`, (route) =>
+    route.fulfill({ contentType: "image/png", body: readFileSync(photograph) }),
+  );
+  await page.route(`**/api/analyses/${id}/verify-wire`, (route) => {
+    verifyCalls++;
+    expect(route.request().postDataJSON()).toEqual({
+      candidateId: "jumper_wire_1",
+    });
+    job.recovery!.operation = "verify";
+    job.recovery!.budget.verificationRequests++;
+    job.recovery!.report!.modelReviews = [
+      {
+        candidateId: "jumper_wire_1",
+        decision: "uncertain",
+        endpoints: [
+          { role: "A", position: null, evidence: "occluded_insertion" },
+          { role: "B", position: null, evidence: "insufficient" },
+        ],
+        elapsedMs: 120,
+      },
+    ];
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.route(`**/api/analyses/${id}/wire-identities`, (route) => {
+    identityCalls++;
+    const body = route.request().postDataJSON();
+    expect(body.state).toBe("uncertain");
+    expect(body.candidateIds).toEqual(["jumper_wire_1"]);
+    job.wireIdentities = [
+      {
+        ...body,
+        reviewId: job.sam.attempts[0]!.attemptId,
+        reviewSource: "human",
+        reviewedAt: 1,
+        electricalConnectionStatus: "unestablished",
+      },
+    ];
+    return route.fulfill({ json: job });
+  });
+  await page.route(`**/api/analyses/${id}/recover-wires`, (route) => {
+    recoverCalls++;
+    job.recovery!.status = "timed_out";
+    job.recovery!.operation = "recover";
+    job.recovery!.budget.requests++;
+    job.recovery!.budget.rounds++;
+    job.recovery!.attempts = [
+      {
+        ...job.sam.attempts[0]!,
+        status: "timed_out",
+        retryPolicy: "manual_only",
+        upstreamOutcome: "unknown",
+        errorCode: "PROVIDER_TIMEOUT",
+      },
+    ];
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("Upload a workspace photograph")
+    .setInputFiles(photograph);
+  await page
+    .getByRole("button", { name: "Analyze image", exact: true })
+    .click();
+  const panel = page.getByRole("region", {
+    name: "Wire coverage and identity review",
+  });
+  await expect(panel.getByText(/branched_mask/).first()).toBeVisible();
+  await panel
+    .locator("label")
+    .filter({ hasText: "jumper_wire_1" })
+    .getByRole("checkbox")
+    .check();
+  await panel
+    .getByRole("button", { name: "Ask Muse to verify candidate" })
+    .click();
+  await expect(panel.getByText(/Muse proposal: uncertain/)).toBeVisible();
+  expect(identityCalls).toBe(0);
+  await panel.getByRole("button", { name: "Keep identity uncertain" }).click();
+  await expect(panel.getByText(/uncertain: jumper_wire_1/)).toBeVisible();
+  await panel
+    .getByRole("button", { name: "Recover prioritized regions" })
+    .click();
+  await expect(
+    panel.getByText(/Latest recovery action: timed out/),
+  ).toBeVisible();
+  expect(verifyCalls).toBe(1);
+  expect(recoverCalls).toBe(1);
+  expect(identityCalls).toBe(1);
+  expect(job.revision).toBe(originalRevision);
+  await page.reload();
+  await expect(panel.getByText(/uncertain: jumper_wire_1/)).toBeVisible();
+  await expect(
+    panel.getByText(/Electrical connections: unestablished/),
+  ).toBeVisible();
+  expect(recoverCalls).toBe(1);
 });

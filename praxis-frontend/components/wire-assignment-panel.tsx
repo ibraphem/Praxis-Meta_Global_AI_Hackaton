@@ -49,7 +49,7 @@ interface Props {
   onCancelProposal?: () => void;
   proposalError?: string;
   canPropose?: boolean;
-  onPropose?: () => void;
+  onPropose?: (focused?: boolean) => void;
   onReviewConfirm?: (index: EndpointIndex) => void;
   onReviewCorrect?: (index: EndpointIndex) => void;
   onReviewUnknown?: (index: EndpointIndex) => void;
@@ -77,6 +77,7 @@ export function WireAssignmentPanel(props: Props) {
     disabled,
     pausedReason,
   } = props;
+  const [focused, setFocused] = useState(false);
   const [x, setX] = useState(""),
     [y, setY] = useState("");
   const candidate = selectedWireId
@@ -114,6 +115,15 @@ export function WireAssignmentPanel(props: Props) {
       </p>
       {props.onPropose && (
         <div className="endpoint-actions">
+          <label>
+            <input
+              type="checkbox"
+              checked={focused}
+              disabled={disabled || props.proposing}
+              onChange={(e) => setFocused(e.target.checked)}
+            />{" "}
+            Focused crop + calibrated grid reference (experiment)
+          </label>
           <button
             type="button"
             className="button button-primary"
@@ -127,7 +137,7 @@ export function WireAssignmentPanel(props: Props) {
               hasAssignment ||
               (!!review && !reviewStale)
             }
-            onClick={props.onPropose}
+            onClick={() => props.onPropose?.(focused)}
           >
             {props.proposing
               ? "Locating endpoints…"

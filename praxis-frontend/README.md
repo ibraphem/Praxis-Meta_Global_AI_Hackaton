@@ -773,3 +773,48 @@ activation. Without `--all-endpoints`, the existing unresolved-only behavior rem
 Keep separate evaluation bundles for held-out photographs and repeat inference
 runs. Never rewrite the frozen fixture, tune to pass its ten points, infer improved
 precision from synthetic tests, or count a correct abstention as an exact hole.
+
+## Wire coverage and recovery
+
+After saved SAM segmentation, the workspace exposes **Wire coverage and recovery**.
+New combined jobs audit locally before initial Muse interpretation. Reconnect an
+older saved analysis and click **Audit wire coverage** to inspect it without any
+SAM/Muse call. Calibration and existing endpoint reviews are separate from this panel.
+
+1. Inspect rejection reasons and unexplained pink trace hypotheses. Select a candidate
+   to see its observed amber mask. Passing geometry checks does not verify identity.
+2. **Recover prioritized regions** explicitly requests bounded high-resolution SAM
+   crops around incomplete regions. It does not send every tile. Requests, crop pixels,
+   rounds, stop reasons, and truncation are visible. A failed crop preserves earlier
+   evidence and consumes its budget; timeout does not prove upstream work stopped.
+3. Select a candidate with a mask and choose **Ask Muse to verify candidate** for one
+   focused photo/mask/context request. Multiple wires, fragments, hidden insertions,
+   and uncertainty remain explicit. Muse results cannot create human review decisions.
+4. Select up to eight candidates to review one physical identity as verified, rejected,
+   or uncertain, with an evidence note. Fragment grouping is a human hypothesis;
+   it never creates a bridge, hole assignment, or electrical connection. Re-audit
+   after review to update verified coverage.
+5. **Interpret recovered candidates** is a separate explicit Muse request for the
+   derived checkpoint. Original SAM and historical Muse predictions stay preserved;
+   this action can change the displayed interpretation, so export browser reviews
+   before changing analysis revisions.
+
+Native recovery IDs refer to raw checkpoint evidence and may differ from numbered
+objects in the main interpretation. Identity decisions are tied to the report's
+snapshot and become historical after evidence changes. Candidate coverage uses the
+existing strict geometry checks; verified coverage uses human decisions only. The
+classical trace pass is experimental, can detect printed rails/component edges,
+and has bounded output. Its counts do not measure physical wire recall.
+
+In **Wire endpoints**, the optional **Focused crop + calibrated grid reference
+(experiment)** input sends aligned candidate photo/mask crops plus context and a
+separate artificial calibrated grid. Returned crop pixels are mapped back to the
+original photograph before the unchanged snap policy. Original crop coordinates
+and frame metadata are preserved in endpoint proposals and evaluation bundles.
+The grid and model confidence never override obscured physical evidence; unknown
+insertion points stay unknown. Full-image input remains the default.
+
+For reproducible offline coverage overlays and independent wire/endpoint acceptance
+scoring, see [backend benchmark instructions](../praxis-backend/README.md#offline-coverage-and-acceptance-benchmarks).
+These commands use real exported snapshot paths rather than placeholder bundle files.
+No accuracy target is claimed achieved by implementation or synthetic tests.

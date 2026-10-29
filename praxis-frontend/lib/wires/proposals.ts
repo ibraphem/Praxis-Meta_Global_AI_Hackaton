@@ -44,6 +44,7 @@ export const endpointSuggestionSchema = z
   .object({
     role: z.enum(["A", "B"]),
     proposedImagePosition: pixelSchema.nullable(),
+    sourceFramePosition: pixelSchema.nullable().optional(),
     /** A visible junction is a reference only, never an insertion-hole proposal. */
     connectorJunctionPosition: pixelSchema.nullable().optional(),
     evidence: endpointEvidenceSchema,
@@ -57,6 +58,20 @@ export const endpointResponseSchema = z
     model: z.string().min(1).max(100),
     endpoints: z.tuple([endpointSuggestionSchema, endpointSuggestionSchema]),
     diagnostics: diagnosticsSchema.optional(),
+    inputVariant: z.enum(["full", "candidate_crop"]).optional(),
+    inputFrame: z
+      .object({
+        bbox: z.tuple([
+          z.number().int().nonnegative(),
+          z.number().int().nonnegative(),
+          z.number().int().positive(),
+          z.number().int().positive(),
+        ]),
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine(
@@ -133,6 +148,8 @@ export interface WireEndpointProposal {
   wireCandidateId: string;
   calibrationRevisions: Record<string, number>;
   model: string;
+  inputVariant?: EndpointResponse["inputVariant"];
+  inputFrame?: EndpointResponse["inputFrame"];
   diagnostics?: z.infer<typeof diagnosticsSchema>;
   clientElapsedMs?: number;
   endpoints: [EndpointProposal, EndpointProposal];
@@ -288,6 +305,8 @@ export function createProposal(
     wireCandidateId: data.wireCandidateId,
     calibrationRevisions: calibrationRevisions(boards),
     model: data.model,
+    ...(data.inputVariant ? { inputVariant: data.inputVariant } : {}),
+    ...(data.inputFrame ? { inputFrame: data.inputFrame } : {}),
     ...(data.diagnostics ? { diagnostics: data.diagnostics } : {}),
     endpoints,
     spatialConsistency: spatialConsistency(

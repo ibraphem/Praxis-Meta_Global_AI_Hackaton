@@ -341,3 +341,55 @@ test('one endpoint request uses one bounded Muse attempt and includes original p
   });
   assert.equal(requests, 1);
 });
+
+test('focused endpoint crops preserve raw coordinates and map both insertion and junction back to original pixels', async () => {
+  const data = {
+    ...context,
+    image: { width: 2048, height: 1200 },
+    wire: { ...context.wire, bbox: [300, 300, 1700, 300] },
+    view: 'candidate_crop',
+    gridPoints: [
+      [300, 300],
+      [2000, 600],
+    ],
+  };
+  let dimensions: { width: number; height: number }[] = [];
+  const service = createEndpointProposalService(testConfig(), {
+    async post(_path, body, _signal, op) {
+      dimensions = op!.imageDimensions!;
+      assert.equal(op!.maxRetries, 0);
+      assert.equal(dimensions.length, 4);
+      assert.equal(dimensions[0]!.width, 1600);
+      assert.deepEqual(dimensions[0], dimensions[1]);
+      const prompt = JSON.stringify(body);
+      assert.match(prompt, /local-crop/);
+      assert.match(prompt, /artificial calibrated grid/);
+      assert.match(prompt, /crop boundary is not/);
+      return completion({ endpoints });
+    },
+  });
+  const result = await service(
+    await imageBytes(2048, 1200),
+    new AbortController().signal,
+    undefined,
+    data,
+  );
+  assert.equal(result.inputVariant, 'candidate_crop');
+  const frame = result.inputFrame!;
+  const expected = [
+    frame.bbox[0] + (11.5 * frame.bbox[2]) / 1600,
+    frame.bbox[1] + (22 * frame.bbox[3]) / frame.height,
+  ];
+  assert.deepEqual(result.endpoints[0]!.proposedImagePosition, expected);
+  assert.deepEqual(
+    (result.endpoints[0] as { sourceFramePosition?: unknown })
+      .sourceFramePosition,
+    [11.5, 22],
+  );
+  assert.equal(result.endpoints[1]!.proposedImagePosition, null);
+  assert.deepEqual(result.endpoints[1]!.connectorJunctionPosition, [
+    frame.bbox[0] + (40 * frame.bbox[2]) / 1600,
+    frame.bbox[1] + (50 * frame.bbox[3]) / frame.height,
+  ]);
+  assert.deepEqual(dimensions[3], dimensions[0]);
+});

@@ -631,6 +631,131 @@ praxis-backend/
 
 ## On-demand wire endpoint proposals
 
+### Wire coverage, recovery, and identity review
+
+New combined jobs run a local coverage audit after the original immutable SAM
+checkpoint and before initial Muse interpretation. Existing jobs remain unchanged
+until an explicit action. The saved photograph and original masks remain the
+coordinate reference throughout; no snap policy or electrical connection is changed.
+
+The audit diagnoses rejected masks (including disconnected components, broad masks,
+branching, endpoint count, decode limits, and duplicates). It also proposes HSV color
+components and local dark/light ridges, filters broad blobs, and skeletonizes bounded
+regions. These are classical pixel operations implemented with Sharp and TypeScript;
+no Python/OpenCV runtime is required. They are experimental hypotheses, can include
+printed rails, text, component edges, and fragmented wires, and can miss low-contrast
+wires. The 64-trace cap and other truncation limits are reported. An empty uncovered
+list never establishes complete physical wire coverage.
+
+`candidateCoverage` measures sampled trace overlap with masks that passed the existing
+geometry policy. Rejected masks cannot hide unexplained traces. `verifiedCoverage`
+uses current human identity decisions only. Revoking or superseding a decision removes
+that verification; re-audit to refresh coverage. Possible fragment continuations are
+recorded as hypotheses, never drawn as observed bridges or used to infer connectivity.
+
+Authenticated job actions under `/api/analyses/:id/`:
+
+| POST action          | Effect                                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `audit-wires`        | Local audit of the saved checkpoint; no model requests.                                                                                                                 |
+| `recover-wires`      | Ranked incomplete regions select overlapping original-resolution 3×3 tiles, not the whole tile grid. At most two SAM calls per round by default.                        |
+| `verify-wire`        | JSON `{ "candidateId": "jumper_wire_1" }`; one focused Muse identity/endpoint proposal using an unobscured crop, aligned observed-mask overlay, and full-scene context. |
+| `wire-identities`    | JSON `{ reportId, candidateIds, state, note }`; human `verified`, `rejected`, or `uncertain` group decision. No hole assignment or connection.                          |
+| `interpret-recovery` | Explicit Muse interpretation of a derived checkpoint; keeps historical original predictions and never runs SAM.                                                         |
+
+Crop boxes and returned native mask boxes are translated back to original pixels;
+mask rasters retain native crop resolution. Deduplication requires bidirectional
+exact-pixel overlap, never bounding-box overlap, shared crossings, or matching color.
+Ambiguous duplicate hypotheses may remain for review. Every changed crop result is
+saved as a new immutable snapshot with a parent reference; the original SAM reference
+and original Muse result remain intact. Interpretation uses the derived snapshot
+only after the explicit action. A Muse-only retry stays bound to that attempt's input.
+
+The default cumulative budget is four crop requests, two rounds, six million crop
+pixels, two million pixels per crop, and eight focused verification requests per
+analysis. Each dispatched crop/verification consumes budget durably before calling
+the provider. Failed and timed-out crops are not silently retried or refunded, visited
+tiles are not resent, and earlier successful crops survive failure. A local timeout
+does not prove upstream execution stopped. Lease fencing protects budgets, reports,
+and checkpoint writes from stale workers. Global experiment reservations block these
+actions and include recovery workers in workload isolation. Provider diagnostics use
+`sam.wire_crop` and `muse.wire_verify`; request bytes, dimensions, deadline, and timings
+remain in attempt diagnostics and evidence exports.
+
+Physical identity decisions are bound to the exact audit report and become historical
+when its snapshot changes. All recovery candidates retain `identityStatus=unverified`
+and `guidanceEligible=false`; separate human review records can verify an identity.
+Muse cannot write a human identity decision, and every identity record retains
+`electricalConnectionStatus=unestablished`. Two endpoint proposals do not establish
+contact, polarity, continuity, or an electrical connection.
+
+### Offline coverage and acceptance benchmarks
+
+Export evidence first so the experiment survives job retention. From `server/`:
+
+```sh
+npm run evidence:export -- ANALYSIS_ID benchmark-evidence/my-run
+npm run wire:audit -- \
+  benchmark-evidence/my-run/snapshots/1.json \
+  benchmark-evidence/my-wire-audit
+```
+
+`wire:audit` verifies the frozen snapshot hash, invokes no models, writes no database
+state, and refuses to overwrite an existing directory. It writes `report.json`,
+`overlay.png` (amber native masks, pink uncovered traces, blue covered traces), an empty
+`truth-template.json`, and an `evaluation-template.json` listing all candidate IDs.
+Counts are not measured recall. Truth templates deliberately start with
+`recordedBeforeInference=false` and `completeInventory=false`; do not mislabel a
+post-hoc inventory as a blinded baseline. Capture a complete independent inventory
+before inspecting model output on held-out photographs.
+
+Ground truth uses `version="wire-truth-v1"`, image hash, the two true capture flags,
+and `wires: [{ id, endpoints: [{ visibility, holeId, position }, ...] }]`. Exactly two
+endpoints are required; visibility is `visible`, `occluded`, or `off_image`. Visible
+holes require original-image centers and board-qualified hole IDs (e.g. `board1:h10`).
+Hidden endpoints remain recorded and cannot be treated as supported acceptances.
+
+In the evaluation template, assign every candidate exactly once to a reviewed group
+of up to eight IDs. Set `truthWireId` to a true physical identity or null for clutter,
+record `matchKind` (`whole_wire`, `fragment`, or `clutter`) and `identityAccepted`, and copy the unchanged resolver's original predicted
+`holeId`, original-image `position`, and explicit `accepted` decision for both ends.
+Align endpoint order to independent truth once. Grouping fragments is a manual
+benchmark annotation, not automatic visual/electrical continuity. Keep separate files
+for baseline and improved experiments; never replace original predictions with corrections.
+
+```sh
+npm run wire:score -- \
+  benchmark-evidence/my-wire-audit/report.json \
+  independently-recorded-truth.json \
+  reviewed-evaluation.json \
+  benchmark-evidence/my-score.json
+```
+
+The JSON and terminal summaries include physical-wire recall, accepted-identity
+precision, exact-hole accuracy, wrong/unresolved proposals, complete-wire accuracy,
+wrong and unsupported accepted holes, duplicate groups, and pixel error/sample counts.
+Fragments alone do not count as detected physical wires. Duplicate groups cannot inflate recall and competing identities cannot be cherry-picked
+for endpoint accuracy. Missing endpoints stay in the visible-endpoint denominator;
+hidden/off-image endpoints stay recorded but are excluded from that denominator.
+Wrong or unsupported acceptances fail the gate. The scorer never performs snapping.
+The targets (≥95% recall, >98% identity precision, ≥95% exact-hole accuracy, zero wrong
+accepted holes) are engineering gates, not demonstrated performance or guarantees.
+Report per-image and held-out results, repeatability, latency, and wrong accepted
+connections; this initial implementation is not evidence of reliable automated coverage.
+
+### Optional focused endpoint input
+
+Endpoint context additionally accepts `view="candidate_crop"` and optional
+`gridPoints: [[x,y], ...]` (at most 1,000 original-image calibrated centers).
+The original image is retained. Muse receives aligned photo/mask crops bounded to
+1,600px, a full-scene context image, and a separate artificial grid reference when
+provided. The grid is never physical insertion evidence. Crop-frame insertion and
+junction pixels are checked before transformation back to original coordinates;
+the response preserves `inputVariant`, `inputFrame`, and `sourceFramePosition`.
+Hidden insertions remain null. Default full-image grounding remains unchanged.
+This variant is opt-in and requires controlled accuracy/latency comparison before
+general adoption.
+
 `POST /api/vision/endpoints` accepts multipart `image` plus one JSON text field
 `context`: `{ analysisId, imageId, image: { width, height }, wire: { id, bbox, mask }, otherWires?: [{ id, bbox, mask }] }`.
 The wire must be a selected SAM-segmented candidate; `bbox` is original-image

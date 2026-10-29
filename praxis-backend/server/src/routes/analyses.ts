@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
 import { AppError } from '../lib/errors.js';
 import { JobStore, publicJob } from '../jobs/store.js';
+import { z } from 'zod';
 import { prepareImage } from '../services/image.js';
 
 const idPattern =
@@ -91,6 +92,47 @@ export function registerAnalysisRoutes(
       setImmediate(kick);
       return reply.code(202).send(publicJob(job));
     });
+  for (const [path, operation] of [
+    ['audit-wires', 'audit'],
+    ['recover-wires', 'recover'],
+    ['verify-wire', 'verify'],
+  ] as const)
+    app.post(`/api/analyses/:id/${path}`, async (request, reply) => {
+      const body =
+        operation === 'verify'
+          ? z
+              .object({
+                candidateId: z
+                  .string()
+                  .regex(/^(jumper_wire|cv_trace)_[1-9]\d*$/),
+              })
+              .strict()
+              .safeParse(request.body)
+          : undefined;
+      if (body && !body.success)
+        throw new AppError(
+          400,
+          'INVALID_CANDIDATES',
+          'Choose one current recovery candidate.',
+        );
+      const job = store.requestRecovery(
+        id(request.params),
+        operation,
+        body?.success ? body.data.candidateId : undefined,
+      );
+      setImmediate(kick);
+      return reply.code(202).send(publicJob(job));
+    });
+  app.post('/api/analyses/:id/interpret-recovery', async (request, reply) => {
+    const job = store.interpretRecovery(id(request.params));
+    setImmediate(kick);
+    return reply.code(202).send(publicJob(job));
+  });
+  app.post('/api/analyses/:id/wire-identities', async (request, reply) =>
+    reply.send(
+      publicJob(store.reviewWireIdentity(id(request.params), request.body)),
+    ),
+  );
   app.delete('/api/analyses/:id', async (request, reply) => {
     store.remove(id(request.params));
     return reply.code(204).send();

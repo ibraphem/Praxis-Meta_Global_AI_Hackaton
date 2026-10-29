@@ -1,3 +1,10 @@
+import {
+  type RecoveryReport,
+  type WireIdentity,
+  wireIdentitySchema,
+  latestIdentityReviews,
+} from '../schemas/wire-recovery.js';
+import type { RecoveryBudget } from '../services/wire-recovery.js';
 import { ExperimentRegistry } from './experiments.js';
 import {
   snapshotHash,
@@ -15,6 +22,7 @@ import type { Diagnostics } from '../lib/diagnostics.js';
 import type { Analysis, PreparedImage } from '../schemas/vision.js';
 import type { SamSnapshot } from '../services/vision.js';
 
+export type JobStage = 'sam' | 'muse' | 'recovery';
 export type AttemptStatus =
   'queued' | 'running' | 'succeeded' | 'timed_out' | 'interrupted' | 'failed';
 export interface Attempt {
@@ -33,6 +41,9 @@ export interface Attempt {
   snapshotBinding?: 'recorded' | 'legacy_inferred';
   /** Historical prediction, private evidence export only. */
   result?: Analysis;
+  recoveryReport?: RecoveryReport;
+  outputSnapshotId?: string;
+  outputSnapshotHash?: string;
 }
 export interface Job {
   analysisId: string;
@@ -69,6 +80,17 @@ export interface Job {
     result?: Analysis;
     resultAttemptId?: string;
   };
+  recovery: {
+    status: AttemptStatus | 'not_started';
+    attempts: Attempt[];
+    operation: 'audit' | 'recover' | 'verify';
+    candidateId?: string;
+    snapshotRef?: SnapshotRef;
+    report?: RecoveryReport;
+    budget: RecoveryBudget;
+    visited: [number, number, number, number][];
+  };
+  wireIdentities: WireIdentity[];
   experiment?: {
     experimentId: string;
     analysisId: string;
@@ -85,7 +107,7 @@ export const newAttempt = (): Attempt => ({
   retryPolicy: 'dispatch_existing',
   createdAt: Date.now(),
 });
-export const lastAttempt = (job: Job, stage: 'sam' | 'muse') =>
+export const lastAttempt = (job: Job, stage: JobStage) =>
   job[stage].attempts.at(-1);
 
 /** SQLite transactions serialize claims/retries across workers; image and state commit together. */
@@ -159,6 +181,8 @@ export class JobStore {
         'The saved analysis was not found or has expired.',
       );
     const job = JSON.parse(row.data as string) as Job;
+    job.recovery ??= emptyRecovery();
+    job.wireIdentities ??= [];
     if (row.owner) {
       job.owner = row.owner as string;
       job.leaseUntil = row.lease_until as number;
@@ -218,11 +242,14 @@ export class JobStore {
     snapshot: SamSnapshot,
     sourceAttemptId: string,
     origin: SnapshotRef['origin'] = 'recorded',
+    derived?: SnapshotRef,
   ) {
     const context = {
       imageHash: job.imageHash,
       model: job.settings.samModel,
-      processingVersion: SNAPSHOT_PROCESSING_VERSION,
+      processingVersion: derived
+        ? 'wire-recovery-v1'
+        : SNAPSHOT_PROCESSING_VERSION,
     };
     const ref: SnapshotRef = {
       ...context,
@@ -231,6 +258,7 @@ export class JobStore {
       sourceAttemptId,
       createdAt: Date.now(),
       origin,
+      ...(derived ? { parentSnapshotId: derived.samSnapshotId } : {}),
     };
     this.db
       .prepare('INSERT INTO sam_snapshots VALUES (?,?,?,?,?)')
@@ -241,6 +269,7 @@ export class JobStore {
         JSON.stringify(ref),
         JSON.stringify(snapshot),
       );
+    if (derived) return ref;
     job.sam.snapshot = snapshot;
     job.sam.snapshotRef = ref;
     const attempt = job.sam.attempts.find(
@@ -252,6 +281,7 @@ export class JobStore {
       attempt.snapshotBinding =
         origin === 'recorded' ? 'recorded' : 'legacy_inferred';
     }
+    return ref;
   }
   save(job: Job, preserveTimestamp = false) {
     if (
@@ -313,9 +343,11 @@ export class JobStore {
         job.expiresAt,
         job.sam.status === 'queued'
           ? 'sam'
-          : job.muse.status === 'queued'
-            ? 'muse'
-            : null,
+          : job.recovery?.status === 'queued'
+            ? 'recovery'
+            : job.muse.status === 'queued'
+              ? 'muse'
+              : null,
         job.analysisId,
       );
   }
@@ -375,6 +407,8 @@ export class JobStore {
           snapshot: { image, candidates: [] },
         },
         muse: { status: 'not_started', attempts: [] },
+        recovery: emptyRecovery(),
+        wireIdentities: [],
       };
       this.db
         .prepare(
@@ -396,7 +430,8 @@ export class JobStore {
       if (
         job.owner ||
         ['queued', 'running'].includes(job.sam.status) ||
-        ['queued', 'running'].includes(job.muse.status)
+        ['queued', 'running'].includes(job.muse.status) ||
+        ['queued', 'running'].includes(job.recovery.status)
       )
         throw new AppError(
           409,
@@ -416,15 +451,227 @@ export class JobStore {
           'RETRY_NOT_ALLOWED',
           'This stage is not eligible for retry.',
         );
-      if (job[stage].attempts.length >= 20)
+      if (
+        job[stage].attempts.length >= 20 ||
+        (stage === 'sam' &&
+          (job.muse.attempts.length >= 20 ||
+            (job.settings.mode === 'combined' &&
+              job.recovery.attempts.length >= 20)))
+      )
         throw new AppError(
           409,
           'ATTEMPT_LIMIT',
           'This analysis has reached its manual attempt limit.',
         );
-      job[stage].attempts.push(newAttempt());
+      const retry = newAttempt();
+      if (
+        stage === 'muse' &&
+        previous.samSnapshotId &&
+        this.getSnapshot(previous.samSnapshotId).ref.processingVersion ===
+          'wire-recovery-v1'
+      )
+        Object.assign(retry, {
+          samSnapshotId: previous.samSnapshotId,
+          samSnapshotHash: previous.samSnapshotHash,
+          snapshotBinding: 'recorded',
+        });
+      job[stage].attempts.push(retry);
       job[stage].status = 'queued';
       job.status = stage === 'muse' ? 'partial' : 'queued';
+      this.save(job);
+      return job;
+    });
+  }
+  requestRecovery(
+    id: string,
+    operation: 'audit' | 'recover' | 'verify',
+    candidateId?: string,
+  ): Job {
+    return this.transaction(() => {
+      const job = this.get(id);
+      if (
+        this.experiments.active() ||
+        job.owner ||
+        [job.sam.status, job.muse.status, job.recovery.status].some(
+          (s) => s === 'queued' || s === 'running',
+        )
+      )
+        throw new AppError(
+          409,
+          'ATTEMPT_ACTIVE',
+          'Wait for active model work or reservations to finish.',
+        );
+      if (job.sam.status !== 'succeeded' || !job.sam.snapshotRef)
+        throw new AppError(
+          409,
+          'SAM_REQUIRED',
+          'Complete segmentation before coverage analysis.',
+        );
+      if (job.recovery.attempts.length >= 20)
+        throw new AppError(
+          409,
+          'ATTEMPT_LIMIT',
+          'The recovery attempt limit was reached.',
+        );
+      if (
+        operation === 'verify' &&
+        !job.recovery.report?.candidates.some(
+          (c) => c.id === candidateId && c.mask,
+        )
+      )
+        throw new AppError(
+          400,
+          'SEGMENTATION_REQUIRED',
+          'Select a candidate with an observed mask.',
+        );
+      if (
+        operation === 'verify' &&
+        job.recovery.budget.verificationRequests >=
+          this.config.WIRE_VERIFY_MAX_REQUESTS
+      )
+        throw new AppError(
+          409,
+          'VERIFICATION_BUDGET',
+          'The cumulative Muse verification budget is exhausted.',
+        );
+      if (
+        operation === 'recover' &&
+        (job.recovery.budget.requests >=
+          this.config.WIRE_RECOVERY_MAX_REQUESTS ||
+          job.recovery.budget.rounds >= this.config.WIRE_RECOVERY_MAX_ROUNDS)
+      )
+        throw new AppError(
+          409,
+          'RECOVERY_BUDGET',
+          'The cumulative recovery budget is exhausted.',
+        );
+      const ref = job.recovery.snapshotRef ?? job.sam.snapshotRef,
+        attempt = newAttempt();
+      attempt.samSnapshotId = ref.samSnapshotId;
+      attempt.samSnapshotHash = ref.samSnapshotHash;
+      attempt.snapshotBinding = 'recorded';
+      job.recovery.status = 'queued';
+      job.recovery.operation = operation;
+      if (candidateId) job.recovery.candidateId = candidateId;
+      else delete job.recovery.candidateId;
+      job.recovery.attempts.push(attempt);
+      this.save(job);
+      return job;
+    });
+  }
+  interpretRecovery(id: string): Job {
+    return this.transaction(() => {
+      const job = this.get(id),
+        ref = job.recovery.snapshotRef;
+      if (
+        this.experiments.active() ||
+        job.owner ||
+        [job.sam.status, job.muse.status, job.recovery.status].some(
+          (s) => s === 'queued' || s === 'running',
+        )
+      )
+        throw new AppError(
+          409,
+          'ATTEMPT_ACTIVE',
+          'Wait for active work to finish.',
+        );
+      if (!ref || job.recovery.report?.sourceSnapshotId !== ref.samSnapshotId)
+        throw new AppError(
+          409,
+          'RECOVERY_REQUIRED',
+          'Audit the recovered checkpoint before interpreting it.',
+        );
+      if (job.muse.attempts.length >= 20)
+        throw new AppError(
+          409,
+          'ATTEMPT_LIMIT',
+          'The interpretation attempt limit was reached.',
+        );
+      const attempt = newAttempt();
+      Object.assign(attempt, {
+        samSnapshotId: ref.samSnapshotId,
+        samSnapshotHash: ref.samSnapshotHash,
+        snapshotBinding: 'recorded',
+      });
+      job.muse.attempts.push(attempt);
+      job.muse.status = 'queued';
+      this.save(job);
+      return job;
+    });
+  }
+  reviewWireIdentity(id: string, review: unknown): Job {
+    return this.transaction(() => {
+      const job = this.get(id),
+        parsed = wireIdentitySchema
+          .omit({
+            reviewId: true,
+            reviewSource: true,
+            reviewedAt: true,
+            electricalConnectionStatus: true,
+          })
+          .safeParse(review);
+      if (!parsed.success)
+        throw new AppError(
+          400,
+          'INVALID_WIRE_REVIEW',
+          'Choose candidates and a review decision.',
+        );
+      const input = parsed.data,
+        report = job.recovery.report;
+      if (
+        job.owner ||
+        job.recovery.status === 'queued' ||
+        !report ||
+        report.reportId !== input.reportId
+      )
+        throw new AppError(
+          409,
+          'STALE_WIRE_REVIEW',
+          'The candidate evidence changed; review the current report.',
+        );
+      if (
+        new Set(input.candidateIds).size !== input.candidateIds.length ||
+        input.candidateIds.some(
+          (id) => !report.candidates.some((c) => c.id === id),
+        )
+      )
+        throw new AppError(
+          400,
+          'INVALID_CANDIDATES',
+          'Select candidates from the current report.',
+        );
+      if (job.wireIdentities.length >= 100)
+        throw new AppError(
+          409,
+          'REVIEW_LIMIT',
+          'The identity review limit was reached.',
+        );
+      const current = latestIdentityReviews(
+        job.wireIdentities,
+        report.reportId,
+      );
+      if (
+        input.state === 'verified' &&
+        current.some(
+          (r) =>
+            r.state === 'verified' &&
+            r.candidateIds.some((id) => input.candidateIds.includes(id)) &&
+            (r.candidateIds.length !== input.candidateIds.length ||
+              r.candidateIds.some((id) => !input.candidateIds.includes(id))),
+        )
+      )
+        throw new AppError(
+          409,
+          'IDENTITY_CONFLICT',
+          'A candidate already belongs to another verified wire. Mark that group uncertain first.',
+        );
+      job.wireIdentities.push({
+        ...input,
+        reviewId: randomUUID(),
+        reviewSource: 'human',
+        reviewedAt: Date.now(),
+        electricalConnectionStatus: 'unestablished',
+      });
       this.save(job);
       return job;
     });
@@ -438,7 +685,7 @@ export class JobStore {
       .prepare('SELECT id FROM jobs WHERE owner IS NOT NULL AND lease_until<=?')
       .all(now)) {
       const job = this.get(row.id as string);
-      for (const stage of ['sam', 'muse'] as const) {
+      for (const stage of ['sam', 'muse', 'recovery'] as const) {
         const a = lastAttempt(job, stage);
         if (a?.status === 'running') {
           a.status = 'interrupted';
@@ -451,13 +698,17 @@ export class JobStore {
       }
       delete job.owner;
       delete job.leaseUntil;
-      job.status = job.sam.result ? 'partial' : 'failed';
+      job.status = job.muse.result
+        ? 'completed'
+        : job.sam.result
+          ? 'partial'
+          : 'failed';
       this.save(job);
     }
   }
   claim(
     owner: string,
-  ): { job: Job; stage: 'sam' | 'muse'; attemptId: string } | undefined {
+  ): { job: Job; stage: JobStage; attemptId: string } | undefined {
     return this.transaction(() => {
       this.recoverWithinTransaction();
       this.cleanup();
@@ -479,7 +730,7 @@ export class JobStore {
         .get();
       if (row) {
         const job = this.get(row.id as string);
-        const stage = row.queued_stage as 'sam' | 'muse';
+        const stage = row.queued_stage as JobStage;
         const a = lastAttempt(job, stage)!;
         if (a.status !== 'queued') return;
         a.status = 'running';
@@ -487,7 +738,14 @@ export class JobStore {
         a.upstreamOutcome = 'unknown';
         a.retryPolicy = 'blocked';
         job[stage].status = 'running';
-        job.status = stage === 'sam' ? 'segmenting' : 'interpreting';
+        job.status =
+          stage === 'sam'
+            ? 'segmenting'
+            : stage === 'muse'
+              ? 'interpreting'
+              : job.muse.result
+                ? 'completed'
+                : 'partial';
         job.owner = owner;
         job.leaseUntil = Date.now() + 15_000;
         this.save(job);
@@ -498,7 +756,7 @@ export class JobStore {
   renewLease(
     id: string,
     owner: string,
-    stage: 'sam' | 'muse',
+    stage: JobStage,
     attemptId: string,
   ): boolean {
     const now = Date.now();
@@ -514,7 +772,7 @@ export class JobStore {
   owned(
     id: string,
     owner: string,
-    stage: 'sam' | 'muse',
+    stage: JobStage,
     attemptId: string,
     work: (job: Job, attempt: Attempt) => void,
   ): boolean {
@@ -574,6 +832,11 @@ export function publicJob(job: Job) {
         ? { resultAttemptId: job.muse.resultAttemptId }
         : {}),
     },
+    recovery: {
+      ...job.recovery,
+      attempts: job.recovery.attempts.map(publicAttempt),
+    },
+    wireIdentities: job.wireIdentities,
     ...(job.experiment ? { experiment: job.experiment } : {}),
     ...(job.muse.result
       ? { result: job.muse.result }
@@ -584,7 +847,22 @@ export function publicJob(job: Job) {
 }
 
 function publicAttempt(attempt: Attempt) {
-  const { result: _prediction, ...publicFields } = attempt;
+  const {
+    result: _prediction,
+    recoveryReport: _report,
+    ...publicFields
+  } = attempt;
+  void _report;
   void _prediction;
   return publicFields;
+}
+
+export function emptyRecovery(): Job['recovery'] {
+  return {
+    status: 'not_started',
+    attempts: [],
+    operation: 'audit',
+    budget: { requests: 0, pixels: 0, verificationRequests: 0, rounds: 0 },
+    visited: [],
+  };
 }

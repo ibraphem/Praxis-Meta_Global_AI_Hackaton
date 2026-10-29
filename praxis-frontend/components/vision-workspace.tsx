@@ -17,6 +17,7 @@ import {
   retryStage,
   type AnalysisJob,
 } from "@/lib/analysis-jobs";
+import { WireRecoveryPanel, type RecoveryAction } from "./wire-recovery-panel";
 import { Icon, PraxisMark } from "./icons";
 import { ImagePreview, type Photograph } from "./image-preview";
 import { ResultsPanel } from "./results-panel";
@@ -204,8 +205,10 @@ export function VisionWorkspace() {
   }
 
   async function runJob(
-    action: "create" | "reconnect" | "retry-sam" | "retry-muse",
+    action:
+      "create" | "reconnect" | "retry-sam" | "retry-muse" | RecoveryAction,
     savedId?: string,
+    payload?: unknown,
   ) {
     if (requestRef.current || selecting) return;
     if (action === "create" && !photograph) return;
@@ -242,6 +245,12 @@ export function VisionWorkspace() {
               method: action === "reconnect" ? "GET" : "POST",
               signal: controller.signal,
               cache: "no-store",
+              ...(payload
+                ? {
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                  }
+                : {}),
             },
           ),
         );
@@ -591,6 +600,17 @@ export function VisionWorkspace() {
             elapsed={elapsed}
           />
         </div>
+        {job && photograph && job.sam.status === "succeeded" && (
+          <WireRecoveryPanel
+            key={`${job.analysisId}:${job.recovery?.report?.reportId ?? "none"}`}
+            job={job}
+            imageUrl={photograph.url}
+            busy={loading}
+            onAction={(action, payload) =>
+              void runJob(action, undefined, payload)
+            }
+          />
+        )}
         <div className="under-workspace">
           <div className="supported-components">
             <span>LOOKING FOR</span>

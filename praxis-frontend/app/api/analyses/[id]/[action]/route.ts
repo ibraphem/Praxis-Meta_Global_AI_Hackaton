@@ -13,7 +13,28 @@ export async function POST(
   context: RouteContext<"/api/analyses/[id]/[action]">,
 ) {
   const { id, action } = await context.params;
-  if (action !== "retry-muse" && action !== "retry-sam")
+  if (
+    ![
+      "retry-muse",
+      "retry-sam",
+      "audit-wires",
+      "recover-wires",
+      "verify-wire",
+      "wire-identities",
+      "interpret-recovery",
+    ].includes(action)
+  )
     return new Response(null, { status: 404 });
-  return proxy(request, action, id);
+  return proxy(
+    request,
+    action as
+      | "retry-muse"
+      | "retry-sam"
+      | "audit-wires"
+      | "recover-wires"
+      | "verify-wire"
+      | "wire-identities"
+      | "interpret-recovery",
+    id,
+  );
 }

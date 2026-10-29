@@ -78,7 +78,8 @@ export class ExperimentRegistry {
         !job.sam.snapshotRef ||
         job.settings.mode !== 'combined' ||
         job.owner ||
-        ['queued', 'running'].includes(job.muse.status)
+        ['queued', 'running'].includes(job.muse.status) ||
+        ['queued', 'running'].includes(job.recovery.status)
       )
         throw new AppError(
           409,

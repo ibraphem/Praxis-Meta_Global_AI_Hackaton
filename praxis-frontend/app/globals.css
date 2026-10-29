@@ -1460,3 +1460,10 @@ h1 > span {
 .analysis-job-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0; }
 .analysis-job-status details { margin-top: 12px; }
 .analysis-job-status pre { max-height: 260px; overflow: auto; font-size: 12px; }
+
+.wire-recovery-panel { padding:20px; margin:20px 0; border:1px solid #c9d5cf; border-radius:12px; background:#fbfcf8; font-size:14px; }
+.wire-recovery-preview { width:100%; max-height:440px; display:block; margin:12px 0; background:#e8ece7; }
+.wire-recovery-candidates { display:grid; gap:8px; max-height:280px; overflow:auto; padding:12px; border:1px solid #d4ddd7; }
+.wire-recovery-panel input[type=checkbox] { margin-right:8px; }
+.wire-recovery-panel input:not([type=checkbox]) { border:1px solid #aabbb0; padding:8px; max-width:100%; }
+.wire-recovery-panel pre { max-height:300px; overflow:auto; font-size:12px; }

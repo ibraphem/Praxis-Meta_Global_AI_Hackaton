@@ -19,11 +19,17 @@ type Resolution =
   { ok: true; mask: ResolvedMask } | { ok: false; reason: RegionReason };
 
 /** Thin a small binary copy for a conservative endpoint/branch plausibility check. */
-function isSinglePath(
+export function wireTopology(
   raster: Uint8Array,
   width: number,
   height: number,
-): boolean {
+): {
+  valid: boolean;
+  ends: number;
+  branches: number;
+  converged: boolean;
+  scale: number;
+} {
   const scale = Math.min(1, 128 / Math.max(width, height));
   const w = Math.max(1, Math.ceil(width * scale)) + 2;
   const h = Math.max(1, Math.ceil(height * scale)) + 2;
@@ -66,7 +72,8 @@ function isSinglePath(
       if (remove.length) changed = true;
     }
     if (!changed) break;
-    if (iteration === 31) return false;
+    if (iteration === 31)
+      return { valid: false, ends: 0, branches: 0, converged: false, scale };
   }
   let ends = 0;
   let branches = 0;
@@ -79,19 +86,26 @@ function isSinglePath(
       if (p.filter((value, j) => !value && p[(j + 1) % 8]).length >= 3)
         branches++;
     }
-  return ends === 2 && branches === 0;
+  return {
+    valid: ends === 2 && branches === 0,
+    ends,
+    branches,
+    converged: true,
+    scale,
+  };
 }
 
-function largestComponent(
+export function maskComponents(
   raster: Uint8Array,
   width: number,
   height: number,
-): { area: number; largest: number; perimeter: number } {
+): { area: number; largest: number; perimeter: number; components: number } {
   const seen = new Uint8Array(raster.length);
   const queue = new Int32Array(raster.length);
   let area = 0,
     largest = 0,
-    perimeter = 0;
+    perimeter = 0,
+    components = 0;
   for (let i = 0; i < raster.length; i++) {
     if (!raster[i]) continue;
     area++;
@@ -103,6 +117,7 @@ function largestComponent(
       Number(y === 0 || !raster[i - width]) +
       Number(y === height - 1 || !raster[i + width]);
     if (seen[i]) continue;
+    components++;
     let head = 0,
       tail = 1;
     queue[0] = i;
@@ -125,11 +140,11 @@ function largestComponent(
     }
     largest = Math.max(largest, tail);
   }
-  return { area, largest, perimeter };
+  return { area, largest, perimeter, components };
 }
 
 /** Simplify pixel contours without turning a thin outline into a broad rectangle. */
-function simplifyPath(path: string): string {
+export function simplifyPath(path: string): string {
   const contours = path.match(/M[^M]+/g) ?? [];
   return contours
     .map((contour) => {
@@ -226,7 +241,7 @@ export class WireGeometry {
     this.decodedPixels += pixels;
     try {
       const raster = decodeMaskToRaster(raw);
-      const { area, largest, perimeter } = largestComponent(
+      const { area, largest, perimeter } = maskComponents(
         raster,
         raw.width,
         raw.height,
@@ -240,7 +255,7 @@ export class WireGeometry {
         largest / area < 0.95 ||
         (area / pixels > 0.5 && aspect < 4) ||
         perimeter > 6000 ||
-        !isSinglePath(raster, raw.width, raw.height)
+        !wireTopology(raster, raw.width, raw.height).valid
       )
         return { ok: false, reason: 'ambiguous_mask' };
       if (

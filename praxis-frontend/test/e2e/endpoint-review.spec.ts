@@ -110,7 +110,12 @@ async function enterCalibrationPoint(page: Page, p: { x: number; y: number }) {
     .fill(String(p.y));
   await page.getByRole("button", { name: /^Set [aj]\d+$/ }).click();
 }
-async function setup(page: Page, withRail = false, endpointReply = reply) {
+async function setup(
+  page: Page,
+  withRail = false,
+  endpointReply = reply,
+  focused = false,
+) {
   await page.route("**/api/analyses", (route) =>
     route.fulfill({ status: 202, json: completedJob(analysis) }),
   );
@@ -153,11 +158,53 @@ async function setup(page: Page, withRail = false, endpointReply = reply) {
   await page
     .getByRole("button", { name: "Inspect components", exact: true })
     .click();
+  if (focused)
+    await page
+      .getByRole("checkbox", {
+        name: "Focused crop + calibrated grid reference (experiment)",
+      })
+      .check();
   await page
     .getByRole("button", { name: "Propose endpoints with Muse" })
     .click();
   await expect(page.getByLabel("AI endpoint review")).toBeVisible();
 }
+
+test("focused endpoint input is opt-in and includes calibrated original-image grid points", async ({
+  page,
+}) => {
+  let calls = 0;
+  await setup(
+    page,
+    false,
+    async (route) => {
+      calls++;
+      const raw = route.request().postDataBuffer()!.toString();
+      const context = JSON.parse(
+        raw.match(/name="context"\r\n\r\n([^\r]+)/)![1],
+      );
+      expect(context.view).toBe("candidate_crop");
+      expect(context.gridPoints.length).toBe(630);
+      expect(
+        context.gridPoints.every(
+          ([x, y]: number[]) =>
+            x >= 0 && y >= 0 && x < image.width && y < image.height,
+        ),
+      ).toBe(true);
+      await reply(route);
+    },
+    true,
+  );
+  expect(calls).toBe(1);
+  await expect(
+    page.getByRole("checkbox", {
+      name: "Focused crop + calibrated grid reference (experiment)",
+    }),
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Confirm endpoint A", exact: true }),
+  ).toBeEnabled();
+});
 async function saveBoth(page: Page) {
   await page
     .getByRole("button", { name: "Confirm endpoint A", exact: true })

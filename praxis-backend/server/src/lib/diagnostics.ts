@@ -8,6 +8,8 @@ export const stages = [
   'sam.resistor',
   'sam.jumper_wire',
   'sam.wire_refine',
+  'sam.wire_crop',
+  'muse.wire_verify',
   'wire.geometry',
   'wire.grounding',
   'muse.interpret',

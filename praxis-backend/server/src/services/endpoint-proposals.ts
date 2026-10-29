@@ -1,4 +1,12 @@
+import {
+  extractFrame,
+  focusBox,
+  frameToOriginal,
+  gridReference,
+  type FocusFrame,
+} from './wire-focus.js';
 import { z } from 'zod';
+import type { PreparedImage } from '../schemas/vision.js';
 import type { Config } from '../config.js';
 import { AppError, invalidProviderOutput } from '../lib/errors.js';
 import { createMetaClient, type MetaClient } from '../lib/meta-client.js';
@@ -31,6 +39,16 @@ const contextSchema = z
       })
       .strict(),
     wire: groundingWireSchema,
+    view: z.enum(['full', 'candidate_crop']).default('full'),
+    gridPoints: z
+      .array(
+        z.tuple([
+          z.number().finite().nonnegative(),
+          z.number().finite().nonnegative(),
+        ]),
+      )
+      .max(1000)
+      .optional(),
     otherWires: z.array(groundingWireSchema).max(99).default([]),
   })
   .strict();
@@ -88,7 +106,7 @@ export function createEndpointProposalService(
       );
     const input = parsed.data;
     const finishPrepare = trace?.begin('image.prepare');
-    let image;
+    let image: PreparedImage;
     try {
       image = await prepareImage(bytes, config);
       finishPrepare?.('completed');
@@ -123,6 +141,36 @@ export function createEndpointProposalService(
       throw error;
     }
     signal.throwIfAborted();
+    const original = image;
+    let frame: FocusFrame | undefined;
+    let contextImage: typeof image | undefined,
+      gridImage: typeof image | undefined;
+    if (input.view === 'candidate_crop') {
+      frame = await extractFrame(image, focusBox(image, input.wire.bbox));
+      grounded = (await extractFrame(grounded, frame.bbox)).image;
+      if (input.gridPoints) {
+        if (
+          input.gridPoints.some(
+            ([x, y]) => x >= image.width || y >= image.height,
+          )
+        )
+          throw new AppError(
+            400,
+            'INVALID_CONTEXT',
+            'Grid reference points exceed the photograph.',
+          );
+        gridImage = (
+          await extractFrame(
+            await gridReference(image, input.gridPoints),
+            frame.bbox,
+          )
+        ).image;
+      }
+      contextImage = (
+        await extractFrame(image, [0, 0, image.width, image.height], 1024)
+      ).image;
+      image = frame.image;
+    }
     const raw = await client.post(
       'chat/completions',
       {
@@ -138,7 +186,7 @@ export function createEndpointProposalService(
             content: [
               {
                 type: 'text',
-                text: `Both images are ${image.width}x${image.height} pixels, aligned with no crop, rotation difference or rescaling. Use original-image [x,y] pixels, top-left origin, x<${image.width}, y<${image.height}; never normalized coordinates. Selected candidate: ${input.wire.id}; bbox [x,y,width,height]=${JSON.stringify(input.wire.bbox)}. Use the annotated cyan mask to identify the selected wire; other wire regions are dimmed. Confirm all visual observations against the ORIGINAL photograph. Return endpoints A then B. proposedImagePosition is ONLY the actual visible insertion point at the breadboard surface. Use evidence=visible_insertion and a position only when that physical insertion point is clearly established. connectorJunctionPosition is a separate visible wire-to-connector junction, or null. If a connector body hides the insertion, evidence=occluded_insertion and proposedImagePosition=null, even when its junction is visible. Use visible_connector_junction when only a junction is established without a reliable insertion; proposedImagePosition must be null. If neither is reliable use insufficient and null insertion. Do not substitute a connector top, mask tip, nearby hole or estimated hidden pin. A null insertion is the required unknown result, not a failure. Image 1: original photograph.`,
+                text: `Both images are ${image.width}x${image.height} pixels, aligned with each other. Use ${frame ? 'local-crop' : 'original-image'} [x,y] pixels, top-left origin, x<${image.width}, y<${image.height}; never normalized coordinates. Selected candidate: ${input.wire.id}; bbox [x,y,width,height]=${JSON.stringify(frame ? [((input.wire.bbox[0] - frame.bbox[0]) * image.width) / frame.bbox[2], ((input.wire.bbox[1] - frame.bbox[1]) * image.height) / frame.bbox[3], (input.wire.bbox[2] * image.width) / frame.bbox[2], (input.wire.bbox[3] * image.height) / frame.bbox[3]] : input.wire.bbox)}. Use the annotated cyan mask to identify the selected wire; other wire regions are dimmed. Confirm all visual observations against the ORIGINAL photograph. Return endpoints A then B. proposedImagePosition is ONLY the actual visible insertion point at the breadboard surface. Use evidence=visible_insertion and a position only when that physical insertion point is clearly established. connectorJunctionPosition is a separate visible wire-to-connector junction, or null. If a connector body hides the insertion, evidence=occluded_insertion and proposedImagePosition=null, even when its junction is visible. Use visible_connector_junction when only a junction is established without a reliable insertion; proposedImagePosition must be null. If neither is reliable use insufficient and null insertion. Do not substitute a connector top, mask tip, nearby hole or estimated hidden pin. A null insertion is the required unknown result, not a failure. Image 1: original photograph.`,
               },
               { type: 'image_url', image_url: { url: image.dataUrl } },
               {
@@ -146,6 +194,30 @@ export function createEndpointProposalService(
                 text: 'Image 2: aligned visual grounding reference. The selected wire is highlighted cyan; other masks and background are deemphasized. This rendering does not reveal hidden holes.',
               },
               { type: 'image_url', image_url: { url: grounded.dataUrl } },
+              ...(contextImage
+                ? [
+                    {
+                      type: 'text',
+                      text: 'Image 3 is full-scene context only. Return pixel coordinates only in images 1 and 2. A crop boundary is not a physical insertion point.',
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: { url: contextImage.dataUrl },
+                    },
+                  ]
+                : []),
+              ...(gridImage
+                ? [
+                    {
+                      type: 'text',
+                      text: 'Final image: artificial calibrated grid reference. Grid marks are predictions from reviewer calibration, not evidence of insertion. The unobscured photograph is authoritative; abstain if physical evidence conflicts.',
+                    },
+                    {
+                      type: 'image_url',
+                      image_url: { url: gridImage.dataUrl },
+                    },
+                  ]
+                : []),
             ],
           },
         ],
@@ -163,9 +235,11 @@ export function createEndpointProposalService(
         stage: 'muse.endpoints',
         maxRetries: 0,
         imageDimensions: [
-          { width: image.width, height: image.height },
-          { width: image.width, height: image.height },
-        ],
+          image,
+          grounded,
+          ...(contextImage ? [contextImage] : []),
+          ...(gridImage ? [gridImage] : []),
+        ].map(({ width, height }) => ({ width, height })),
         ...(trace ? { trace } : {}),
       },
     );
@@ -194,12 +268,49 @@ export function createEndpointProposalService(
       )
         throw invalidProviderOutput();
     }
+    const localPositions = output.endpoints.map((e) => e.proposedImagePosition);
+    if (frame)
+      for (const endpoint of output.endpoints) {
+        if (endpoint.proposedImagePosition)
+          endpoint.proposedImagePosition = frameToOriginal(
+            endpoint.proposedImagePosition,
+            frame,
+          );
+        if (endpoint.connectorJunctionPosition)
+          endpoint.connectorJunctionPosition = frameToOriginal(
+            endpoint.connectorJunctionPosition,
+            frame,
+          );
+      }
+    if (
+      output.endpoints.some((e) =>
+        [e.proposedImagePosition, e.connectorJunctionPosition].some(
+          (p) => p && (p[0] >= original.width || p[1] >= original.height),
+        ),
+      )
+    )
+      throw invalidProviderOutput();
     return {
       analysisId: input.analysisId,
       imageId: input.imageId,
       wireCandidateId: input.wire.id,
       model: config.META_REASONING_MODEL,
-      endpoints: output.endpoints,
+      endpoints: frame
+        ? output.endpoints.map((endpoint, i) => ({
+            ...endpoint,
+            sourceFramePosition: localPositions[i],
+          }))
+        : output.endpoints,
+      ...(frame
+        ? {
+            inputVariant: 'candidate_crop' as const,
+            inputFrame: {
+              bbox: frame.bbox,
+              width: frame.image.width,
+              height: frame.image.height,
+            },
+          }
+        : {}),
     };
   };
 }

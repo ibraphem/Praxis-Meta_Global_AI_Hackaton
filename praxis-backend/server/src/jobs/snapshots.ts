@@ -10,6 +10,7 @@ export interface SnapshotRef {
   processingVersion: string;
   sourceAttemptId: string;
   createdAt: number;
+  parentSnapshotId?: string;
   origin: 'recorded' | 'legacy_import';
 }
 export interface SnapshotRecord {

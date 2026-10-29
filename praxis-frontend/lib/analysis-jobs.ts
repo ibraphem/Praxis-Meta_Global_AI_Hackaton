@@ -1,3 +1,5 @@
+import { recoveryReportSchema, wireIdentitySchema } from "./wire-recovery";
+import { geometryBoxSchema } from "./geometry";
 import { z } from "zod";
 import { analysisSchema } from "./vision";
 import { diagnosticsSchema } from "./diagnostics";
@@ -29,6 +31,11 @@ export const attemptSchema = z
       .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
       .optional(),
     diagnostics: diagnosticsSchema.optional(),
+    outputSnapshotId: z.uuid().optional(),
+    outputSnapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     samSnapshotId: z.uuid().optional(),
     samSnapshotHash: z
       .string()
@@ -52,6 +59,7 @@ const snapshotRefSchema = z
     processingVersion: z.string().min(1).max(100),
     sourceAttemptId: z.uuid(),
     createdAt: z.number().int().nonnegative(),
+    parentSnapshotId: z.uuid().optional(),
     origin: z.enum(["recorded", "legacy_import"]),
   })
   .strict();
@@ -97,6 +105,24 @@ export const analysisJobSchema = z
       })
       .strict()
       .optional(),
+    recovery: stageSchema
+      .extend({
+        operation: z.enum(["audit", "recover", "verify"]),
+        candidateId: z.string().max(64).optional(),
+        snapshotRef: snapshotRefSchema.optional(),
+        report: recoveryReportSchema.optional(),
+        budget: z
+          .object({
+            requests: z.number().int().nonnegative(),
+            pixels: z.number().int().nonnegative(),
+            verificationRequests: z.number().int().nonnegative(),
+            rounds: z.number().int().nonnegative(),
+          })
+          .strict(),
+        visited: z.array(geometryBoxSchema).max(12),
+      })
+      .optional(),
+    wireIdentities: z.array(wireIdentitySchema).max(100).optional(),
     result: analysisSchema.optional(),
   })
   .strict();
@@ -104,7 +130,7 @@ export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export function jobIsActive(job: AnalysisJob) {
   return (
     job.experiment?.status === "running" ||
-    [job.sam.status, job.muse.status].some(
+    [job.sam.status, job.muse.status, job.recovery?.status].some(
       (s) => s === "queued" || s === "running",
     )
   );
@@ -117,6 +143,12 @@ export function retryStage(job: AnalysisJob): "sam" | "muse" | null {
     : null;
 }
 export function jobMessage(job: AnalysisJob) {
+  if (job.recovery?.status === "running" || job.recovery?.status === "queued")
+    return job.recovery.operation === "audit"
+      ? "Auditing wire coverage. Existing results are saved."
+      : job.recovery.operation === "recover"
+        ? "Recovering wire candidates within the saved budget. Existing results are saved."
+        : "Muse is verifying a selected candidate. Its response remains a proposal.";
   if (job.experiment)
     return job.experiment.status === "running"
       ? "A controlled Muse experiment is running. Live analysis is paused; saved results remain available."

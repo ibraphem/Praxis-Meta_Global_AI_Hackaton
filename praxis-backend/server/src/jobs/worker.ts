@@ -1,3 +1,8 @@
+import {
+  createWireRecovery,
+  type RecoveryProgress,
+} from '../services/wire-recovery.js';
+import type { SnapshotRef } from './snapshots.js';
 import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.js';
 import { AppError } from '../lib/errors.js';
@@ -21,6 +26,9 @@ export class AnalysisWorker {
     readonly config: Config,
     readonly logger: TraceLogger,
     readonly stages?: VisionStages,
+    readonly recoveryFactory: (
+      settings: Config,
+    ) => ReturnType<typeof createWireRecovery> = createWireRecovery,
   ) {}
   start() {
     this.timer = setInterval(() => this.tick(), 250);
@@ -107,13 +115,16 @@ export class AnalysisWorker {
         abort = () => reject(controller.signal.reason);
         controller.signal.addEventListener('abort', abort, { once: true });
       });
-      const binding = lastAttempt(job, 'muse');
+      const binding = lastAttempt(
+        job,
+        stage === 'recovery' ? 'recovery' : 'muse',
+      );
       const bound =
-        stage === 'muse' && binding?.samSnapshotId
+        stage !== 'sam' && binding?.samSnapshotId
           ? this.store.getSnapshot(binding.samSnapshotId)
           : undefined;
       if (
-        stage === 'muse' &&
+        stage !== 'sam' &&
         (!bound || bound.ref.samSnapshotHash !== binding?.samSnapshotHash)
       )
         throw new AppError(
@@ -127,7 +138,56 @@ export class AnalysisWorker {
           ? settings.VISION_MODE === 'combined'
             ? stages.segment(snapshot.image, controller.signal, trace)
             : Promise.resolve(snapshot)
-          : stages.interpret(snapshot, controller.signal, trace),
+          : stage === 'muse'
+            ? stages.interpret(snapshot, controller.signal, trace)
+            : this.recoveryFactory(settings)(
+                {
+                  snapshot,
+                  ref: bound!.ref,
+                  reviews: job.wireIdentities,
+                  budget: job.recovery.budget,
+                  visited: job.recovery.visited,
+                  operation: job.recovery.operation,
+                  ...(job.recovery.candidateId
+                    ? { candidateId: job.recovery.candidateId }
+                    : {}),
+                  ...(job.recovery.report
+                    ? { previous: job.recovery.report }
+                    : {}),
+                },
+                controller.signal,
+                trace,
+                (value: RecoveryProgress) => {
+                  let saved: SnapshotRef | undefined;
+                  const valid = this.store.owned(
+                    job.analysisId,
+                    this.owner,
+                    'recovery',
+                    attemptId,
+                    (j) => {
+                      j.recovery.budget = value.budget;
+                      j.recovery.visited = value.visited;
+                      if (value.changed) {
+                        saved = this.store.checkpointSnapshot(
+                          j,
+                          value.snapshot,
+                          attemptId,
+                          'recorded',
+                          j.recovery.snapshotRef ?? bound!.ref,
+                        );
+                        j.recovery.snapshotRef = saved;
+                      } else j.recovery.report = value.report;
+                    },
+                  );
+                  if (!valid)
+                    throw new AppError(
+                      503,
+                      'WORKER_INTERRUPTED',
+                      'Recovery worker ownership was lost.',
+                    );
+                  return saved;
+                },
+              ),
         aborted,
       ]);
       controller.signal.throwIfAborted();
@@ -158,9 +218,31 @@ export class AnalysisWorker {
             };
             j.sam.result = partial;
           }
+          if (settings.VISION_MODE === 'combined') {
+            delete j.recovery.snapshotRef;
+            delete j.recovery.report;
+            const audit = newAttempt();
+            Object.assign(audit, {
+              samSnapshotId: j.sam.snapshotRef!.samSnapshotId,
+              samSnapshotHash: j.sam.snapshotRef!.samSnapshotHash,
+              snapshotBinding: 'recorded',
+            });
+            j.recovery.status = 'queued';
+            j.recovery.operation = 'audit';
+            j.recovery.attempts.push(audit);
+          }
           j.muse.attempts.push(newAttempt());
           j.muse.status = 'queued';
           j.status = partial ? 'partial' : 'queued';
+        } else if (stage === 'recovery' && 'report' in result) {
+          j.recovery.report = result.report;
+          j.recovery.budget = result.budget;
+          j.recovery.visited = result.visited;
+          a.recoveryReport = result.report;
+          const output = j.recovery.snapshotRef ?? bound!.ref;
+          a.outputSnapshotId = output.samSnapshotId;
+          a.outputSnapshotHash = output.samSnapshotHash;
+          j.status = j.muse.result ? 'completed' : 'partial';
         } else if ('objects' in result) {
           result.provenance = {
             ...result.provenance,
@@ -210,9 +292,21 @@ export class AnalysisWorker {
         a.finishedAt = Date.now();
         a.diagnostics = trace.snapshot();
         j[stage].status = a.status;
+        if (stage === 'recovery' && j.recovery.report) {
+          a.recoveryReport = j.recovery.report;
+          const output = j.recovery.snapshotRef ?? j.sam.snapshotRef;
+          if (output) {
+            a.outputSnapshotId = output.samSnapshotId;
+            a.outputSnapshotHash = output.samSnapshotHash;
+          }
+        }
         delete j.owner;
         delete j.leaseUntil;
-        j.status = j.sam.result ? 'partial' : 'failed';
+        j.status = j.muse.result
+          ? 'completed'
+          : j.sam.result
+            ? 'partial'
+            : 'failed';
       });
     } finally {
       clearInterval(heartbeat);
