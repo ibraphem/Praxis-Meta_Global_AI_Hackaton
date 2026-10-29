@@ -928,3 +928,28 @@ The five-wire interim gate is at least 8/10 correct endpoints, 4/5 complete wire
 zero wrong holes, zero regressions, and under 75 seconds. Wire coverage (15/17) and
 identity precision are separate measurements, not inferred from endpoint success.
 No improvement is established by synthetic tests; repeat on held-out photographs.
+
+Endpoint close-up responses additionally preserve `localization.requestStatus` and
+ordered A/B `endpointOutcomes`. Outcomes distinguish `localized` (a visible pixel
+proposal, still subject to strict snapping), `abstained` (a completed model response),
+`no_anchor` (no crop supplied), `crop_fragment` (blocked before any provider call),
+`failed`, and `timed_out`. A single request can complete while one endpoint has no
+crop. Failed refinement keeps its coarse endpoints independently available in the
+response, with no automatic fallback into active insertion assignments.
+
+New endpoint experiment reports use `endpoint-grounding-experiment-v2`. Each
+measurement retains its legacy execution `status` and adds `outcomes` for handler
+execution, localization, per-endpoint results, and observed transport request timings.
+A handled `no_anchor` or `crop_fragment` response may have execution `succeeded`;
+that does not count as completed endpoint localization or correct insertion. A
+transport response can also complete yet fail output validation. The terminal runner
+prints these distinctions and does not claim accuracy without blinded truth.
+
+The offline scorer accepts historical v1 reports too and emits
+`grounding-comparison-v2`: frozen baseline, same-run coarse predictions, final
+operational yield over all truth endpoints, and conditional completed-localization
+scores with explicit denominators. Failure, missing response, abstention, skipped
+crop and strict snap rejection remain distinct. Coarse predictions from a failed
+close-up are still scored; final operational results remain unresolved. Paired
+coarse-to-final pixel errors report their sample count. No prediction is overwritten
+and no snap policy, acceptance requirement, timeout or retry policy is relaxed.

@@ -28,6 +28,16 @@ export type Insertion = z.infer<typeof insertionSchema> & {
   sourceFramePosition?: [number, number] | null;
   sourceCoordinates?: [number, number] | null;
 };
+export type LocalizationEndpointOutcome = {
+  role: 'A' | 'B';
+  status:
+    | 'localized'
+    | 'abstained'
+    | 'no_anchor'
+    | 'crop_fragment'
+    | 'failed'
+    | 'timed_out';
+};
 export interface EndpointResult {
   analysisId: string;
   imageId: string;
@@ -48,6 +58,11 @@ export interface EndpointResult {
     status:
       'completed' | 'no_anchor' | 'failed' | 'timed_out' | 'crop_fragment';
     errorCode?: string;
+    requestStatus?: 'not_requested' | 'succeeded' | 'failed' | 'timed_out';
+    endpointOutcomes?: [
+      LocalizationEndpointOutcome,
+      LocalizationEndpointOutcome,
+    ];
   };
 }
 export function pitchOf(points: [number, number][], fallback: number): number {
@@ -88,6 +103,11 @@ export async function localizeInsertions(
       coarseEndpoints: structuredClone(coarse.endpoints),
       frames: [],
       status: 'no_anchor',
+      requestStatus: 'not_requested',
+      endpointOutcomes: [
+        { role: 'A', status: 'no_anchor' },
+        { role: 'B', status: 'no_anchor' },
+      ],
     },
   };
   const dimensions: { width: number; height: number }[] = [];
@@ -99,79 +119,84 @@ export async function localizeInsertions(
     | { type: 'text'; text: string }
     | { type: 'image_url'; image_url: { url: string } }
   )[] = [];
-  const highlighted = await renderWireGrounding(image, wire, []),
-    pitch = pitchOf(
-      grid,
-      Math.max(8, Math.min(image.width, image.height) / 80),
-    );
-  for (const e of coarse.endpoints) {
-    const anchor = e.proposedImagePosition ?? e.connectorJunctionPosition;
-    if (!anchor) continue;
-    const box = smallBox(
-        anchor,
-        Math.min(512, Math.max(96, pitch * 12)),
-        image,
-      ),
-      frame = await extractFrame(image, box, 768);
-    frames.set(e.role, frame);
-    result.localization!.frames.push({
-      role: e.role,
-      bbox: box,
-      width: frame.image.width,
-      height: frame.image.height,
-    });
-    dimensions.push(
-      { width: frame.image.width, height: frame.image.height },
-      { width: frame.image.width, height: frame.image.height },
-    );
-    parts.push(
-      {
-        type: 'text',
-        text: `Endpoint ${e.role}: untouched photo then aligned mask reference, ${frame.image.width}x${frame.image.height}. Coordinates refer ONLY to this endpoint's crop. ${coordinateSpace === 'pixels' ? 'Return local crop pixels.' : 'Return normalized 0–1000 coordinates, both strictly less than 1000.'} A crop edge is not an insertion point.`,
-      },
-      { type: 'image_url', image_url: { url: frame.image.dataUrl } },
-      {
-        type: 'image_url',
-        image_url: {
-          url: (await extractFrame(highlighted, box, 768)).image.dataUrl,
-        },
-      },
-    );
-    if (grid.length) {
-      dimensions.push({ width: frame.image.width, height: frame.image.height });
+  let requestStarted = false;
+  try {
+    const highlighted = await renderWireGrounding(image, wire, []),
+      pitch = pitchOf(
+        grid,
+        Math.max(8, Math.min(image.width, image.height) / 80),
+      );
+    for (const e of coarse.endpoints) {
+      const anchor = e.proposedImagePosition ?? e.connectorJunctionPosition;
+      if (!anchor) continue;
+      const box = smallBox(
+          anchor,
+          Math.min(512, Math.max(96, pitch * 12)),
+          image,
+        ),
+        frame = await extractFrame(image, box, 768);
+      frames.set(e.role, frame);
+      result.localization!.frames.push({
+        role: e.role,
+        bbox: box,
+        width: frame.image.width,
+        height: frame.image.height,
+      });
+      dimensions.push(
+        { width: frame.image.width, height: frame.image.height },
+        { width: frame.image.width, height: frame.image.height },
+      );
       parts.push(
         {
           type: 'text',
-          text: `Endpoint ${e.role}: artificial calibrated hole references. These marks are not evidence that a wire enters a hole.`,
+          text: `Endpoint ${e.role}: untouched photo then aligned mask reference, ${frame.image.width}x${frame.image.height}. Coordinates refer ONLY to this endpoint's crop. ${coordinateSpace === 'pixels' ? 'Return local crop pixels.' : 'Return normalized 0–1000 coordinates, both strictly less than 1000.'} A crop edge is not an insertion point.`,
         },
+        { type: 'image_url', image_url: { url: frame.image.dataUrl } },
         {
           type: 'image_url',
           image_url: {
-            url: (
-              await extractFrame(await gridReference(image, grid), box, 768)
-            ).image.dataUrl,
+            url: (await extractFrame(highlighted, box, 768)).image.dataUrl,
           },
         },
       );
+      if (grid.length) {
+        dimensions.push({
+          width: frame.image.width,
+          height: frame.image.height,
+        });
+        parts.push(
+          {
+            type: 'text',
+            text: `Endpoint ${e.role}: artificial calibrated hole references. These marks are not evidence that a wire enters a hole.`,
+          },
+          {
+            type: 'image_url',
+            image_url: {
+              url: (
+                await extractFrame(await gridReference(image, grid), box, 768)
+              ).image.dataUrl,
+            },
+          },
+        );
+      }
     }
-  }
-  if (!frames.size) return result;
-  const context = (
-    await extractFrame(image, [0, 0, image.width, image.height], 1024)
-  ).image;
-  parts.push(
-    {
-      type: 'text',
-      text: 'Full photograph is identity context only, not the coordinate frame.',
-    },
-    { type: 'image_url', image_url: { url: context.dataUrl } },
-  );
-  dimensions.push({ width: context.width, height: context.height });
-  const output = z
-    .object({ endpoints: z.tuple([insertionSchema, insertionSchema]) })
-    .strict();
-  try {
+    if (!frames.size) return result;
+    const context = (
+      await extractFrame(image, [0, 0, image.width, image.height], 1024)
+    ).image;
+    parts.push(
+      {
+        type: 'text',
+        text: 'Full photograph is identity context only, not the coordinate frame.',
+      },
+      { type: 'image_url', image_url: { url: context.dataUrl } },
+    );
+    dimensions.push({ width: context.width, height: context.height });
+    const output = z
+      .object({ endpoints: z.tuple([insertionSchema, insertionSchema]) })
+      .strict();
     signal.throwIfAborted();
+    requestStarted = true;
     const raw = await client.post(
       'chat/completions',
       {
@@ -261,6 +286,15 @@ export async function localizeInsertions(
       };
     }) as [Insertion, Insertion];
     result.localization!.status = 'completed';
+    result.localization!.requestStatus = 'succeeded';
+    result.localization!.endpointOutcomes = result.endpoints.map((e) => ({
+      role: e.role,
+      status: !frames.has(e.role)
+        ? 'no_anchor'
+        : e.proposedImagePosition
+          ? 'localized'
+          : 'abstained',
+    })) as [LocalizationEndpointOutcome, LocalizationEndpointOutcome];
     return result;
   } catch (error) {
     if (signal.aborted) throw error;
@@ -269,8 +303,22 @@ export async function localizeInsertions(
       ['PROVIDER_TIMEOUT', 'META_API_TIMEOUT'].includes(error.code)
         ? 'timed_out'
         : 'failed';
+    result.localization!.requestStatus = requestStarted
+      ? result.localization!.status
+      : 'not_requested';
+    result.localization!.endpointOutcomes = coarse.endpoints.map((e) => ({
+      role: e.role,
+      status:
+        e.proposedImagePosition || e.connectorJunctionPosition
+          ? result.localization!.status
+          : 'no_anchor',
+    })) as [LocalizationEndpointOutcome, LocalizationEndpointOutcome];
     result.localization!.errorCode =
-      error instanceof AppError ? error.code : 'INVALID_PROVIDER_OUTPUT';
+      error instanceof AppError
+        ? error.code
+        : requestStarted
+          ? 'INVALID_PROVIDER_OUTPUT'
+          : 'LOCALIZATION_PREPARATION_FAILED';
     result.endpoints = coarse.endpoints.map((e) => ({
       role: e.role,
       proposedImagePosition: null,

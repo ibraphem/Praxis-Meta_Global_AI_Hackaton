@@ -32,12 +32,24 @@ try {
       report.experiments.map((e) => ({
         variant: e.variant,
         run: e.run,
-        correct: e.correct,
+        coarseCorrect: `${e.coarse.correct}/${e.coarse.endpoints}`,
+        coarseAvailable: e.coarse.availableEndpoints,
+        operationalCorrect: `${e.correct}/${e.endpoints}`,
+        completedLocalization: e.completedLocalization.endpoints,
+        modelAbstentions: e.outcomeCounts.abstained,
+        unavailable:
+          e.outcomeCounts.failed +
+          e.outcomeCounts.timed_out +
+          e.outcomeCounts.interrupted +
+          e.outcomeCounts.missing,
+        skipped: e.outcomeCounts.no_anchor + e.outcomeCounts.crop_fragment,
         wrong: e.wrong,
         unresolved: e.unresolved,
         completeWires: e.completeWires,
         correctToWrong: e.transitions.correctToWrong,
         correctToUnresolved: e.transitions.correctToUnresolved,
+        correctToUnavailable: e.transitions.correctToUnavailable,
+        refinementNoRegression: e.refinementNoRegression,
         wallSeconds: e.batch ? e.batch.wallMs / 1000 : null,
         nextTargetsMet: e.nextTargetsMet,
       })),

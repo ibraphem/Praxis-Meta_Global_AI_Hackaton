@@ -200,6 +200,11 @@ export function createEndpointProposalService(
         endpoints,
         localization: {
           status: 'crop_fragment',
+          requestStatus: 'not_requested',
+          endpointOutcomes: [
+            { role: 'A', status: 'crop_fragment' },
+            { role: 'B', status: 'crop_fragment' },
+          ],
           coarseEndpoints: endpoints,
           frames: [],
         },

@@ -51,6 +51,19 @@ export const endpointSuggestionSchema = z
     evidence: endpointEvidenceSchema,
   })
   .strict();
+export const localizationEndpointOutcomeSchema = z
+  .object({
+    role: z.enum(["A", "B"]),
+    status: z.enum([
+      "localized",
+      "abstained",
+      "no_anchor",
+      "crop_fragment",
+      "failed",
+      "timed_out",
+    ]),
+  })
+  .strict();
 export const endpointResponseSchema = z
   .object({
     analysisId: z.string().min(1).max(100),
@@ -94,6 +107,15 @@ export const endpointResponseSchema = z
           "crop_fragment",
         ]),
         errorCode: z.string().max(64).optional(),
+        requestStatus: z
+          .enum(["not_requested", "succeeded", "failed", "timed_out"])
+          .optional(),
+        endpointOutcomes: z
+          .tuple([
+            localizationEndpointOutcomeSchema,
+            localizationEndpointOutcomeSchema,
+          ])
+          .optional(),
       })
       .strict()
       .optional(),

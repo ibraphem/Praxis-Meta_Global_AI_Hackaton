@@ -9,6 +9,33 @@ import { admittedClient } from './model-admission.js';
 import type { MetaClient } from '../lib/meta-client.js';
 import type { JobStore } from './store.js';
 import type { EndpointResult } from '../services/endpoint-localization.js';
+/** Handler execution, validated localization, and transport requests are independent. */
+export function experimentOutcomes(
+  response: EndpointResult | null,
+  execution: string,
+  diagnostics: ReturnType<AnalysisTrace['snapshot']>,
+) {
+  return {
+    execution,
+    localization:
+      response?.localization?.status ??
+      (response ? 'completed' : 'unavailable'),
+    endpoints:
+      response?.localization?.endpointOutcomes ??
+      (['A', 'B'] as const).map((role, i) => ({
+        role,
+        status: response
+          ? response.endpoints[i]!.proposedImagePosition
+            ? 'localized'
+            : 'abstained'
+          : 'unavailable',
+      })),
+    // A completed HTTP request can still contain invalid model output. These are transport outcomes only.
+    providerRequests: diagnostics.timings
+      .filter((t) => t.kind === 'request')
+      .map((t) => ({ stage: t.stage, status: t.status })),
+  };
+}
 export type GroundingVariant = 'full' | 'candidate_crop' | 'endpoint_crops';
 export async function boundedMap<T, R>(
   items: T[],
@@ -160,7 +187,7 @@ export async function runEndpointExperiment(
   const digest = (b: Buffer | string) =>
     createHash('sha256').update(b).digest('hex');
   const report = {
-    version: 'endpoint-grounding-experiment-v1',
+    version: 'endpoint-grounding-experiment-v2',
     experimentId: reservation.experimentId,
     analysisId,
     imageHash: job.imageHash,
@@ -186,6 +213,7 @@ export async function runEndpointExperiment(
       run: number;
       wireCandidateId: string;
       status: string;
+      outcomes: ReturnType<typeof experimentOutcomes>;
       elapsedMs: number;
       response: EndpointResult | null;
       errorCode?: string;
@@ -340,6 +368,7 @@ export async function runEndpointExperiment(
             run,
             wireCandidateId: wire!.id,
             status,
+            outcomes: experimentOutcomes(response, status, trace.snapshot()),
             elapsedMs: performance.now() - started,
             response,
             ...(errorCode ? { errorCode } : {}),

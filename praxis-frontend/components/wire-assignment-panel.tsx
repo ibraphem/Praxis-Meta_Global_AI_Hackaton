@@ -1,3 +1,7 @@
+import {
+  endpointOutcomes,
+  endpointOutcomeLabels,
+} from "@/lib/wires/localization-outcomes";
 import { useState } from "react";
 import { EndpointRequestTiming } from "./endpoint-request-timing";
 import { EndpointResolutionDiagnosticsPanel } from "./endpoint-resolution-diagnostics";
@@ -227,18 +231,40 @@ export function WireAssignmentPanel(props: Props) {
             preview · Gray squares: junction references · ?: unknown
           </p>
           {review.proposal.localization && (
-            <details>
-              <summary>
+            <section aria-label="Insertion localization outcomes">
+              <p>
                 Insertion close-up experiment:{" "}
                 {review.proposal.localization.status.replaceAll("_", " ")}
-              </summary>
-              <p>
-                The original coarse proposal is preserved separately. Failed
-                refinement leaves insertion unknown; it does not promote the
-                coarse point.
+                {review.proposal.localization.errorCode
+                  ? ` (${review.proposal.localization.errorCode})`
+                  : ""}
               </p>
-              <pre>{JSON.stringify(review.proposal.localization, null, 2)}</pre>
-            </details>
+              <ul>
+                {endpointOutcomes(review.proposal).map((outcome, i) => (
+                  <li key={i}>
+                    Endpoint {i === 0 ? "A" : "B"}:{" "}
+                    {endpointOutcomeLabels[outcome]}. Saved coarse insertion:{" "}
+                    {review.proposal
+                      .localization!.coarseEndpoints[
+                        i
+                      ].proposedImagePosition?.map((v) => v.toFixed(1))
+                      .join(", ") ?? "unknown"}
+                    .
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Coarse predictions are retained for comparison. A failed or
+                skipped close-up does not confirm a hole or silently restore a
+                coarse prediction.
+              </p>
+              <details>
+                <summary>Localization diagnostics</summary>
+                <pre>
+                  {JSON.stringify(review.proposal.localization, null, 2)}
+                </pre>
+              </details>
+            </section>
           )}
           {reviewStale && (
             <p role="status">

@@ -15,6 +15,8 @@ import {
   reprojectCrop,
   createWireRecovery,
 } from '../src/services/wire-recovery.js';
+import { localizeInsertions } from '../src/services/endpoint-localization.js';
+import { AppError } from '../src/lib/errors.js';
 import { prepareImage } from '../src/services/image.js';
 import { auditWireCoverage } from '../src/services/wire-coverage.js';
 import { shortWireRegions } from '../src/services/short-wire-recovery.js';
@@ -24,6 +26,7 @@ import { JobStore } from '../src/jobs/store.js';
 import { admittedClient } from '../src/jobs/model-admission.js';
 import {
   boundedMap,
+  experimentOutcomes,
   runEndpointExperiment,
 } from '../src/jobs/endpoint-experiment.js';
 import { partialAnalysis } from '../src/services/partial-analysis.js';
@@ -115,6 +118,19 @@ test('crop edges remain distinct from photograph edges and insertion proposals a
   });
   assert.equal(calls, 0);
   assert.equal(response.localization!.status, 'crop_fragment');
+  assert.equal(response.localization!.requestStatus, 'not_requested');
+  assert.deepEqual(
+    response.localization!.endpointOutcomes!.map((e) => e.status),
+    ['crop_fragment', 'crop_fragment'],
+  );
+  const outcomes = experimentOutcomes(response, 'succeeded', {
+    requestId: 'mock',
+    elapsedMs: 0,
+    timings: [],
+  });
+  assert.equal(outcomes.execution, 'succeeded');
+  assert.equal(outcomes.localization, 'crop_fragment');
+  assert.equal(outcomes.providerRequests.length, 0);
   assert.ok(response.endpoints.every((e) => e.proposedImagePosition === null));
 });
 
@@ -211,6 +227,11 @@ test('two-stage localization uses one extra request and preserves coarse and rev
   assert.equal(result.localization!.status, 'completed');
   assert.equal(result.inputVariant, 'endpoint_crops');
   assert.equal(result.localization!.frames.length, 2);
+  assert.equal(result.localization!.requestStatus, 'succeeded');
+  assert.deepEqual(
+    result.localization!.endpointOutcomes!.map((e) => e.status),
+    ['localized', 'abstained'],
+  );
   assert.equal(result.endpoints[1].proposedImagePosition, null);
   assert.notDeepEqual(
     result.endpoints[0].proposedImagePosition,
@@ -273,6 +294,11 @@ test('failed close-up refinement cannot quietly promote its coarse point or star
   });
   assert.equal(calls, 2);
   assert.equal(result.localization!.status, 'failed');
+  assert.equal(result.localization!.requestStatus, 'failed');
+  assert.deepEqual(
+    result.localization!.endpointOutcomes!.map((e) => e.status),
+    ['failed', 'failed'],
+  );
   assert.ok(result.localization!.coarseEndpoints[0].proposedImagePosition);
   assert.ok(result.endpoints.every((e) => e.proposedImagePosition === null));
 });
@@ -488,4 +514,153 @@ test('controlled endpoint experiment binds derived evidence, reserves live admis
   assert.equal(report.measurements.length, 2);
   assert.equal(JSON.stringify(store.get(job.analysisId)), original);
   assert.equal(store.experiments.active(), undefined);
+});
+
+test('no-anchor localization is skipped after one coarse call rather than counted as localization completion', async () => {
+  let calls = 0;
+  const blank = endpoints.map((e) => ({
+    ...e,
+    proposedImagePosition: null,
+    connectorJunctionPosition: null,
+    evidence: 'insufficient',
+  }));
+  const result = await createEndpointProposalService(testConfig(), {
+    async post() {
+      calls++;
+      return completion({ endpoints: blank });
+    },
+  })(await imageBytes(800, 600), new AbortController().signal, undefined, {
+    ...context,
+    view: 'endpoint_crops',
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.localization!.status, 'no_anchor');
+  assert.equal(result.localization!.requestStatus, 'not_requested');
+  assert.deepEqual(
+    result.localization!.endpointOutcomes!.map((e) => e.status),
+    ['no_anchor', 'no_anchor'],
+  );
+  const summary = experimentOutcomes(result, 'succeeded', {
+    requestId: 'mock',
+    elapsedMs: 3,
+    timings: [
+      {
+        stage: 'muse.endpoints',
+        kind: 'request',
+        status: 'completed',
+        startedAtMs: 0,
+        durationMs: 3,
+      },
+    ],
+  });
+  assert.equal(summary.execution, 'succeeded');
+  assert.equal(summary.localization, 'no_anchor');
+  assert.deepEqual(summary.providerRequests, [
+    { stage: 'muse.endpoints', status: 'completed' },
+  ]);
+});
+
+test('one supplied endpoint crop distinguishes a genuine model abstention from the other endpoint being skipped', async () => {
+  let calls = 0;
+  const blank = {
+    ...endpoints[1]!,
+    connectorJunctionPosition: null,
+    evidence: 'insufficient',
+  };
+  const result = await createEndpointProposalService(testConfig(), {
+    async post() {
+      calls++;
+      return completion({
+        endpoints:
+          calls === 1
+            ? [endpoints[0], blank]
+            : [{ ...blank, role: 'A' }, blank],
+      });
+    },
+  })(await imageBytes(800, 600), new AbortController().signal, undefined, {
+    ...context,
+    view: 'endpoint_crops',
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.localization!.status, 'completed');
+  assert.deepEqual(
+    result.localization!.endpointOutcomes!.map((e) => e.status),
+    ['abstained', 'no_anchor'],
+  );
+  assert.ok(result.localization!.coarseEndpoints[0].proposedImagePosition);
+});
+
+test('one supplied endpoint crop preserves timeout vs skipped provenance without restoring coarse insertion', async () => {
+  let calls = 0;
+  const result = await createEndpointProposalService(testConfig(), {
+    async post() {
+      calls++;
+      if (calls === 1)
+        return completion({
+          endpoints: [
+            endpoints[0],
+            {
+              ...endpoints[1]!,
+              connectorJunctionPosition: null,
+              evidence: 'insufficient',
+            },
+          ],
+        });
+      throw new AppError(504, 'PROVIDER_TIMEOUT', 'Timed out');
+    },
+  })(await imageBytes(800, 600), new AbortController().signal, undefined, {
+    ...context,
+    view: 'endpoint_crops',
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.localization!.requestStatus, 'timed_out');
+  assert.deepEqual(
+    result.localization!.endpointOutcomes!.map((e) => e.status),
+    ['timed_out', 'no_anchor'],
+  );
+  assert.ok(result.localization!.coarseEndpoints[0].proposedImagePosition);
+  assert.ok(result.endpoints.every((e) => e.proposedImagePosition === null));
+});
+
+test('close-up preparation failure retains coarse coordinates without claiming a provider request', async () => {
+  const image = await prepareImage(await imageBytes(800, 600), testConfig());
+  const coarse = await createEndpointProposalService(testConfig(), {
+    async post() {
+      return completion({ endpoints });
+    },
+  })(await imageBytes(800, 600), new AbortController().signal, undefined, {
+    ...context,
+    view: 'candidate_crop',
+  });
+  const original = JSON.stringify(coarse);
+  const result = await localizeInsertions(
+    testConfig(),
+    {
+      async post() {
+        assert.fail('Preparation must fail before provider invocation');
+      },
+    },
+    { ...image, dataUrl: 'data:image/jpeg;base64,AAAA' },
+    {
+      ...wire,
+      bbox: [200, 100, 200, 100],
+      mask: { ...wire.mask, format: 'svg_path' },
+    },
+    [],
+    coarse,
+    new AbortController().signal,
+  );
+  assert.equal(result.localization!.status, 'failed');
+  assert.equal(result.localization!.requestStatus, 'not_requested');
+  assert.equal(
+    result.localization!.errorCode,
+    'LOCALIZATION_PREPARATION_FAILED',
+  );
+  assert.deepEqual(
+    result.localization!.endpointOutcomes!.map((e) => e.status),
+    ['failed', 'failed'],
+  );
+  assert.deepEqual(result.localization!.coarseEndpoints, coarse.endpoints);
+  assert.ok(result.endpoints.every((e) => e.proposedImagePosition === null));
+  assert.equal(JSON.stringify(coarse), original);
 });

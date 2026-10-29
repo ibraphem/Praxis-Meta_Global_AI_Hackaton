@@ -782,3 +782,92 @@ test("two-stage and normalized grounding are explicit options and retain the cal
     page.getByRole("button", { name: "Confirm endpoint A", exact: true }),
   ).toBeEnabled();
 });
+
+test("failed close-ups show coarse predictions separately and preserve their failure provenance in exports", async ({
+  page,
+}) => {
+  const coarse = [point("e17"), point("a22")].map((p, i) => ({
+    role: i === 0 ? "A" : "B",
+    proposedImagePosition: [p.x, p.y],
+    connectorJunctionPosition: null,
+    evidence: "visible_insertion",
+  }));
+  await setup(
+    page,
+    false,
+    async (route) => {
+      const raw = route.request().postDataBuffer()!.toString();
+      const metadata = JSON.parse(
+        raw.match(/name="context"\r\n\r\n([^\r]+)/)![1],
+      );
+      await route.fulfill({
+        json: {
+          analysisId: metadata.analysisId,
+          imageId: metadata.imageId,
+          wireCandidateId: metadata.wire.id,
+          model: "muse-test",
+          inputVariant: "endpoint_crops",
+          endpoints: coarse.map((e) => ({
+            ...e,
+            proposedImagePosition: null,
+            evidence: "insufficient",
+          })),
+          localization: {
+            coarseEndpoints: coarse,
+            status: "failed",
+            errorCode: "INVALID_PROVIDER_OUTPUT",
+            requestStatus: "failed",
+            frames: coarse.map((e) => ({
+              role: e.role,
+              bbox: [0, 0, 100, 100],
+              width: 100,
+              height: 100,
+            })),
+            endpointOutcomes: coarse.map((e) => ({
+              role: e.role,
+              status: "failed",
+            })),
+          },
+        },
+      });
+    },
+    true,
+    true,
+  );
+  const outcomes = page.getByRole("region", {
+    name: "Insertion localization outcomes",
+  });
+  await expect(outcomes).toContainText("Insertion close-up experiment: failed");
+  await expect(outcomes).toContainText(
+    "Endpoint A: Close-up failed: insertion result unavailable",
+  );
+  await expect(outcomes).toContainText(
+    `Saved coarse insertion: ${coarse[0].proposedImagePosition.map((v) => v.toFixed(1)).join(", ")}`,
+  );
+  await expect(
+    page.getByRole("button", { name: "Confirm endpoint A", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Confirm endpoint B", exact: true }),
+  ).toBeDisabled();
+  const downloadEvent = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export evaluation bundle", exact: true })
+    .click();
+  const download = await downloadEvent;
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile((await download.path())!, "utf8"));
+  const proposal = bundle.reviews[0].proposal;
+  expect(proposal.localization.coarseEndpoints).toEqual(coarse);
+  expect(
+    proposal.localization.endpointOutcomes.map(
+      (e: { status: string }) => e.status,
+    ),
+  ).toEqual(["failed", "failed"]);
+  expect(
+    proposal.endpoints.every(
+      (e: { proposedImagePosition: unknown; proposedHole: unknown }) =>
+        e.proposedImagePosition === null && e.proposedHole === null,
+    ),
+  ).toBe(true);
+});

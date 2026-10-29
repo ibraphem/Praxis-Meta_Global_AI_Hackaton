@@ -60,6 +60,21 @@ try {
         },
       });
       console.table(report.batches);
+      console.table(
+        report.measurements.map((m) => ({
+          variant: m.variant,
+          run: m.run,
+          wire: m.wireCandidateId,
+          execution: m.outcomes.execution,
+          localization: m.outcomes.localization,
+          endpointA: m.outcomes.endpoints[0]?.status,
+          endpointB: m.outcomes.endpoints[1]?.status,
+          providerRequests: m.outcomes.providerRequests.length,
+        })),
+      );
+      console.log(
+        'Execution and localization outcomes are not accuracy scores. Use benchmark:grounding with blinded truth.',
+      );
     } finally {
       process.removeListener('SIGINT', stop);
       process.removeListener('SIGTERM', stop);

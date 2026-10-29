@@ -858,3 +858,24 @@ use the [controlled benchmark commands](../praxis-backend/README.md#controlled-e
 The live runner requires a real exported bundle and an existing inactive saved job;
 it makes model calls. `benchmark:grounding` is the separate offline scorer. Neither
 command modifies original evidence, calibration, review decisions or predictions.
+
+Close-up outcomes are reported per endpoint: visible insertion proposed, model
+abstention, no anchor (skipped), crop fragment (blocked), failed, or timed out. The
+review panel shows the preserved coarse coordinates separately; failure never
+silently restores them for assignment. Exports retain both stages and their status.
+
+`benchmark:grounding` now writes `grounding-comparison-v2` and accepts both v1 and v2
+experiment reports. The frozen baseline, same-run coarse score, and final operational
+score are separate. All truth endpoints stay in the operational denominator,
+including failed/missing requests, skipped crops and model abstentions. A failed
+close-up can therefore reduce operational yield without being mislabeled as a model
+abstention. `coarse.availableEndpoints` identifies where an actual coarse response
+was recorded; a blocked fragment supplies none. `completedLocalization` is a
+conditional score with its own explicit denominator, not overall accuracy. Regression
+counts identify unavailable results, abstentions, skipped crops and strict snap
+rejections separately, against both frozen and same-run coarse predictions.
+`refinementNoRegression` explicitly checks for damage to same-run coarse results;
+the interim acceptance gate requires both regression checks. Paired pixel errors also compare same-run coarse and final
+points only where both exist, reporting that pair count. Transport request outcomes
+remain separate from validated localization and ground-truth correctness. Older
+reports without transport diagnostics report that evidence as unavailable.

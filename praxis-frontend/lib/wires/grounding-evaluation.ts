@@ -8,7 +8,12 @@ import {
 } from "../breadboard/calibration";
 import { replayEvaluation, type EvaluationWire } from "./evaluation";
 import { alignTruth } from "./refinement-evaluation";
-import { endpointResponseSchema } from "./proposals";
+import {
+  endpointOutcomes,
+  type EndpointOutcome,
+} from "./localization-outcomes";
+import { endpointResponseSchema, type EndpointResponse } from "./proposals";
+import { diagnosticsSchema } from "../diagnostics";
 const point = z.object({ x: z.number().finite(), y: z.number().finite() });
 export function scoreGrounding(
   rawBundle: unknown,
@@ -79,7 +84,10 @@ export function scoreGrounding(
     .parse(rawTruth);
   const report = z
     .object({
-      version: z.literal("endpoint-grounding-experiment-v1"),
+      version: z.enum([
+        "endpoint-grounding-experiment-v1",
+        "endpoint-grounding-experiment-v2",
+      ]),
       imageHash: z.string(),
       snapshotRef: z.object({ samSnapshotHash: z.string() }),
       measurements: z.array(
@@ -89,6 +97,7 @@ export function scoreGrounding(
           wireCandidateId: z.string(),
           status: z.string(),
           response: z.unknown().nullable(),
+          diagnostics: diagnosticsSchema.optional(),
         }),
       ),
       batches: z.array(
@@ -203,43 +212,103 @@ export function scoreGrounding(
       )
     )
       throw new Error("Duplicate or foreign measured wires.");
-    const proposed = aligned.map((a) => {
+    const observations = aligned.map((a) => {
       const m = measurements.find((m) => m.wireCandidateId === a.wire.id),
-        response =
-          m?.status === "succeeded"
-            ? endpointResponseSchema.parse(m.response)
-            : null;
+        response = m?.response
+          ? endpointResponseSchema.parse(m.response)
+          : null;
+      const points = response
+        ? [
+            ...response.endpoints,
+            ...(response.localization?.coarseEndpoints ?? []),
+          ]
+        : [];
       if (
         response &&
         (response.wireCandidateId !== a.wire.id ||
           response.analysisId !== bundle.analysisRunId ||
           response.imageId !== bundle.image.id ||
-          response.endpoints.some(
-            (e) =>
-              e.proposedImagePosition &&
-              (e.proposedImagePosition[0] >= bundle.analysis.image.width ||
-                e.proposedImagePosition[1] >= bundle.analysis.image.height),
+          points.some((e) =>
+            [e.proposedImagePosition, e.connectorJunctionPosition].some(
+              (p) =>
+                p &&
+                (p[0] >= bundle.analysis.image.width ||
+                  p[1] >= bundle.analysis.image.height),
+            ),
           ))
       )
         throw new Error("Measured endpoint provenance or bounds differ.");
+      const outcomes = endpointOutcomes(response, m?.status);
+      const coarseAvailable =
+        !!response && response.localization?.status !== "crop_fragment";
+      const asPoints = (endpoints: EndpointResponse["endpoints"]) =>
+        endpoints.map((e) =>
+          e.evidence === "visible_insertion" && e.proposedImagePosition
+            ? { x: e.proposedImagePosition[0], y: e.proposedImagePosition[1] }
+            : null,
+        ) as EvaluationWire["proposals"];
+      const active = response
+        ? asPoints(response.endpoints)
+        : ([null, null] as EvaluationWire["proposals"]);
       return {
-        ...a.wire,
-        proposals: response
-          ? (response.endpoints.map((e) =>
-              e.evidence === "visible_insertion" && e.proposedImagePosition
-                ? {
-                    x: e.proposedImagePosition[0],
-                    y: e.proposedImagePosition[1],
-                  }
-                : null,
-            ) as EvaluationWire["proposals"])
-          : ([null, null] as EvaluationWire["proposals"]),
+        outcomes,
+        coarseAvailable,
+        coarse: {
+          ...a.wire,
+          proposals: coarseAvailable
+            ? asPoints(
+                response!.localization?.coarseEndpoints ?? response!.endpoints,
+              )
+            : ([null, null] as EvaluationWire["proposals"]),
+        },
+        final: {
+          ...a.wire,
+          proposals: active.map((p, i) =>
+            m?.status === "succeeded" && outcomes[i] === "localized" ? p : null,
+          ) as EvaluationWire["proposals"],
+        },
       };
     });
+    const proposed = observations.map((o) => o.final);
+    const coarse = replayEvaluation(
+      observations.map((o) => o.coarse),
+      boards,
+      { orderedRoles: true },
+    );
     const scored = replayEvaluation(proposed, boards, { orderedRoles: true });
     let correctToWrong = 0,
       correctToUnresolved = 0,
-      unresolvedToCorrect = 0;
+      unresolvedToCorrect = 0,
+      correctToUnavailable = 0,
+      correctToAbstention = 0,
+      correctToSkipped = 0,
+      correctToSnapRejected = 0;
+    const outcomeCounts: Record<EndpointOutcome, number> = {
+      localized: 0,
+      abstained: 0,
+      no_anchor: 0,
+      crop_fragment: 0,
+      failed: 0,
+      timed_out: 0,
+      interrupted: 0,
+      missing: 0,
+    };
+    const completedLocalization = {
+      endpoints: 0,
+      correct: 0,
+      wrong: 0,
+      unresolved: 0,
+    };
+    const coarseTransitions = {
+      correctToWrong: 0,
+      correctToUnresolved: 0,
+      unresolvedToCorrect: 0,
+      correctToUnavailable: 0,
+      correctToAbstention: 0,
+      correctToSkipped: 0,
+      correctToSnapRejected: 0,
+    };
+    const coarsePairs: { raw: number; focused: number }[] = [];
     const pairs: { raw: number; focused: number }[] = [];
     aligned.forEach((a, i) => {
       for (let j = 0; j < 2; j++) {
@@ -248,9 +317,59 @@ export function scoreGrounding(
           after = scored.results[i].resolved[j];
         if (before === expected && after !== expected) {
           if (after) correctToWrong++;
-          else correctToUnresolved++;
+          else {
+            correctToUnresolved++;
+            const outcome = observations[i].outcomes[j];
+            if (
+              ["failed", "timed_out", "interrupted", "missing"].includes(
+                outcome,
+              )
+            )
+              correctToUnavailable++;
+            else if (outcome === "abstained") correctToAbstention++;
+            else if (outcome === "localized") correctToSnapRejected++;
+            else correctToSkipped++;
+          }
         }
         if (!before && after === expected) unresolvedToCorrect++;
+        const outcome = observations[i].outcomes[j];
+        outcomeCounts[outcome]++;
+        if (outcome === "localized" || outcome === "abstained") {
+          completedLocalization.endpoints++;
+          if (after === expected) completedLocalization.correct++;
+          else if (after) completedLocalization.wrong++;
+          else completedLocalization.unresolved++;
+        }
+        const coarseHole = coarse.results[i].resolved[j];
+        if (coarseHole === expected && after !== expected) {
+          if (after) coarseTransitions.correctToWrong++;
+          else {
+            coarseTransitions.correctToUnresolved++;
+            if (
+              ["failed", "timed_out", "interrupted", "missing"].includes(
+                outcome,
+              )
+            )
+              coarseTransitions.correctToUnavailable++;
+            else if (outcome === "abstained")
+              coarseTransitions.correctToAbstention++;
+            else if (outcome === "localized")
+              coarseTransitions.correctToSnapRejected++;
+            else coarseTransitions.correctToSkipped++;
+          }
+        }
+        if (!coarseHole && after === expected)
+          coarseTransitions.unresolvedToCorrect++;
+        const cp = observations[i].coarse.proposals[j],
+          fp = proposed[i].proposals[j];
+        if (cp && fp)
+          coarsePairs.push({
+            raw: Math.hypot(cp.x - a.reference[j].x, cp.y - a.reference[j].y),
+            focused: Math.hypot(
+              fp.x - a.reference[j].x,
+              fp.y - a.reference[j].y,
+            ),
+          });
         const p = a.wire.proposals[j],
           q = proposed[i].proposals[j],
           center = a.reference[j];
@@ -282,9 +401,63 @@ export function scoreGrounding(
       variant,
       run,
       ...scored,
-      transitions: { correctToWrong, correctToUnresolved, unresolvedToCorrect },
+      transitions: {
+        correctToWrong,
+        correctToUnresolved,
+        unresolvedToCorrect,
+        correctToUnavailable,
+        correctToAbstention,
+        correctToSkipped,
+        correctToSnapRejected,
+      },
+      coarse: {
+        ...coarse,
+        availableEndpoints:
+          observations.filter((o) => o.coarseAvailable).length * 2,
+      },
+      coarseTransitions,
+      executionCounts: {
+        succeeded: measurements.filter((m) => m.status === "succeeded").length,
+        failed: measurements.filter((m) => m.status === "failed").length,
+        timed_out: measurements.filter((m) => m.status === "timed_out").length,
+        interrupted: measurements.filter((m) => m.status === "interrupted")
+          .length,
+        missing: original.length - measurements.length,
+      },
+      requestExecution: measurements.every((m) => !!m.diagnostics)
+        ? measurements.flatMap((m) =>
+            m
+              .diagnostics!.timings.filter((t) => t.kind === "request")
+              .map((t) => ({
+                wireCandidateId: m.wireCandidateId,
+                stage: t.stage,
+                status: t.status,
+              })),
+          )
+        : null,
+      outcomeCounts,
+      endpointOutcomes: observations.map((o, i) => ({
+        wireCandidateId: aligned[i].wire.id,
+        endpoints: o.outcomes,
+      })),
+      completedLocalization: {
+        ...completedLocalization,
+        conditionalYield: completedLocalization.endpoints
+          ? completedLocalization.correct / completedLocalization.endpoints
+          : null,
+        note: "Only endpoints with a completed localization response (including model abstentions). Not overall accuracy.",
+      },
+      coarseToFinalLocalization: {
+        pairedCount: coarsePairs.length,
+        coarseMeanPx: mean(coarsePairs.map((p) => p.raw)),
+        finalMeanPx: mean(coarsePairs.map((p) => p.focused)),
+      },
       localization,
       batch: batch ?? null,
+      refinementNoRegression:
+        scored.wrong === 0 &&
+        coarseTransitions.correctToWrong === 0 &&
+        coarseTransitions.correctToUnresolved === 0,
       noRegression:
         scored.wrong === 0 && correctToWrong === 0 && correctToUnresolved === 0,
       nextTargetsMet:
@@ -295,15 +468,17 @@ export function scoreGrounding(
         scored.wrong === 0 &&
         correctToWrong === 0 &&
         correctToUnresolved === 0 &&
+        coarseTransitions.correctToWrong === 0 &&
+        coarseTransitions.correctToUnresolved === 0 &&
         batch !== undefined &&
         batch.wallMs < 75000,
     };
   });
   return {
-    version: "grounding-comparison-v1",
+    version: "grounding-comparison-v2",
     baseline,
     experiments,
     notes:
-      "Every blinded truth endpoint stays in the denominator, including absent/failed responses and original abstentions. A/B truth correspondence is frozen from original proposals once. No corrected assignment or ground truth was sent to Muse. Passing one photograph requires held-out validation.",
+      "Top-level metrics measure operational yield. Coarse predictions are scored separately and never used as a silent fallback. Every blinded truth endpoint stays in the denominator, including absent/failed responses and original abstentions. A/B truth correspondence is frozen from original proposals once. No corrected assignment or ground truth was sent to Muse. Passing one photograph requires held-out validation.",
   };
 }
