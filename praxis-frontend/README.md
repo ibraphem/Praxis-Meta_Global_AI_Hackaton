@@ -16,7 +16,8 @@ attempts with an expired worker lease become **interrupted**, requiring manual r
 When interpretation fails, use **Continue with SAM candidates** for calibration and
 manual endpoint assignment, or **Retry Muse interpretation** to reuse saved masks.
 Candidates remain explicitly unverified, including board regions that might be
-fragments of one physical board. Muse retry performs zero SAM requests. An uncertain
+fragments of one physical board. Muse retry performs zero SAM requests. The persisted queue defaults to one active
+job independently of legacy requests. An uncertain
 upstream outcome is disclosed; manual retry may duplicate provider work that outlived
 the local deadline. Duplicate clicks cannot create concurrent attempts for one job.
 
@@ -37,6 +38,14 @@ retry on timeout. Full-size imagery and the existing prompt remain the defaults;
 resized inputs and a minimal prompt are opt-in server experiments. See the
 [backend recovery and controlled comparison guide](../praxis-backend/README.md#recoverable-analysis-jobs).
 The dedicated endpoint API and opt-in local color-tip refinement remain separate.
+
+Queue experiments reserve model admission across the backend database. The UI shows
+running/interrupted reservations and suppresses manual retry while reserved. Saved
+results remain reviewable. New Muse attempts and evaluation bundles include immutable
+SAM checkpoint identity/hash; migrated historical bindings are marked inferred.
+For evidence that must outlive retention, use the backend's offline `evidence:export`
+command and include your separately recorded ground truth and browser evaluation
+bundle. See [benchmark evidence retention](../praxis-backend/README.md#preserve-benchmark-evidence-beyond-job-retention).
 
 ## Run locally
 

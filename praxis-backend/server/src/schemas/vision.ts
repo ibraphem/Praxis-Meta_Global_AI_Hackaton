@@ -59,6 +59,13 @@ export const analysisSchema = z
         mode: z.enum(['combined', 'reasoning-only', 'sam-only']),
         segmentationModel: z.string().optional(),
         reasoningModel: z.string(),
+        jobAnalysisId: z.uuid().optional(),
+        samSnapshotId: z.uuid().optional(),
+        samSnapshotHash: z
+          .string()
+          .regex(/^[a-f0-9]{64}$/)
+          .optional(),
+        snapshotProcessingVersion: z.string().min(1).max(100).optional(),
         wireAudit: z
           .object({
             samCandidates: z.number().int().nonnegative(),

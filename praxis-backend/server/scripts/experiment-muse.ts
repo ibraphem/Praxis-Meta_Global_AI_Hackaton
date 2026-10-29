@@ -1,140 +1,113 @@
-import { writeFileSync } from 'node:fs';
-import { createHash } from 'node:crypto';
+import { openSync, closeSync, ftruncateSync, writeSync } from 'node:fs';
 import { loadConfig } from '../src/config.js';
 import { JobStore } from '../src/jobs/store.js';
-import { createVisionStages } from '../src/services/vision.js';
-import { AnalysisTrace, type Diagnostics } from '../src/lib/diagnostics.js';
+import { runMuseExperiment } from '../src/jobs/muse-experiment.js';
 import { AppError } from '../src/lib/errors.js';
-import { randomUUID } from 'node:crypto';
 
-// Explicit CLI invocation performs THREE paid provider requests, never retries, and never rewrites a job.
 async function main() {
-  const args = process.argv.slice(2),
-    id = args[0],
-    outputIndex = args.indexOf('--output'),
-    output = outputIndex >= 0 ? args[outputIndex + 1] : undefined;
+  const args = process.argv.slice(2);
+  const usage =
+    'Usage: npm run experiment:muse -- ANALYSIS_ID [--output NEW_REPORT.json]\n       npm run experiment:muse -- --release INTERRUPTED_EXPERIMENT_ID\nMakes three provider requests against an immutable checkpoint; no automatic retries.';
   if (args.includes('--help')) {
-    console.log(
-      'Usage: npm run experiment:muse -- ANALYSIS_ID [--output NEW_REPORT.json]\nMakes three provider requests against cached SAM results; no automatic retries.',
-    );
+    console.log(usage);
     return;
   }
+  const release = args[0] === '--release',
+    outputIndex = args.indexOf('--output'),
+    output = outputIndex >= 0 ? args[outputIndex + 1] : undefined;
   if (
-    !id ||
-    (outputIndex >= 0 && !output) ||
-    args.some((a, i) => i > 0 && a !== '--output' && i !== outputIndex + 1)
+    release
+      ? args.length !== 2
+      : !args[0] ||
+        (outputIndex >= 0 && !output) ||
+        args.some((a, i) => i > 0 && a !== '--output' && i !== outputIndex + 1)
   )
-    throw new Error(
-      'Usage: npm run experiment:muse -- ANALYSIS_ID [--output NEW_REPORT.json]',
-    );
+    throw new Error(usage);
   const config = loadConfig(),
     store = new JobStore(config);
-  let job;
+  let descriptor: number | undefined;
+  let began = false;
+  const controller = new AbortController();
+  const interrupt = () =>
+    controller.abort(
+      new AppError(
+        503,
+        'EXPERIMENT_INTERRUPTED',
+        'The experiment process was stopped.',
+      ),
+    );
+  process.once('SIGINT', interrupt);
+  process.once('SIGTERM', interrupt);
   try {
-    job = store.get(id);
+    if (release) {
+      store.experiments.releaseInterrupted(args[1]!);
+      console.log(
+        'Interrupted reservation released explicitly. Upstream execution may still be running.',
+      );
+      return;
+    }
+    if (output) {
+      descriptor = openSync(output, 'wx', 0o600);
+      writeSync(
+        descriptor,
+        JSON.stringify({ status: 'not_started', analysisId: args[0] }) + '\n',
+        0,
+        'utf8',
+      );
+    }
+    const report = await runMuseExperiment(store, args[0]!, config, {
+      signal: controller.signal,
+      onProgress: (report) => {
+        began = true;
+        if (descriptor !== undefined) {
+          ftruncateSync(descriptor, 0);
+          writeSync(
+            descriptor,
+            JSON.stringify(report, null, 2) + '\n',
+            0,
+            'utf8',
+          );
+        }
+      },
+    });
+    for (const measurement of report.measurements)
+      console.error(
+        `${measurement.variant}: ${measurement.status} (${measurement.elapsedMs} ms)`,
+      );
+    if (descriptor === undefined)
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+  } catch (error) {
+    if (descriptor !== undefined && !began) {
+      ftruncateSync(descriptor, 0);
+      writeSync(
+        descriptor,
+        JSON.stringify({
+          status: 'not_started',
+          analysisId: args[0],
+          errorCode:
+            error instanceof AppError ? error.code : 'EXPERIMENT_FAILED',
+        }) + '\n',
+        0,
+        'utf8',
+      );
+    }
+    throw error;
   } finally {
+    process.removeListener('SIGINT', interrupt);
+    process.removeListener('SIGTERM', interrupt);
+    if (descriptor !== undefined) closeSync(descriptor);
     store.close();
   }
-  if (
-    job.sam.status !== 'succeeded' ||
-    !job.sam.snapshot ||
-    job.settings.mode !== 'combined' ||
-    job.owner ||
-    job.muse.status === 'queued'
-  )
-    throw new Error(
-      'Use a completed or partial combined analysis with saved SAM results and no active attempt.',
-    );
-  // Reserve output exclusively BEFORE incurring provider work; never overwrite an existing report.
-  if (output)
-    writeFileSync(
-      output,
-      JSON.stringify({ status: 'running', analysisId: id }),
-      { flag: 'wx', mode: 0o600 },
-    );
-  const snapshot = job.sam.snapshot;
-  const variants = [
-    { name: 'original-current', maxDimension: 0, minimalPrompt: false },
-    { name: '1280-current', maxDimension: 1280, minimalPrompt: false },
-    { name: '1280-minimal', maxDimension: 1280, minimalPrompt: true },
-  ];
-  const measurements: {
-    variant: string;
-    status: string;
-    elapsedMs: number;
-    confirmedComponents?: number;
-    unverifiedWires?: number;
-    errorCode?: string;
-    diagnostics: Diagnostics;
-    result?: unknown;
-  }[] = [];
-  for (const v of variants) {
-    const trace = new AnalysisTrace(randomUUID(), () => undefined);
-    const settings = {
-      ...config,
-      VISION_MODE: 'combined' as const,
-      META_SAM_MODEL: job.settings.samModel,
-      META_REASONING_MODEL: job.settings.museModel,
-      MUSE_MAX_DIMENSION: v.maxDimension,
-      MUSE_MINIMAL_PROMPT: v.minimalPrompt,
-    };
-    try {
-      const result = await createVisionStages(settings).interpret(
-        snapshot,
-        AbortSignal.timeout(config.ANALYSIS_TIMEOUT_MS),
-        trace,
-      );
-      measurements.push({
-        variant: v.name,
-        status: 'succeeded',
-        elapsedMs: trace.elapsedMs,
-        confirmedComponents: result.objects.filter(
-          (o) => o.type !== 'jumper_wire' && o.interpretation === 'confirmed',
-        ).length,
-        unverifiedWires: result.objects.filter((o) => o.type === 'jumper_wire')
-          .length,
-        diagnostics: trace.snapshot(),
-        result,
-      });
-    } catch (e) {
-      measurements.push({
-        variant: v.name,
-        status:
-          e instanceof AppError &&
-          ['PROVIDER_TIMEOUT', 'META_API_TIMEOUT'].includes(e.code)
-            ? 'timed_out'
-            : 'failed',
-        elapsedMs: trace.elapsedMs,
-        errorCode: e instanceof AppError ? e.code : 'EXPERIMENT_FAILED',
-        diagnostics: trace.snapshot(),
-      });
-    }
-    console.error(
-      `${v.name}: ${measurements.at(-1)!.status} (${measurements.at(-1)!.elapsedMs} ms)`,
-    );
-  }
-  const report = {
-    analysisId: id,
-    imageHash: job.imageHash,
-    samSnapshotHash: createHash('sha256')
-      .update(JSON.stringify(snapshot))
-      .digest('hex'),
-    model: job.settings.museModel,
-    providerDeadlineMs: config.PROVIDER_TIMEOUT_MS,
-    automaticRetries: 0,
-    variants,
-    measurements,
-    note: 'Three single attempts are an exploratory comparison, not a reliability estimate. Original job, masks and predictions are unchanged.',
-  };
-  const json = JSON.stringify(report, null, 2) + '\n';
-  if (output) writeFileSync(output, json, { mode: 0o600 });
-  else process.stdout.write(json);
 }
-main().catch((e) => {
+main().catch((error) => {
   console.error(
-    e instanceof Error && !('code' in e)
-      ? e.message
-      : 'The experiment could not run. Check the saved analysis, configuration, and output path.',
+    error instanceof AppError
+      ? error.message
+      : error instanceof Error &&
+          (error.message.startsWith('Usage: ') ||
+            error.message.startsWith('Invalid configuration fields: '))
+        ? error.message
+        : 'The experiment could not run. Check the saved analysis, configuration, and new output path.',
   );
   process.exitCode = 1;
 });

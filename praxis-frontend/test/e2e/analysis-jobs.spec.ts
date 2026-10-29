@@ -167,3 +167,59 @@ test("pausing observation leaves the saved job available for reconnection", asyn
     page.getByRole("button", { name: "Retry Muse interpretation" }),
   ).toBeEnabled();
 });
+
+test("experiment reservations leave SAM review available and suppress model retry and source deletion", async ({
+  page,
+}) => {
+  const job = partial();
+  job.experiment = {
+    experimentId: job.sam.attempts[0]!.attemptId,
+    analysisId: job.analysisId,
+    status: "running",
+    leaseUntil: Date.now() + 15000,
+  };
+  await page.route("**/api/analyses", (route) =>
+    route.fulfill({ status: 202, json: job }),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.goto("/");
+  await page
+    .getByLabel("Upload a workspace photograph")
+    .setInputFiles(photograph);
+  await page
+    .getByRole("button", { name: "Analyze image", exact: true })
+    .click();
+  await expect(
+    page.getByText(/controlled Muse experiment is running/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Retry Muse interpretation",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Continue with SAM candidates", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Calibrate a board", exact: true }),
+  ).toBeEnabled();
+  job.experiment.status = "interrupted";
+  await expect(
+    page.getByText(/controlled Muse experiment was interrupted/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Retry Muse interpretation",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Delete saved analysis", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Calibrate a board", exact: true }),
+  ).toBeEnabled();
+});

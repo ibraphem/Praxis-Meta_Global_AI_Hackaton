@@ -385,3 +385,41 @@ test("invalid configuration and client cancellation are not backend connection e
   assert.equal(cancelled.status, 499);
   assert.equal((await cancelled.json()).error.code, "REQUEST_CANCELLED");
 });
+
+test("snapshot provenance and experiment reservations survive job validation and block manual retries", () => {
+  const job = partialJob(),
+    sourceAttemptId = job.sam.attempts[0]!.attemptId;
+  job.sam.snapshotRef = {
+    samSnapshotId: sourceAttemptId,
+    samSnapshotHash: "2".repeat(64),
+    imageHash: job.imageHash,
+    model: "sam-test",
+    processingVersion: "sam-checkpoint-v1",
+    sourceAttemptId,
+    createdAt: job.createdAt,
+    origin: "recorded",
+  };
+  Object.assign(job.muse.attempts[0]!, {
+    samSnapshotId: sourceAttemptId,
+    samSnapshotHash: "2".repeat(64),
+    snapshotBinding: "recorded",
+  });
+  job.result!.provenance.samSnapshotId = sourceAttemptId;
+  job.result!.provenance.samSnapshotHash = "2".repeat(64);
+  job.result!.provenance.jobAnalysisId = job.analysisId;
+  job.result!.provenance.snapshotProcessingVersion = "sam-checkpoint-v1";
+  job.experiment = {
+    experimentId: sourceAttemptId,
+    analysisId: job.analysisId,
+    status: "running",
+    leaseUntil: Date.now() + 15000,
+  };
+  assert.ok(analysisJobSchema.safeParse(job).success);
+  assert.equal(retryStage(job), null);
+  assert.equal(jobIsActive(job), true);
+  assert.match(jobMessage(job), /experiment is running/);
+  job.experiment.status = "interrupted";
+  assert.equal(retryStage(job), null);
+  assert.equal(jobIsActive(job), false);
+  assert.match(jobMessage(job), /Release its reservation explicitly/);
+});

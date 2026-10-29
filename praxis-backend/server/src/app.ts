@@ -104,7 +104,6 @@ export async function buildApp(
     config,
     traceLogger,
     jobOptions?.stages,
-    capacity,
   );
   registerAnalysisRoutes(app, config, jobStore, () => worker.tick());
   app.addHook('onReady', async () => {
@@ -114,11 +113,15 @@ export async function buildApp(
     await worker.close();
     if (!jobOptions?.store) jobStore.close();
   });
-  registerVisionRoute(app, config, analyze, traceLogger, { capacity });
+  registerVisionRoute(app, config, analyze, traceLogger, {
+    capacity,
+    reserveModelAdmission: () => jobStore.experiments.enterLegacyRequest(),
+  });
   registerVisionRoute(app, config, proposeEndpoints, traceLogger, {
     path: '/api/vision/endpoints',
     allowContext: true,
     capacity,
+    reserveModelAdmission: () => jobStore.experiments.enterLegacyRequest(),
   });
 
   app.setNotFoundHandler((request, reply) =>

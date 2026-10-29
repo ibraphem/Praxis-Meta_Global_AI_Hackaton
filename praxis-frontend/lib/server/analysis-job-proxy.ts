@@ -147,7 +147,7 @@ export function createAnalysisJobProxy(
           ],
           409: [
             "RETRY_CONFLICT",
-            "An attempt is already active, this stage cannot be retried, or the attempt limit was reached. Refresh the saved status.",
+            "An attempt or controlled experiment is active, this stage cannot be retried, or the attempt limit was reached. Refresh the saved status.",
           ],
           413: [
             "UPLOAD_TOO_LARGE",

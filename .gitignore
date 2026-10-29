@@ -50,3 +50,6 @@ SKILL.md
 
 # Private persisted analysis jobs (photographs, masks, attempt history)
 .praxis-jobs/
+
+# Private benchmark evidence archives (independent of job retention)
+benchmark-evidence/

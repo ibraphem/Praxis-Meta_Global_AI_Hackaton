@@ -87,7 +87,10 @@ reviewable SVG geometry, settings/model IDs, and attempt history. Worker claims 
 transactional, renewed every 3 seconds with a 15-second lease. Expired running
 attempts become interrupted; graceful shutdown interrupts immediately. Attempt and
 owner checks fence stale completions. Multiple processes sharing the **same local
-SQLite database** share job capacity; legacy endpoints/rate limits remain local.
+SQLite database** share job capacity; configure the same `JOB_WORKER_CONCURRENCY`
+in each process. It defaults to **1**, independently of the legacy
+`MAX_CONCURRENT_ANALYSES=2` limit. SAM may still use `SAM_CONCURRENCY=2` within one
+job. Legacy endpoints and rate limits keep their separate admission limits.
 This is a bounded worker inside the long-running backend, not a serverless task or
 an external queue. Keep the backend running and mount durable local storage.
 
@@ -98,6 +101,21 @@ are cleaned by the worker/admission path; active jobs finish before cleanup. A f
 store rejects new uploads rather than silently evicting another user's work.
 Database deletion removes application access, not a forensic erasure guarantee.
 Browser pause/disconnect does not cancel server execution or delete persisted data.
+
+Each completed SAM checkpoint has an immutable `samSnapshotId`, a canonical content
+hash, source attempt ID, image hash, model ID and `sam-checkpoint-v1` processing
+version. Native checkpoint payloads are stored separately from mutable job state;
+SQLite rejects updates to checkpoint rows. Every queued Muse attempt binds to one
+checkpoint before dispatch, and inference loads that bound checkpoint rather than
+whatever checkpoint is currently attached to the job. Historical Muse results are
+preserved with their attempt bindings in private evidence exports. New partial/full
+results include checkpoint provenance, so browser evaluation bundles retain it.
+
+Older saved jobs are migrated without rerunning SAM/Muse or changing original
+predictions, geometry, or completion timestamps. Their current checkpoint receives
+`origin: legacy_import`; historical attempt bindings are labelled `legacy_inferred`
+because the original format cannot independently prove each historical association.
+New attempts use `snapshotBinding: recorded`.
 
 SAM-only objects are explicitly `uncertain`, `sam_unverified`, and ineligible for
 automatic electrical guidance. Breadboard detections are labelled **board regions**,
@@ -123,12 +141,62 @@ After a job has saved SAM results and no active/queued Muse attempt, from `serve
 npm run experiment:muse -- ACTUAL_ANALYSIS_UUID --output new-muse-comparison.json
 ```
 
+The experiment takes a transactional, renewable reservation before any provider
+request. It refuses to start while a job or legacy request is active. While held,
+workers sharing this database pause new claims, manual retries conflict, and legacy
+analysis/endpoint routes reject new model admission. New photo uploads can still
+be saved and queued. A second experiment cannot reserve concurrently. This gate
+covers backend instances using the same updated store; other applications/accounts
+or instances using another database remain outside it.
+
+A lost lease or stopped process marks the reservation interrupted and blocks further
+model admission until explicitly released. Recover the experiment ID from the saved
+analysis status or partial report, inspect the retained measurements, then run:
+
+```sh
+npm run experiment:muse -- --release INTERRUPTED_EXPERIMENT_UUID
+```
+
+Release is a manual acknowledgement of uncertainty; it does not cancel or prove the
+termination of upstream execution. There is no automatic experiment retry. A variant
+that reaches a local deadline records `upstreamOutcome: unknown`; it may confound
+later variants even when application-level admission is exclusive. Reports preserve
+that limitation and each attempted variant, including failures.
+
 This explicitly makes **three provider requests**, sequentially, without automatic
 retries: original/current prompt, 1280/current prompt, 1280/minimal prompt. It reuses
 the same saved SAM snapshot and model; it preserves the source job and every
 prediction. The report records the image/snapshot hashes, settings, success or
 failure, latency, results and diagnostics. Do not repeatedly rerun until success.
 Three observations are exploratory, not an accuracy or availability estimate.
+
+### Preserve benchmark evidence beyond job retention
+
+Keep the 24-hour storage default for ordinary sessions, or set
+`JOB_RETENTION_HOURS=168` for seven days of local evaluation. This affects newly
+created jobs; it does not silently extend existing expiration dates. Export evidence
+before expiry. Running/interrupted experiment reservations protect their source job
+from deletion until completion or explicit release.
+
+From `server`, use the actual analysis ID from the saved page URL:
+
+```sh
+npm run evidence:export -- ACTUAL_ANALYSIS_UUID benchmark-evidence/NEW_ARCHIVE_NAME
+```
+
+This offline command makes **zero provider requests**. It creates a new private,
+gitignored directory containing original photograph bytes, job/attempt history,
+immutable native SAM checkpoints, experiment reports, and a SHA-256 manifest.
+It refuses to overwrite an existing archive. These files survive job-store cleanup.
+
+Reviewer calibration, endpoint corrections and independent ground truth are browser
+state or external evidence; the backend cannot reconstruct them. To include files
+you have already exported/recorded, append `--bundle /actual/path/to/evaluation.json`
+and `--truth /actual/path/to/ground-truth.json`. Attachment bytes are copied exactly;
+available image/run identity fields are checked. Missing annotations are recorded
+as missing, and model predictions are never manufactured into ground truth. This
+job evidence archive is distinct from the frontend evaluation bundle consumed by
+`benchmark:refine`; keep that bundle and its photograph when running refinement.
 
 Per-request diagnostics include stage/model, actual image dimensions, encoded image
 and full JSON payload bytes, prompt character count, configured output-token budget
@@ -364,27 +432,28 @@ Official integration references:
 All settings are environment variables. `server/.env` is loaded by the npm scripts;
 existing environment variables take precedence. The real `.env` is ignored by Git.
 
-| Variable                  | Default                  | Purpose                                                                                     |
-| ------------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
-| `META_API_KEY`            | Required                 | Server-side Meta credential                                                                 |
-| `META_BASE_URL`           | `https://api.meta.ai/v1` | Trusted administrator-configured HTTPS endpoint; no redirects                               |
-| `META_SAM_MODEL`          | `sam-3.1`                | Account-accessible SAM model                                                                |
-| `META_REASONING_MODEL`    | `muse-spark-1.3`         | Account-accessible Muse model                                                               |
-| `VISION_MODE`             | `combined`               | `combined` or `reasoning-only`                                                              |
-| `HOST` / `PORT`           | `127.0.0.1` / `3000`     | Bind address and port                                                                       |
-| `NODE_ENV`                | `development`            | `development`, `test`, or `production`                                                      |
-| `PRAXIS_API_TOKEN`        | Unset                    | Separate bearer token, 32–256 characters                                                    |
-| `MAX_UPLOAD_BYTES`        | `8388608`                | 8 MiB input file limit                                                                      |
-| `MAX_IMAGE_PIXELS`        | `16000000`               | Maximum decoded pixels                                                                      |
-| `MAX_CONCURRENT_ANALYSES` | `2`                      | Per-process upload/decode/inference slots; excess requests rejected                         |
-| `MAX_WIRE_REFINEMENTS`    | `6`                      | Maximum Muse regions in the optional spatial SAM batch (0–16)                               |
-| `REFINEMENT_TIMEOUT_MS`   | `15000`                  | Optional batch deadline (maximum 45000), capped by provider and overall budgets; no retries |
-| `SAM_CONCURRENCY`         | `2`                      | Maximum simultaneous SAM concept calls per analysis (1–4)                                   |
-| `ANALYSIS_TIMEOUT_MS`     | `180000`                 | Overall upload/analysis deadline (maximum 300000)                                           |
-| `PROVIDER_TIMEOUT_MS`     | `45000`                  | Per-attempt provider deadline, including response reading (maximum 120000)                  |
-| `PROVIDER_MAX_RETRIES`    | `1`                      | Extra SAM attempts for network failures, timeouts, HTTP 429 and 5xx; Muse uses zero         |
-| `RATE_LIMIT_MAX`          | `20`                     | Requests per client IP per window                                                           |
-| `RATE_LIMIT_WINDOW_MS`    | `60000`                  | Rate-limit window                                                                           |
+| Variable                  | Default                  | Purpose                                                                                                   |
+| ------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `META_API_KEY`            | Required                 | Server-side Meta credential                                                                               |
+| `META_BASE_URL`           | `https://api.meta.ai/v1` | Trusted administrator-configured HTTPS endpoint; no redirects                                             |
+| `META_SAM_MODEL`          | `sam-3.1`                | Account-accessible SAM model                                                                              |
+| `META_REASONING_MODEL`    | `muse-spark-1.3`         | Account-accessible Muse model                                                                             |
+| `VISION_MODE`             | `combined`               | `combined` or `reasoning-only`                                                                            |
+| `HOST` / `PORT`           | `127.0.0.1` / `3000`     | Bind address and port                                                                                     |
+| `NODE_ENV`                | `development`            | `development`, `test`, or `production`                                                                    |
+| `PRAXIS_API_TOKEN`        | Unset                    | Separate bearer token, 32–256 characters                                                                  |
+| `MAX_UPLOAD_BYTES`        | `8388608`                | 8 MiB input file limit                                                                                    |
+| `MAX_IMAGE_PIXELS`        | `16000000`               | Maximum decoded pixels                                                                                    |
+| `MAX_CONCURRENT_ANALYSES` | `2`                      | Per-process upload/decode/inference slots; excess requests rejected                                       |
+| `MAX_WIRE_REFINEMENTS`    | `6`                      | Maximum Muse regions in the optional spatial SAM batch (0–16)                                             |
+| `REFINEMENT_TIMEOUT_MS`   | `15000`                  | Optional batch deadline (maximum 45000), capped by provider and overall budgets; no retries               |
+| `JOB_WORKER_CONCURRENCY`  | `1`                      | Concurrent persisted job stages across workers sharing the same database; independent of legacy admission |
+| `SAM_CONCURRENCY`         | `2`                      | Maximum simultaneous SAM concept calls per analysis (1–4)                                                 |
+| `ANALYSIS_TIMEOUT_MS`     | `180000`                 | Overall upload/analysis deadline (maximum 300000)                                                         |
+| `PROVIDER_TIMEOUT_MS`     | `45000`                  | Per-attempt provider deadline, including response reading (maximum 120000)                                |
+| `PROVIDER_MAX_RETRIES`    | `1`                      | Extra SAM attempts for network failures, timeouts, HTTP 429 and 5xx; Muse uses zero                       |
+| `RATE_LIMIT_MAX`          | `20`                     | Requests per client IP per window                                                                         |
+| `RATE_LIMIT_WINDOW_MS`    | `60000`                  | Rate-limit window                                                                                         |
 
 ## Security and privacy
 

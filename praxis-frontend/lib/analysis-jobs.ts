@@ -29,12 +29,30 @@ export const attemptSchema = z
       .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
       .optional(),
     diagnostics: diagnosticsSchema.optional(),
+    samSnapshotId: z.uuid().optional(),
+    samSnapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    snapshotBinding: z.enum(["recorded", "legacy_inferred"]).optional(),
   })
   .strict();
 const stageSchema = z
   .object({
     status: z.union([attemptStatusSchema, z.literal("not_started")]),
     attempts: z.array(attemptSchema).max(20),
+  })
+  .strict();
+const snapshotRefSchema = z
+  .object({
+    samSnapshotId: z.uuid(),
+    samSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+    imageHash: z.string().regex(/^[a-f0-9]{64}$/),
+    model: z.string().min(1).max(100),
+    processingVersion: z.string().min(1).max(100),
+    sourceAttemptId: z.uuid(),
+    createdAt: z.number().int().nonnegative(),
+    origin: z.enum(["recorded", "legacy_import"]),
   })
   .strict();
 export const analysisJobSchema = z
@@ -68,25 +86,41 @@ export const analysisJobSchema = z
         museModel: z.string().min(1).max(100),
       })
       .strict(),
-    sam: stageSchema,
-    muse: stageSchema,
+    sam: stageSchema.extend({ snapshotRef: snapshotRefSchema.optional() }),
+    muse: stageSchema.extend({ resultAttemptId: z.uuid().optional() }),
+    experiment: z
+      .object({
+        experimentId: z.uuid(),
+        analysisId: z.uuid(),
+        status: z.enum(["running", "interrupted"]),
+        leaseUntil: z.number().int().nonnegative(),
+      })
+      .strict()
+      .optional(),
     result: analysisSchema.optional(),
   })
   .strict();
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export function jobIsActive(job: AnalysisJob) {
-  return [job.sam.status, job.muse.status].some(
-    (s) => s === "queued" || s === "running",
+  return (
+    job.experiment?.status === "running" ||
+    [job.sam.status, job.muse.status].some(
+      (s) => s === "queued" || s === "running",
+    )
   );
 }
 export function retryStage(job: AnalysisJob): "sam" | "muse" | null {
-  if (jobIsActive(job)) return null;
+  if (job.experiment || jobIsActive(job)) return null;
   const stage = job.sam.status === "succeeded" ? "muse" : "sam";
   return job[stage].attempts.at(-1)?.retryPolicy === "manual_only"
     ? stage
     : null;
 }
 export function jobMessage(job: AnalysisJob) {
+  if (job.experiment)
+    return job.experiment.status === "running"
+      ? "A controlled Muse experiment is running. Live analysis is paused; saved results remain available."
+      : "A controlled Muse experiment was interrupted. Release its reservation explicitly before starting more model work; its upstream outcome is unknown.";
   if (job.status === "completed")
     return "Analysis complete. Interpretation is saved.";
   if (job.sam.status === "queued")

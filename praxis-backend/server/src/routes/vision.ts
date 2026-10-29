@@ -25,6 +25,7 @@ export function registerVisionRoute<T extends object = Analysis>(
     path?: string;
     allowContext?: boolean;
     capacity?: { active: number };
+    reserveModelAdmission?: () => () => void;
   } = {},
 ) {
   const capacity = options.capacity ?? { active: 0 };
@@ -43,6 +44,7 @@ export function registerVisionRoute<T extends object = Analysis>(
         'All analysis slots are busy. Try again shortly.',
       );
     }
+    const releaseAdmission = options.reserveModelAdmission?.();
     capacity.active++;
     const trace = new AnalysisTrace(request.id, logger);
     trace.emit('vision.analysis_started', {
@@ -192,6 +194,7 @@ export function registerVisionRoute<T extends object = Analysis>(
       reply.raw.removeListener('close', disconnect);
       bytes = undefined;
       capacity.active--;
+      releaseAdmission?.();
     }
   });
 }

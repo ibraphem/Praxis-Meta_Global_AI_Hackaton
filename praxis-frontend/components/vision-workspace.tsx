@@ -409,14 +409,16 @@ export function VisionWorkspace() {
                     : "SAM segmentation"}
                 </button>
               )}
-              {!loading && !jobIsActive(job) && (
-                <button
-                  className="button button-secondary"
-                  onClick={() => void deleteSavedJob()}
-                >
-                  Delete saved analysis
-                </button>
-              )}
+              {!loading &&
+                !jobIsActive(job) &&
+                job.experiment?.analysisId !== job.analysisId && (
+                  <button
+                    className="button button-secondary"
+                    onClick={() => void deleteSavedJob()}
+                  >
+                    Delete saved analysis
+                  </button>
+                )}
             </div>
             <details>
               <summary>Stage attempts and timings</summary>
@@ -427,6 +429,7 @@ export function VisionWorkspace() {
                     settings: job.settings,
                     sam: job.sam,
                     muse: job.muse,
+                    experiment: job.experiment,
                   },
                   null,
                   2,

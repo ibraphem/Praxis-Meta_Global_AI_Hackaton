@@ -1,3 +1,10 @@
+import { ExperimentRegistry } from './experiments.js';
+import {
+  snapshotHash,
+  SNAPSHOT_PROCESSING_VERSION,
+  type SnapshotRef,
+  type SnapshotRecord,
+} from './snapshots.js';
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,6 +28,11 @@ export interface Attempt {
   finishedAt?: number;
   errorCode?: string;
   diagnostics?: Diagnostics;
+  samSnapshotId?: string;
+  samSnapshotHash?: string;
+  snapshotBinding?: 'recorded' | 'legacy_inferred';
+  /** Historical prediction, private evidence export only. */
+  result?: Analysis;
 }
 export interface Job {
   analysisId: string;
@@ -48,12 +60,20 @@ export interface Job {
     status: AttemptStatus | 'not_started';
     attempts: Attempt[];
     snapshot?: SamSnapshot;
+    snapshotRef?: SnapshotRef;
     result?: Analysis;
   };
   muse: {
     status: AttemptStatus | 'not_started';
     attempts: Attempt[];
     result?: Analysis;
+    resultAttemptId?: string;
+  };
+  experiment?: {
+    experimentId: string;
+    analysisId: string;
+    status: 'running' | 'interrupted';
+    leaseUntil: number;
   };
   owner?: string;
   leaseUntil?: number;
@@ -71,6 +91,7 @@ export const lastAttempt = (job: Job, stage: 'sam' | 'muse') =>
 /** SQLite transactions serialize claims/retries across workers; image and state commit together. */
 export class JobStore {
   readonly db: DatabaseSync;
+  readonly experiments: ExperimentRegistry;
   constructor(
     readonly config: Config,
     directory = config.ANALYSIS_JOB_DIR,
@@ -100,6 +121,21 @@ export class JobStore {
     this.db.exec(
       'CREATE INDEX IF NOT EXISTS jobs_queue ON jobs(owner,queued_stage); CREATE INDEX IF NOT EXISTS jobs_expiry ON jobs(owner,expires_at); CREATE INDEX IF NOT EXISTS jobs_lease ON jobs(owner,lease_until)',
     );
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS sam_snapshots (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, hash TEXT NOT NULL, metadata TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS snapshots_analysis ON sam_snapshots(analysis_id)',
+    );
+    this.db.exec(
+      "CREATE TRIGGER IF NOT EXISTS immutable_sam_snapshots BEFORE UPDATE ON sam_snapshots BEGIN SELECT RAISE(ABORT,'SAM checkpoints are immutable'); END",
+    );
+    this.experiments = new ExperimentRegistry(this);
+    this.transaction(() => {
+      for (const row of this.db
+        .prepare(
+          "SELECT id FROM jobs WHERE json_extract(data,'$.sam.status')='succeeded' AND json_type(data,'$.sam.snapshotRef') IS NULL",
+        )
+        .all())
+        this.save(this.get(row.id as string), true);
+    });
   }
   transaction<T>(work: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
@@ -130,16 +166,148 @@ export class JobStore {
       delete job.owner;
       delete job.leaseUntil;
     }
+    if (job.sam.snapshotRef)
+      job.sam.snapshot = this.getSnapshot(
+        job.sam.snapshotRef.samSnapshotId,
+      ).snapshot;
+    const reservation = this.experiments.active();
+    if (reservation)
+      job.experiment = {
+        experimentId: reservation.experimentId,
+        analysisId: reservation.analysisId,
+        status: reservation.status as 'running' | 'interrupted',
+        leaseUntil: reservation.leaseUntil,
+      };
+    else delete job.experiment;
     return job;
   }
-  save(job: Job) {
-    job.updatedAt = Date.now();
+  getSnapshot(id: string): SnapshotRecord {
+    const row = this.db
+      .prepare('SELECT metadata,data FROM sam_snapshots WHERE id=?')
+      .get(id);
+    if (!row)
+      throw new AppError(
+        409,
+        'SNAPSHOT_NOT_FOUND',
+        'The referenced SAM checkpoint was not found.',
+      );
+    const record = {
+      ref: JSON.parse(row.metadata as string) as SnapshotRef,
+      snapshot: JSON.parse(row.data as string) as SamSnapshot,
+    };
+    if (
+      snapshotHash(record.snapshot, record.ref) !== record.ref.samSnapshotHash
+    )
+      throw new AppError(
+        409,
+        'SNAPSHOT_HASH_MISMATCH',
+        'The SAM checkpoint failed its integrity check.',
+      );
+    return record;
+  }
+  snapshots(id: string): SnapshotRecord[] {
+    return this.db
+      .prepare(
+        'SELECT id FROM sam_snapshots WHERE analysis_id=? ORDER BY rowid',
+      )
+      .all(id)
+      .map((row) => this.getSnapshot(row.id as string));
+  }
+  checkpointSnapshot(
+    job: Job,
+    snapshot: SamSnapshot,
+    sourceAttemptId: string,
+    origin: SnapshotRef['origin'] = 'recorded',
+  ) {
+    const context = {
+      imageHash: job.imageHash,
+      model: job.settings.samModel,
+      processingVersion: SNAPSHOT_PROCESSING_VERSION,
+    };
+    const ref: SnapshotRef = {
+      ...context,
+      samSnapshotId: randomUUID(),
+      samSnapshotHash: snapshotHash(snapshot, context),
+      sourceAttemptId,
+      createdAt: Date.now(),
+      origin,
+    };
+    this.db
+      .prepare('INSERT INTO sam_snapshots VALUES (?,?,?,?,?)')
+      .run(
+        ref.samSnapshotId,
+        job.analysisId,
+        ref.samSnapshotHash,
+        JSON.stringify(ref),
+        JSON.stringify(snapshot),
+      );
+    job.sam.snapshot = snapshot;
+    job.sam.snapshotRef = ref;
+    const attempt = job.sam.attempts.find(
+      (a) => a.attemptId === sourceAttemptId,
+    );
+    if (attempt) {
+      attempt.samSnapshotId = ref.samSnapshotId;
+      attempt.samSnapshotHash = ref.samSnapshotHash;
+      attempt.snapshotBinding =
+        origin === 'recorded' ? 'recorded' : 'legacy_inferred';
+    }
+  }
+  save(job: Job, preserveTimestamp = false) {
+    if (
+      job.sam.status === 'succeeded' &&
+      job.sam.snapshot &&
+      !job.sam.snapshotRef
+    )
+      this.checkpointSnapshot(
+        job,
+        job.sam.snapshot,
+        lastAttempt(job, 'sam')!.attemptId,
+        'legacy_import',
+      );
+    const ref = job.sam.snapshotRef;
+    if (ref) {
+      const stored = this.getSnapshot(ref.samSnapshotId);
+      if (
+        stored.ref.samSnapshotHash !== ref.samSnapshotHash ||
+        (job.sam.snapshot &&
+          snapshotHash(job.sam.snapshot, ref) !== ref.samSnapshotHash)
+      )
+        throw new AppError(
+          409,
+          'IMMUTABLE_SNAPSHOT',
+          'An existing SAM checkpoint cannot be overwritten.',
+        );
+      for (const attempt of job.muse.attempts)
+        if (!attempt.samSnapshotId) {
+          attempt.samSnapshotId = ref.samSnapshotId;
+          attempt.samSnapshotHash = ref.samSnapshotHash;
+          attempt.snapshotBinding =
+            attempt.status === 'queued' ? 'recorded' : 'legacy_inferred';
+        }
+      if (job.muse.result && !job.muse.resultAttemptId) {
+        const source =
+          job.muse.attempts.find((a) => a.attemptId === job.revision) ??
+          job.muse.attempts.findLast((a) => a.status === 'succeeded');
+        if (source) {
+          source.result = job.muse.result;
+          job.muse.resultAttemptId = source.attemptId;
+        }
+      }
+    }
+    if (!preserveTimestamp) job.updatedAt = Date.now();
+    const { experiment: _reservation, ...durable } = job;
+    void _reservation;
     this.db
       .prepare(
         'UPDATE jobs SET data=?,owner=?,lease_until=?,expires_at=?,queued_stage=? WHERE id=?',
       )
       .run(
-        JSON.stringify(job),
+        JSON.stringify(
+          ref
+            ? { ...durable, sam: { ...durable.sam, snapshot: undefined } }
+            : durable,
+        ),
         job.owner ?? null,
         job.leaseUntil ?? null,
         job.expiresAt,
@@ -163,8 +331,13 @@ export class JobStore {
   }
   cleanup(now = Date.now()) {
     this.db
-      .prepare('DELETE FROM jobs WHERE owner IS NULL AND expires_at<=?')
+      .prepare(
+        "DELETE FROM jobs WHERE owner IS NULL AND expires_at<=? AND NOT EXISTS(SELECT 1 FROM experiments WHERE analysis_id=jobs.id AND status IN ('running','interrupted'))",
+      )
       .run(now);
+    this.db.exec(
+      'DELETE FROM sam_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM experiments WHERE analysis_id NOT IN(SELECT id FROM jobs)',
+    );
   }
   create(bytes: Buffer, image: PreparedImage): Job {
     return this.transaction(() => {
@@ -214,6 +387,12 @@ export class JobStore {
   retry(id: string, stage: 'sam' | 'muse'): Job {
     return this.transaction(() => {
       const job = this.get(id);
+      if (this.experiments.active())
+        throw new AppError(
+          409,
+          'EXPERIMENT_RESERVED',
+          'A controlled experiment has reserved model admission.',
+        );
       if (
         job.owner ||
         ['queued', 'running'].includes(job.sam.status) ||
@@ -251,6 +430,10 @@ export class JobStore {
     });
   }
   recover(now = Date.now()) {
+    this.transaction(() => this.recoverWithinTransaction(now));
+  }
+  private recoverWithinTransaction(now = Date.now()) {
+    this.experiments.recover(now);
     for (const row of this.db
       .prepare('SELECT id FROM jobs WHERE owner IS NOT NULL AND lease_until<=?')
       .all(now)) {
@@ -276,8 +459,9 @@ export class JobStore {
     owner: string,
   ): { job: Job; stage: 'sam' | 'muse'; attemptId: string } | undefined {
     return this.transaction(() => {
-      this.recover();
+      this.recoverWithinTransaction();
       this.cleanup();
+      if (this.experiments.active()) return;
       if (
         Number(
           this.db
@@ -285,7 +469,7 @@ export class JobStore {
               'SELECT COUNT(*) AS count FROM jobs WHERE owner IS NOT NULL',
             )
             .get()!.count,
-        ) >= this.config.MAX_CONCURRENT_ANALYSES
+        ) >= this.config.JOB_WORKER_CONCURRENCY
       )
         return;
       const row = this.db
@@ -352,13 +536,15 @@ export class JobStore {
   }
   remove(id: string) {
     this.transaction(() => {
-      if (this.get(id).owner)
+      if (this.get(id).owner || this.experiments.active()?.analysisId === id)
         throw new AppError(
           409,
           'ATTEMPT_ACTIVE',
           'Wait for the active attempt to finish before deleting this analysis.',
         );
       this.db.prepare('DELETE FROM jobs WHERE id=?').run(id);
+      this.db.prepare('DELETE FROM sam_snapshots WHERE analysis_id=?').run(id);
+      this.db.prepare('DELETE FROM experiments WHERE analysis_id=?').run(id);
     });
   }
   close() {
@@ -376,12 +562,29 @@ export function publicJob(job: Job) {
     updatedAt: job.updatedAt,
     expiresAt: job.expiresAt,
     settings: job.settings,
-    sam: { status: job.sam.status, attempts: job.sam.attempts },
-    muse: { status: job.muse.status, attempts: job.muse.attempts },
+    sam: {
+      status: job.sam.status,
+      attempts: job.sam.attempts.map(publicAttempt),
+      ...(job.sam.snapshotRef ? { snapshotRef: job.sam.snapshotRef } : {}),
+    },
+    muse: {
+      status: job.muse.status,
+      attempts: job.muse.attempts.map(publicAttempt),
+      ...(job.muse.resultAttemptId
+        ? { resultAttemptId: job.muse.resultAttemptId }
+        : {}),
+    },
+    ...(job.experiment ? { experiment: job.experiment } : {}),
     ...(job.muse.result
       ? { result: job.muse.result }
       : job.sam.result
         ? { result: job.sam.result }
         : {}),
   };
+}
+
+function publicAttempt(attempt: Attempt) {
+  const { result: _prediction, ...publicFields } = attempt;
+  void _prediction;
+  return publicFields;
 }

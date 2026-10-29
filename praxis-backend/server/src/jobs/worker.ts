@@ -4,7 +4,7 @@ import { AppError } from '../lib/errors.js';
 import { AnalysisTrace, type TraceLogger } from '../lib/diagnostics.js';
 import { createVisionStages } from '../services/vision.js';
 import { partialAnalysis } from '../services/partial-analysis.js';
-import { JobStore, newAttempt } from './store.js';
+import { JobStore, newAttempt, lastAttempt } from './store.js';
 
 export type VisionStages = ReturnType<typeof createVisionStages>;
 /** Bounded, persisted queue. No worker lifetime depends on an HTTP connection. */
@@ -21,7 +21,6 @@ export class AnalysisWorker {
     readonly config: Config,
     readonly logger: TraceLogger,
     readonly stages?: VisionStages,
-    readonly capacity = { active: 0 },
   ) {}
   start() {
     this.timer = setInterval(() => this.tick(), 250);
@@ -30,7 +29,7 @@ export class AnalysisWorker {
   }
   tick() {
     if (this.stopped) return;
-    while (this.capacity.active < this.config.MAX_CONCURRENT_ANALYSES) {
+    while (this.active.size < this.config.JOB_WORKER_CONCURRENCY) {
       let claim: ReturnType<JobStore['claim']>;
       try {
         claim = this.store.claim(this.owner);
@@ -42,7 +41,6 @@ export class AnalysisWorker {
         return;
       }
       if (!claim) break;
-      this.capacity.active++;
       const controller = new AbortController();
       const promise = this.run(claim, controller)
         .catch(() => {
@@ -54,7 +52,6 @@ export class AnalysisWorker {
         })
         .finally(() => {
           this.active.delete(claim.attemptId);
-          this.capacity.active--;
         });
       this.active.set(claim.attemptId, { controller, promise });
     }
@@ -110,7 +107,21 @@ export class AnalysisWorker {
         abort = () => reject(controller.signal.reason);
         controller.signal.addEventListener('abort', abort, { once: true });
       });
-      const snapshot = job.sam.snapshot!;
+      const binding = lastAttempt(job, 'muse');
+      const bound =
+        stage === 'muse' && binding?.samSnapshotId
+          ? this.store.getSnapshot(binding.samSnapshotId)
+          : undefined;
+      if (
+        stage === 'muse' &&
+        (!bound || bound.ref.samSnapshotHash !== binding?.samSnapshotHash)
+      )
+        throw new AppError(
+          409,
+          'INVALID_SNAPSHOT_BINDING',
+          'The Muse attempt has no valid SAM checkpoint binding.',
+        );
+      const snapshot = bound?.snapshot ?? job.sam.snapshot!;
       const result = await Promise.race([
         stage === 'sam'
           ? settings.VISION_MODE === 'combined'
@@ -136,12 +147,30 @@ export class AnalysisWorker {
         delete j.owner;
         delete j.leaseUntil;
         if (stage === 'sam' && 'candidates' in result) {
-          j.sam.snapshot = result;
-          if (partial) j.sam.result = partial;
+          this.store.checkpointSnapshot(j, result, attemptId);
+          if (partial) {
+            partial.provenance = {
+              ...partial.provenance,
+              jobAnalysisId: j.analysisId,
+              samSnapshotId: j.sam.snapshotRef!.samSnapshotId,
+              samSnapshotHash: j.sam.snapshotRef!.samSnapshotHash,
+              snapshotProcessingVersion: j.sam.snapshotRef!.processingVersion,
+            };
+            j.sam.result = partial;
+          }
           j.muse.attempts.push(newAttempt());
           j.muse.status = 'queued';
           j.status = partial ? 'partial' : 'queued';
         } else if ('objects' in result) {
+          result.provenance = {
+            ...result.provenance,
+            jobAnalysisId: j.analysisId,
+            samSnapshotId: bound!.ref.samSnapshotId,
+            samSnapshotHash: bound!.ref.samSnapshotHash,
+            snapshotProcessingVersion: bound!.ref.processingVersion,
+          };
+          a.result = result;
+          j.muse.resultAttemptId = attemptId;
           j.muse.result = result;
           j.revision = attemptId;
           j.status = 'completed';
