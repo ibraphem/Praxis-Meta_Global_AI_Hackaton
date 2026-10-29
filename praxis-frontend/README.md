@@ -507,3 +507,124 @@ PLAYWRIGHT_CHROME_PATH='/Applications/Google Chrome.app/Contents/MacOS/Google Ch
 These tests use the real photograph with mocked perception and endpoint replies.
 They verify workflow and provenance, not live model accuracy or confirmed manual
 ground truth. Live Muse/SAM comparison is a separate, explicitly requested upload.
+
+## Controlled endpoint evaluation and calibration diagnosis
+
+The first three experimental phases are implemented without changing the strict
+snap policy (`0.32` pitches, ambiguity margin `0.12`) or fitting a new homography.
+Hole rankings are separate from grid acceptance, user review, and electrical contact.
+
+### Frozen original replay
+
+```sh
+npm run benchmark:replay
+```
+
+This offline command replays the ten original Muse points from the supplied
+benchmark. It must reproduce **7/10 exact endpoints, 2/5 complete wires, 0 wrong
+holes and 3 unresolved endpoints**. It includes the two nearest holes, image-pixel
+and normalized-pitch distances, ambiguity margins and rejection reasons.
+The fixture preserves the original proposal/review records, calibration revision,
+full calibration, policy, source resolver and image/report hashes. Unit tests pin
+its bytes. Manual corrections are not used as original predictions. A/B reversal
+is allowed within a wire; board ID and logical hole must match exactly.
+
+New proposals retain these resolver diagnostics in their provenance and saved
+assignment JSON. Expand **Inspect hole ranking and rejection diagnostics** for an
+endpoint. Ranked holes are inspection data, not clickable or accepted suggestions.
+A spatial-consistency warning flags points far from the selected mask, coincident
+points, or an endpoint pair concentrated in one region of a long candidate. This
+is a soft check: exposed leads may extend beyond a SAM insulation mask and looped
+wires may legitimately have nearby ends. It never invents or verifies a connection.
+
+The root contains the benchmark photograph and report, but the report does not
+archive the original SAM masks. The frozen fixture records that absence explicitly.
+Resolver replay is reproducible; refinement of that exact original run cannot be
+reproduced until those masks are recovered. Rerunning SAM would create a different
+experiment and must not be substituted into the frozen baseline.
+
+### Independent calibration validation
+
+1. Confirm a board calibration, then choose **Start blinded calibration check**.
+2. Detection, projected-grid and endpoint overlays disappear. Choose an additional
+   printed terminal-hole label such as `b12`, then click the physical center or
+   enter **Checkpoint X/Y**. These original-image marks are never snapped.
+3. Collect additional marks across both strips and the beginning/middle/end of the
+   board. The four fit anchors are rejected as validation checkpoints. Avoid holes
+   already used for endpoint corrections; do not copy model or projected positions.
+4. Choose **Finish blinded calibration check** to reveal signed observed-minus-
+   projected residuals, mean shift, RMS, median, P95, maximum and regional summaries.
+   Residuals remain hidden during collection, including previous audit reports.
+5. Inspect directional/region patterns before deciding whether calibration needs
+   correction. The tool does not automatically label the cause, refit calibration,
+   move anchors, re-snap observations or change calibration revisions.
+
+Audit records remain tied to photograph, board, revision and a calibration snapshot.
+Recalibration/removal makes old reports visibly stale. They are retained for
+inspection. Measurements are session-local; export before reloading.
+
+### Opt-in local pixel refinement
+
+Expand **Local pixel refinement experiment** for an endpoint and choose
+**Experimentally refine endpoint A/B**. This runs locally on a small patch from the
+original photograph and the selected SAM mask, without another Muse call.
+The first implementation examines foreground/background color contrast, the
+mask-supported foreground component, local elongation and terminal direction.
+It rejects missing support, low contrast, ambiguous shapes/directions, truncated
+patch endpoints and excessive displacement. It does not consult ground-truth hole
+IDs or select the nearest hole to manufacture a successful refinement.
+
+A supported output is an **experimental wire-tip boundary**, not proof of insertion.
+A magenta diamond marks its pixels. The original Muse point, method/version,
+evidence measurements, displacement, execution time, refined coordinates and strict
+resolver diagnostics are preserved separately. The experiment never overwrites
+`originalProposal`, changes a review decision, commits a correction or creates an
+assignment. It is disabled for occluded, connector-only and insufficient evidence.
+The normal confirm/correct/unknown workflow remains authoritative for user review;
+wire identity and electrical contact remain unverified.
+
+This color-based experiment can miss bare metal leads or fail under challenging
+lighting, thin masks, branching or crossings. It has not been validated as an
+accuracy improvement on unfamiliar real photographs and is not enabled automatically.
+Reviewable one-click hole suggestions and endpoint-crop model experiments remain
+later phases.
+
+### Archive complete inputs and evaluate unfamiliar photographs
+
+**Export evaluation bundle** downloads image metadata/SHA-256, full analysis with
+SAM masks, calibration snapshots/revisions, original proposals and timings, review
+records, refinement experiments and independent calibration audits. Save the
+original photograph separately; the JSON does not embed or upload its bytes.
+
+Record a separate blinded truth file **before endpoint inference**, for example:
+
+```json
+{
+  "imageSha256": "<64-character SHA-256 of the original photograph>",
+  "analysisRunId": "<the analysis run ID from the bundle>",
+  "recordedBeforeInference": true,
+  "wires": [
+    { "id": "jumper_wire_1", "boardId": "board_1", "holes": ["b12", "e14"] }
+  ]
+}
+```
+
+Then, with both applications' dependencies installed:
+
+```sh
+npm run benchmark:refine -- bundle.json truth.json original-photo.png
+```
+
+The offline runner checks image hashes, analysis identity and calibration revisions,
+requires archived original masks, and compares raw versus experimental refined
+endpoint yield, unresolved/wrong-hole counts, resolved precision and complete-wire
+yield. Raw strict matches are preserved; only unresolved visible-insertion points
+are attempted. Unsupported refinements remain unresolved. Correction records do
+not become input predictions, and truth is not passed to the refinement algorithm.
+The output records input hashes and experiment policy. Node uses the backend's Sharp
+decoder while the browser uses canvas; small rasterization/color differences are
+possible, so archive the implementation/environment for comparisons.
+
+Keep separate evaluation bundles for held-out photographs and repeat inference
+runs. Never rewrite the frozen fixture, tune to pass its ten points, infer improved
+precision from synthetic tests, or count a correct abstention as an exact hole.

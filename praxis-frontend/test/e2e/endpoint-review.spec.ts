@@ -589,3 +589,108 @@ test("a failed endpoint request stops the clock and displays backend stage timin
   ).toBeEnabled();
   await expect(page.getByLabel("AI endpoint review")).toHaveCount(0);
 });
+
+test("independent calibration validation hides overlays and keeps raw unsnapped residuals", async ({
+  page,
+}) => {
+  await setup(page);
+  const expected = point("b5");
+  await page
+    .getByRole("button", { name: "Start blinded calibration check" })
+    .click();
+  await expect(page.locator(".detection-overlays")).toHaveCount(0);
+  await expect(page.locator(".endpoint-overlay")).toHaveCount(0);
+  await expect(page.getByLabel("AI endpoint review")).toHaveCount(0);
+  await page
+    .getByRole("textbox", { name: "Checkpoint hole", exact: true })
+    .fill("b5");
+  await page
+    .getByRole("spinbutton", { name: "Checkpoint X", exact: true })
+    .fill(String(expected.x + 3));
+  await page
+    .getByRole("spinbutton", { name: "Checkpoint Y", exact: true })
+    .fill(String(expected.y - 2));
+  await page
+    .getByRole("button", { name: "Record raw checkpoint", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Independent calibration validation"),
+  ).toContainText("Residuals stay hidden until collection finishes.");
+  await expect(
+    page.getByLabel("Independent calibration validation"),
+  ).not.toContainText("Mean shift:");
+  await page
+    .getByRole("button", {
+      name: "Finish blinded calibration check",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByLabel("Independent calibration validation"),
+  ).toContainText("Mean shift: (3.00, -2.00) px");
+  await expect(
+    page.getByLabel("Independent calibration validation"),
+  ).toContainText("RMS: 3.61 px");
+  await expect(page.getByLabel("AI endpoint review")).toContainText(
+    "Endpoint A · proposed",
+  );
+  await expect(page.locator(".endpoint-proposed circle")).toHaveCount(2);
+});
+
+test("experimental refinement and ranking diagnostics never change original proposal or review decisions", async ({
+  page,
+}) => {
+  await setup(page);
+  const ranking = page.getByText(
+    "Inspect hole ranking and rejection diagnostics",
+    { exact: true },
+  );
+  await expect(ranking).toHaveCount(2);
+  await ranking.first().click();
+  await expect(page.getByLabel("AI endpoint review")).toContainText(
+    "nearest does not establish insertion or acceptance",
+  );
+  await page
+    .getByText("Local pixel refinement experiment", { exact: true })
+    .first()
+    .click();
+  await page
+    .getByRole("button", {
+      name: "Experimentally refine endpoint A",
+      exact: true,
+    })
+    .click();
+  await expect(page.getByLabel("AI endpoint review")).toContainText(
+    "Experiment:",
+  );
+  await expect(page.getByLabel("AI endpoint review")).toContainText(
+    "insertion unverified",
+  );
+  await expect(
+    page.getByRole("button", { name: "Save reviewed assignment" }),
+  ).toBeDisabled();
+  await saveBoth(page);
+  const record = await savedJSON(page);
+  expect(record.endpointReview.refinementExperiments.A).toBeDefined();
+  expect(record.endpointReview.endpoints[0].reviewStatus).toBe("confirmed");
+  expect(record.endpointReview.endpoints[0].finalPosition).toEqual(
+    record.endpointReview.proposal.endpoints[0].proposedImagePosition,
+  );
+  expect(
+    record.endpointReview.proposal.endpoints[0].resolutionDiagnostics.reason,
+  ).toBe("accepted");
+  const downloadEvent = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export evaluation bundle", exact: true })
+    .click();
+  const download = await downloadEvent;
+  const file = await download.path();
+  const { readFile } = await import("node:fs/promises");
+  const bundle = JSON.parse(await readFile(file!, "utf8"));
+  expect(bundle.schemaVersion).toBe("praxis-evaluation-v1");
+  expect(bundle.image.sha256).toMatch(/^[0-9a-f]{64}$/);
+  expect(bundle.analysis.objects[0].mask.path).toBeDefined();
+  expect(bundle.reviews[0].proposal.endpoints[0].proposedImagePosition).toEqual(
+    record.endpointReview.proposal.endpoints[0].proposedImagePosition,
+  );
+});

@@ -1,0 +1,131 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+import { execFileSync } from "node:child_process";
+import { calibrateBoard } from "../lib/breadboard/calibration";
+const sharp = createRequire(
+  new URL("../../praxis-backend/server/package.json", import.meta.url),
+)(
+  "sharp",
+) as typeof import("../../praxis-backend/server/node_modules/sharp").default;
+
+test("offline refinement runner reads archived masks, keeps original evidence frozen, and reports both scores", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "praxis-offline-"));
+  try {
+    const width = 200,
+      height = 160,
+      rgba = Buffer.alloc(width * height * 4, 255);
+    for (let y = 62; y <= 66; y++)
+      for (let x = 30; x <= 60; x++) {
+        const i = (y * width + x) * 4;
+        rgba[i] = 180;
+        rgba[i + 1] = 30;
+        rgba[i + 2] = 20;
+      }
+    const image = await sharp(rgba, { raw: { width, height, channels: 4 } })
+      .png()
+      .toBuffer();
+    const hash = createHash("sha256").update(image).digest("hex");
+    const calibration = calibrateBoard("board_1", 30, { width, height }, [
+      { x: 20, y: 20 },
+      { x: 130, y: 20 },
+      { x: 130, y: 136 },
+      { x: 20, y: 136 },
+    ]);
+    const analysis = {
+      image: { width, height },
+      provenance: {
+        mode: "combined",
+        reasoningModel: "fixture",
+        segmentationModel: "fixture",
+      },
+      objects: [
+        {
+          id: "jumper_wire_1",
+          type: "jumper_wire",
+          bbox: [30, 62, 31, 5],
+          geometryStatus: "segmented",
+          localizationSource: "sam",
+          interpretation: "uncertain",
+          guidanceEligible: false,
+          identityStatus: "unverified",
+          mask: {
+            format: "svg_path",
+            width: 31,
+            height: 5,
+            path: "M0 0L31 0L31 5L0 5Z",
+          },
+        },
+      ],
+    };
+    const bundle = {
+      schemaVersion: "praxis-evaluation-v1",
+      image: { id: "photo", sha256: hash },
+      analysisRunId: "run",
+      analysis,
+      boards: [{ calibration, revision: 1, rails: [] }],
+      reviews: [
+        {
+          proposal: {
+            analysisId: "run",
+            imageId: "photo",
+            wireCandidateId: "jumper_wire_1",
+            calibrationRevisions: { board_1: 1 },
+            endpoints: [
+              {
+                proposedImagePosition: [25, 64],
+                evidence: "visible_insertion",
+              },
+              {
+                proposedImagePosition: [60, 64],
+                evidence: "visible_insertion",
+              },
+            ],
+          },
+        },
+      ],
+    };
+    // Fixed synthetic truth, declared independently of the refinement output.
+    const truth = {
+      imageSha256: hash,
+      analysisRunId: "run",
+      recordedBeforeInference: true,
+      wires: [
+        { id: "jumper_wire_1", boardId: "board_1", holes: ["b12", "e12"] },
+      ],
+    };
+    const bundlePath = join(directory, "bundle.json"),
+      truthPath = join(directory, "truth.json"),
+      imagePath = join(directory, "photo.png");
+    writeFileSync(bundlePath, JSON.stringify(bundle));
+    writeFileSync(truthPath, JSON.stringify(truth));
+    writeFileSync(imagePath, image);
+    const before = readFileSync(bundlePath, "utf8");
+    const result = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          "--import",
+          "tsx",
+          resolve("scripts/evaluate-refinement.mts"),
+          bundlePath,
+          truthPath,
+          imagePath,
+        ],
+        { encoding: "utf8" },
+      ),
+    );
+    assert.equal(result.raw.correct, 1);
+    assert.equal(result.refined.correct, 2);
+    assert.equal(result.refined.wrong, 0);
+    assert.equal(result.raw.completeWires, 0);
+    assert.equal(result.refined.completeWires, 1);
+    assert.equal(readFileSync(bundlePath, "utf8"), before);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

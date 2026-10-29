@@ -1,0 +1,2170 @@
+{
+  "id": "exact-hole-v1",
+  "description": "Frozen 28 October 2026 observations; manual corrections are not initial successes.",
+  "inputs": {
+    "sourceReport": "praxis-exact-hole-benchmark.md",
+    "sourceReportSha256": "8e464c5aa978714e99583010a9a5121f60fa21c7169c1260c5e939f3af947c86",
+    "photograph": "jumper_wires_breadboard.png",
+    "photographSha256": "1c92f9b07042ad54720c424a412bc290f76b69e5949f71d13122d73ee5cde736",
+    "originalResolverSha256": "35bd79263f51cf472b18fd3b5bc7dc6d51e3b85f4e297238a4f6c485084e1390",
+    "selectedSamMasks": null,
+    "missingInputs": [
+      "Original SAM analysis/masks are not present in the benchmark report. Never reconstruct them from corrected holes."
+    ],
+    "calibrationRevision": 1,
+    "calibration": {
+      "breadboardId": "board_1",
+      "templateId": "standard-10-column-v1",
+      "rows": 30,
+      "image": {
+        "width": 1426,
+        "height": 1008
+      },
+      "anchors": [
+        {
+          "x": 1205,
+          "y": 296
+        },
+        {
+          "x": 1202,
+          "y": 680
+        },
+        {
+          "x": 170,
+          "y": 685
+        },
+        {
+          "x": 181,
+          "y": 290
+        }
+      ],
+      "forward": [
+        -0.008388673468002594,
+        -0.7216153038814936,
+        0.8450210378681627,
+        0.3759224631496673,
+        -0.013937082166715298,
+        0.29365079365079366,
+        -0.007456113448728485,
+        -0.02775372008292753,
+        1
+      ],
+      "inverse": [
+        -0.02192148628795275,
+        2.6445982672433828,
+        -0.7580642629688744,
+        -1.4322650644332289,
+        -0.007909598444889131,
+        1.2126167711104792,
+        -0.03991413277156372,
+        0.019498903925669622,
+        1.0280024132871413
+      ]
+    },
+    "rails": []
+  },
+  "policy": {
+    "version": "calibrated-grid-v1",
+    "snapRadiusPitch": 0.32,
+    "ambiguityMarginPitch": 0.12
+  },
+  "scoring": {
+    "unorderedEndpointRoles": true,
+    "includeUnresolvedInDenominator": true,
+    "manualCorrectionsExcluded": true
+  },
+  "expectedMetrics": {
+    "correct": 7,
+    "accepted": 7,
+    "wrong": 0,
+    "unresolved": 3,
+    "completeWires": 2,
+    "endpoints": 10,
+    "wires": 5,
+    "endpointYield": 0.7,
+    "resolvedPrecision": 1,
+    "completeWireYield": 0.4
+  },
+  "expected": [
+    {
+      "wireCandidateId": "jumper_wire_5",
+      "truth": [
+        "f23",
+        "f10"
+      ],
+      "endpoints": [
+        {
+          "role": "A",
+          "originalResolvedHole": "f23",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.7305036117250042,
+          "candidates": [
+            {
+              "holeId": "f23",
+              "imagePosition": {
+                "x": 427.785794667476,
+                "y": 540.4221685398437
+              },
+              "normalizedDistance": 0.15584607813665116,
+              "distancePx": 5.528146573848934
+            },
+            {
+              "holeId": "f22",
+              "imagePosition": {
+                "x": 463.75348014671175,
+                "y": 540.3885701973757
+              },
+              "normalizedDistance": 0.8863496898616554,
+              "distancePx": 31.958190290548377
+            }
+          ]
+        },
+        {
+          "role": "B",
+          "originalResolvedHole": null,
+          "reason": "outside_snap_radius",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.4848587885276092,
+          "candidates": [
+            {
+              "holeId": "f10",
+              "imagePosition": {
+                "x": 889.923177454563,
+                "y": 539.9904740939179
+              },
+              "normalizedDistance": 0.32056834389385935,
+              "distancePx": 11.361458474863738
+            },
+            {
+              "holeId": "f9",
+              "imagePosition": {
+                "x": 924.9899279045336,
+                "y": 539.957717338092
+              },
+              "normalizedDistance": 0.8054271324214686,
+              "distancePx": 28.138611791005115
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wireCandidateId": "jumper_wire_6",
+      "truth": [
+        "h23",
+        "h10"
+      ],
+      "endpoints": [
+        {
+          "role": "A",
+          "originalResolvedHole": null,
+          "reason": "outside_snap_radius",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.18673661060276908,
+          "candidates": [
+            {
+              "holeId": "h23",
+              "imagePosition": {
+                "x": 426.1462493651224,
+                "y": 611.9946825070829
+              },
+              "normalizedDistance": 0.45624789607811705,
+              "distancePx": 16.24904057134706
+            },
+            {
+              "holeId": "h24",
+              "imagePosition": {
+                "x": 390.0559439241243,
+                "y": 612.0988718350486
+              },
+              "normalizedDistance": 0.6429845066808861,
+              "distancePx": 23.390881173263267
+            }
+          ]
+        },
+        {
+          "role": "B",
+          "originalResolvedHole": "h10",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.49487117267199204,
+          "candidates": [
+            {
+              "holeId": "h10",
+              "imagePosition": {
+                "x": 888.9401904264877,
+                "y": 610.6586397909965
+              },
+              "normalizedDistance": 0.2689407703467081,
+              "distancePx": 9.563163535327131
+            },
+            {
+              "holeId": "g10",
+              "imagePosition": {
+                "x": 889.4320218314209,
+                "y": 575.3002655437829
+              },
+              "normalizedDistance": 0.7638119430187001,
+              "distancePx": 26.937080172950537
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wireCandidateId": "jumper_wire_7",
+      "truth": [
+        "h30",
+        "h25"
+      ],
+      "endpoints": [
+        {
+          "role": "A",
+          "originalResolvedHole": null,
+          "reason": "outside_snap_radius",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.5649409457179553,
+          "candidates": [
+            {
+              "holeId": "h30",
+              "imagePosition": {
+                "x": 172.01262843829562,
+                "y": 612.7283424430218
+              },
+              "normalizedDistance": 0.4444250177149482,
+              "distancePx": 16.343439438289796
+            },
+            {
+              "holeId": "i30",
+              "imagePosition": {
+                "x": 171.0070207246524,
+                "y": 648.8388012511167
+              },
+              "normalizedDistance": 1.0093659634329035,
+              "distancePx": 36.10536717221541
+            }
+          ]
+        },
+        {
+          "role": "B",
+          "originalResolvedHole": "h25",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.8294095436030504,
+          "candidates": [
+            {
+              "holeId": "h25",
+              "imagePosition": {
+                "x": 353.89449167597087,
+                "y": 612.2032665571759
+              },
+              "normalizedDistance": 0.09318107617581552,
+              "distancePx": 3.4068068813519896
+            },
+            {
+              "holeId": "h26",
+              "imagePosition": {
+                "x": 317.66168202965736,
+                "y": 612.307867281421
+              },
+              "normalizedDistance": 0.9225906197788659,
+              "distancePx": 33.381233623534
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wireCandidateId": "jumper_wire_10",
+      "truth": [
+        "j20",
+        "j10"
+      ],
+      "endpoints": [
+        {
+          "role": "A",
+          "originalResolvedHole": "j20",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.9163692318195236,
+          "candidates": [
+            {
+              "holeId": "j20",
+              "imagePosition": {
+                "x": 532.503151454045,
+                "y": 683.2436862817149
+              },
+              "normalizedDistance": 0.04208708526222767,
+              "distancePx": 1.5165548369325883
+            },
+            {
+              "holeId": "j19",
+              "imagePosition": {
+                "x": 568.36219197104,
+                "y": 683.0699506202953
+              },
+              "normalizedDistance": 0.9584563170817513,
+              "distancePx": 34.36226316970243
+            }
+          ]
+        },
+        {
+          "role": "B",
+          "originalResolvedHole": "j10",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.6302220354829444,
+          "candidates": [
+            {
+              "holeId": "j10",
+              "imagePosition": {
+                "x": 887.9544946847066,
+                "y": 681.5215383009463
+              },
+              "normalizedDistance": 0.18635000528847087,
+              "distancePx": 6.591018275945127
+            },
+            {
+              "holeId": "i10",
+              "imagePosition": {
+                "x": 888.4476818440896,
+                "y": 646.0656971723062
+              },
+              "normalizedDistance": 0.8165720407714153,
+              "distancePx": 28.97049642043433
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "wireCandidateId": "jumper_wire_11",
+      "truth": [
+        "j30",
+        "j24"
+      ],
+      "endpoints": [
+        {
+          "role": "A",
+          "originalResolvedHole": "j30",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.8127176874183768,
+          "candidates": [
+            {
+              "holeId": "j30",
+              "imagePosition": {
+                "x": 170.00000000000003,
+                "y": 685
+              },
+              "normalizedDistance": 0.30903481716475195,
+              "distancePx": 11.401754250991406
+            },
+            {
+              "holeId": "i30",
+              "imagePosition": {
+                "x": 171.0070207246524,
+                "y": 648.8388012511167
+              },
+              "normalizedDistance": 1.1217525045831287,
+              "distancePx": 40.960566818975664
+            }
+          ]
+        },
+        {
+          "role": "B",
+          "originalResolvedHole": "j24",
+          "reason": "accepted",
+          "policy": {
+            "version": "calibrated-grid-v1",
+            "snapRadiusPitch": 0.32,
+            "ambiguityMarginPitch": 0.12
+          },
+          "ambiguityMargin": 0.42423617067646757,
+          "candidates": [
+            {
+              "holeId": "j24",
+              "imagePosition": {
+                "x": 388.35979001466046,
+                "y": 683.9420552809368
+              },
+              "normalizedDistance": 0.2963324568866763,
+              "distancePx": 10.80167927003507
+            },
+            {
+              "holeId": "j25",
+              "imagePosition": {
+                "x": 352.14610274419283,
+                "y": 684.1175091921308
+              },
+              "normalizedDistance": 0.7205686275631439,
+              "distancePx": 26.014087655946806
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "evidence": {
+    "truth": {
+      "recordedBeforeEndpointInference": true,
+      "source": "https://iot-kmutnb.github.io/blogs/electronics/breadboard_prototyping/jumper_wires_breadboard.png",
+      "image": {
+        "width": 1426,
+        "height": 1008
+      },
+      "wires": [
+        {
+          "key": "lower_top_long_red",
+          "holes": [
+            "f23",
+            "f10"
+          ]
+        },
+        {
+          "key": "lower_middle_short_left_red",
+          "holes": [
+            "h30",
+            "h25"
+          ]
+        },
+        {
+          "key": "lower_middle_long_red",
+          "holes": [
+            "h23",
+            "h10"
+          ]
+        },
+        {
+          "key": "lower_bottom_short_left_red",
+          "holes": [
+            "j30",
+            "j24"
+          ]
+        },
+        {
+          "key": "lower_bottom_right_red",
+          "holes": [
+            "j20",
+            "j10"
+          ]
+        }
+      ]
+    },
+    "proposals": [
+      {
+        "id": "6264ab42-8e76-4c81-93ca-944fc00c1d74",
+        "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "wireCandidateId": "jumper_wire_5",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "b9ad431c-6acd-40e6-b7fc-a5d65ea66a07",
+          "elapsedMs": 16435,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 1,
+              "durationMs": 7,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 12,
+              "durationMs": 50,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 62,
+              "durationMs": 82,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 146,
+              "durationMs": 16288,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              432,
+              544
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "f23",
+              "snapDistancePx": 5.528146573848934
+            },
+            "reviewStatus": "proposed"
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              898,
+              532
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed"
+          }
+        ],
+        "clientElapsedMs": 16591.599999999627
+      },
+      {
+        "id": "7db29a43-fe6d-469e-a9cf-18ed1a2881bb",
+        "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "wireCandidateId": "jumper_wire_6",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "6e79dfc8-2350-405c-b466-9366bd5c730d",
+          "elapsedMs": 22689,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 0,
+              "durationMs": 8,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 10,
+              "durationMs": 41,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 51,
+              "durationMs": 84,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 139,
+              "durationMs": 22549,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              412,
+              604
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed"
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              893,
+              602
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h10",
+              "snapDistancePx": 9.563163535327131
+            },
+            "reviewStatus": "proposed"
+          }
+        ],
+        "clientElapsedMs": 22851.39999999851
+      },
+      {
+        "id": "fba4e3ab-6d85-44af-8924-a83fcacd3a33",
+        "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "wireCandidateId": "jumper_wire_7",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "9476fe9e-90ff-49e8-a835-5f583748475a",
+          "elapsedMs": 16825,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 0,
+              "durationMs": 3,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 4,
+              "durationMs": 30,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 34,
+              "durationMs": 59,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 94,
+              "durationMs": 16730,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              156,
+              616
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": null,
+            "reviewStatus": "proposed"
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              351,
+              614
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "h25",
+              "snapDistancePx": 3.4068068813519896
+            },
+            "reviewStatus": "proposed"
+          }
+        ],
+        "clientElapsedMs": 16904.099999999627
+      },
+      {
+        "id": "0429ae9b-0462-43a6-8686-f1d73aa8652a",
+        "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "wireCandidateId": "jumper_wire_10",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "ee77da17-ff14-44a9-9479-2fced862dfbe",
+          "elapsedMs": 14694,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 1,
+              "durationMs": 5,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 7,
+              "durationMs": 28,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 35,
+              "durationMs": 61,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 98,
+              "durationMs": 14595,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              534,
+              683
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j20",
+              "snapDistancePx": 1.5165548369325883
+            },
+            "reviewStatus": "proposed"
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              887,
+              675
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j10",
+              "snapDistancePx": 6.591018275945127
+            },
+            "reviewStatus": "proposed"
+          }
+        ],
+        "clientElapsedMs": 14783.5
+      },
+      {
+        "id": "9416c52a-8448-422e-bff2-7427d9321a2d",
+        "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "wireCandidateId": "jumper_wire_11",
+        "calibrationRevisions": {
+          "board_1": 1
+        },
+        "model": "muse-spark-1.3",
+        "diagnostics": {
+          "requestId": "fc01b298-3c54-45d4-906c-fc69ca929de5",
+          "elapsedMs": 21079,
+          "timings": [
+            {
+              "stage": "upload",
+              "startedAtMs": 1,
+              "durationMs": 6,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "image.prepare",
+              "startedAtMs": 11,
+              "durationMs": 32,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "wire.grounding",
+              "startedAtMs": 45,
+              "durationMs": 63,
+              "status": "completed",
+              "kind": "work"
+            },
+            {
+              "stage": "muse.endpoints",
+              "startedAtMs": 110,
+              "durationMs": 20969,
+              "status": "completed",
+              "kind": "request",
+              "model": "muse-spark-1.3",
+              "attempt": 1,
+              "timeoutMs": 45000,
+              "upstreamStatus": 200
+            }
+          ]
+        },
+        "endpoints": [
+          {
+            "role": "A",
+            "proposedImagePosition": [
+              159,
+              688
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j30",
+              "snapDistancePx": 11.401754250991406
+            },
+            "reviewStatus": "proposed"
+          },
+          {
+            "role": "B",
+            "proposedImagePosition": [
+              378,
+              687
+            ],
+            "connectorJunctionPosition": null,
+            "evidence": "visible_insertion",
+            "proposedHole": {
+              "boardId": "board_1",
+              "holeId": "j24",
+              "snapDistancePx": 10.80167927003507
+            },
+            "reviewStatus": "proposed"
+          }
+        ],
+        "clientElapsedMs": 21150.900000000373
+      }
+    ],
+    "assignments": [
+      {
+        "id": "connection_5",
+        "photoId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "analysisRunId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "wireCandidateId": "jumper_wire_11",
+        "wireIdentity": {
+          "status": "unverified",
+          "associationSource": "user"
+        },
+        "endpoints": [
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 159,
+              "y": 688
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "j30",
+              "imagePosition": {
+                "x": 170.00000000000003,
+                "y": 685
+              },
+              "electricalGroup": "board_1:terminal-f-j-30",
+              "groupBasis": "template",
+              "snapDistancePx": 11.401754250991406
+            },
+            "electricalContact": "unknown"
+          },
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 378,
+              "y": 687
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "j24",
+              "imagePosition": {
+                "x": 388.35979001466046,
+                "y": 683.9420552809368
+              },
+              "electricalGroup": "board_1:terminal-f-j-24",
+              "groupBasis": "template",
+              "snapDistancePx": 10.80167927003507
+            },
+            "electricalContact": "unknown"
+          }
+        ],
+        "endpointReview": {
+          "proposal": {
+            "id": "9416c52a-8448-422e-bff2-7427d9321a2d",
+            "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+            "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+            "wireCandidateId": "jumper_wire_11",
+            "calibrationRevisions": {
+              "board_1": 1
+            },
+            "model": "muse-spark-1.3",
+            "diagnostics": {
+              "requestId": "fc01b298-3c54-45d4-906c-fc69ca929de5",
+              "elapsedMs": 21079,
+              "timings": [
+                {
+                  "stage": "upload",
+                  "startedAtMs": 1,
+                  "durationMs": 6,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "image.prepare",
+                  "startedAtMs": 11,
+                  "durationMs": 32,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "wire.grounding",
+                  "startedAtMs": 45,
+                  "durationMs": 63,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "muse.endpoints",
+                  "startedAtMs": 110,
+                  "durationMs": 20969,
+                  "status": "completed",
+                  "kind": "request",
+                  "model": "muse-spark-1.3",
+                  "attempt": 1,
+                  "timeoutMs": 45000,
+                  "upstreamStatus": 200
+                }
+              ]
+            },
+            "endpoints": [
+              {
+                "role": "A",
+                "proposedImagePosition": [
+                  159,
+                  688
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j30",
+                  "snapDistancePx": 11.401754250991406
+                },
+                "reviewStatus": "proposed"
+              },
+              {
+                "role": "B",
+                "proposedImagePosition": [
+                  378,
+                  687
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j24",
+                  "snapDistancePx": 10.80167927003507
+                },
+                "reviewStatus": "proposed"
+              }
+            ],
+            "clientElapsedMs": 21150.900000000373
+          },
+          "endpoints": [
+            {
+              "role": "A",
+              "originalProposal": {
+                "role": "A",
+                "proposedImagePosition": [
+                  159,
+                  688
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j30",
+                  "snapDistancePx": 11.401754250991406
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                159,
+                688
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "j30",
+                "snapDistancePx": 11.401754250991406
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 159,
+                  "y": 688
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "j30",
+                  "imagePosition": {
+                    "x": 170.00000000000003,
+                    "y": 685
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-30",
+                  "groupBasis": "template",
+                  "snapDistancePx": 11.401754250991406
+                },
+                "electricalContact": "unknown"
+              }
+            },
+            {
+              "role": "B",
+              "originalProposal": {
+                "role": "B",
+                "proposedImagePosition": [
+                  378,
+                  687
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j24",
+                  "snapDistancePx": 10.80167927003507
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                378,
+                687
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "j24",
+                "snapDistancePx": 10.80167927003507
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 378,
+                  "y": 687
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "j24",
+                  "imagePosition": {
+                    "x": 388.35979001466046,
+                    "y": 683.9420552809368
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-24",
+                  "groupBasis": "template",
+                  "snapDistancePx": 10.80167927003507
+                },
+                "electricalContact": "unknown"
+              }
+            }
+          ],
+          "pendingCorrections": [
+            null,
+            null
+          ],
+          "savedAssignmentId": "connection_5",
+          "dirty": false
+        },
+        "validity": {
+          "status": "complete",
+          "reasons": []
+        }
+      },
+      {
+        "id": "connection_4",
+        "photoId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "analysisRunId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "wireCandidateId": "jumper_wire_10",
+        "wireIdentity": {
+          "status": "unverified",
+          "associationSource": "user"
+        },
+        "endpoints": [
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 534,
+              "y": 683
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "j20",
+              "imagePosition": {
+                "x": 532.503151454045,
+                "y": 683.2436862817149
+              },
+              "electricalGroup": "board_1:terminal-f-j-20",
+              "groupBasis": "template",
+              "snapDistancePx": 1.5165548369325883
+            },
+            "electricalContact": "unknown"
+          },
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 887,
+              "y": 675
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "j10",
+              "imagePosition": {
+                "x": 887.9544946847066,
+                "y": 681.5215383009463
+              },
+              "electricalGroup": "board_1:terminal-f-j-10",
+              "groupBasis": "template",
+              "snapDistancePx": 6.591018275945127
+            },
+            "electricalContact": "unknown"
+          }
+        ],
+        "endpointReview": {
+          "proposal": {
+            "id": "0429ae9b-0462-43a6-8686-f1d73aa8652a",
+            "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+            "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+            "wireCandidateId": "jumper_wire_10",
+            "calibrationRevisions": {
+              "board_1": 1
+            },
+            "model": "muse-spark-1.3",
+            "diagnostics": {
+              "requestId": "ee77da17-ff14-44a9-9479-2fced862dfbe",
+              "elapsedMs": 14694,
+              "timings": [
+                {
+                  "stage": "upload",
+                  "startedAtMs": 1,
+                  "durationMs": 5,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "image.prepare",
+                  "startedAtMs": 7,
+                  "durationMs": 28,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "wire.grounding",
+                  "startedAtMs": 35,
+                  "durationMs": 61,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "muse.endpoints",
+                  "startedAtMs": 98,
+                  "durationMs": 14595,
+                  "status": "completed",
+                  "kind": "request",
+                  "model": "muse-spark-1.3",
+                  "attempt": 1,
+                  "timeoutMs": 45000,
+                  "upstreamStatus": 200
+                }
+              ]
+            },
+            "endpoints": [
+              {
+                "role": "A",
+                "proposedImagePosition": [
+                  534,
+                  683
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j20",
+                  "snapDistancePx": 1.5165548369325883
+                },
+                "reviewStatus": "proposed"
+              },
+              {
+                "role": "B",
+                "proposedImagePosition": [
+                  887,
+                  675
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j10",
+                  "snapDistancePx": 6.591018275945127
+                },
+                "reviewStatus": "proposed"
+              }
+            ],
+            "clientElapsedMs": 14783.5
+          },
+          "endpoints": [
+            {
+              "role": "A",
+              "originalProposal": {
+                "role": "A",
+                "proposedImagePosition": [
+                  534,
+                  683
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j20",
+                  "snapDistancePx": 1.5165548369325883
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                534,
+                683
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "j20",
+                "snapDistancePx": 1.5165548369325883
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 534,
+                  "y": 683
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "j20",
+                  "imagePosition": {
+                    "x": 532.503151454045,
+                    "y": 683.2436862817149
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-20",
+                  "groupBasis": "template",
+                  "snapDistancePx": 1.5165548369325883
+                },
+                "electricalContact": "unknown"
+              }
+            },
+            {
+              "role": "B",
+              "originalProposal": {
+                "role": "B",
+                "proposedImagePosition": [
+                  887,
+                  675
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "j10",
+                  "snapDistancePx": 6.591018275945127
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                887,
+                675
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "j10",
+                "snapDistancePx": 6.591018275945127
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 887,
+                  "y": 675
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "j10",
+                  "imagePosition": {
+                    "x": 887.9544946847066,
+                    "y": 681.5215383009463
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-10",
+                  "groupBasis": "template",
+                  "snapDistancePx": 6.591018275945127
+                },
+                "electricalContact": "unknown"
+              }
+            }
+          ],
+          "pendingCorrections": [
+            null,
+            null
+          ],
+          "savedAssignmentId": "connection_4",
+          "dirty": false
+        },
+        "validity": {
+          "status": "complete",
+          "reasons": []
+        }
+      },
+      {
+        "id": "connection_3",
+        "photoId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "analysisRunId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "wireCandidateId": "jumper_wire_7",
+        "wireIdentity": {
+          "status": "unverified",
+          "associationSource": "user"
+        },
+        "endpoints": [
+          {
+            "selectionSource": "manual_correction",
+            "inputMethod": "pixel_entry",
+            "locationVerification": "user_selected",
+            "selectedImagePosition": {
+              "x": 173,
+              "y": 615
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "h30",
+              "imagePosition": {
+                "x": 172.01262843829562,
+                "y": 612.7283424430218
+              },
+              "electricalGroup": "board_1:terminal-f-j-30",
+              "groupBasis": "template",
+              "snapDistancePx": 2.476959962744392
+            },
+            "electricalContact": "unknown"
+          },
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 351,
+              "y": 614
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "h25",
+              "imagePosition": {
+                "x": 353.89449167597087,
+                "y": 612.2032665571759
+              },
+              "electricalGroup": "board_1:terminal-f-j-25",
+              "groupBasis": "template",
+              "snapDistancePx": 3.4068068813519896
+            },
+            "electricalContact": "unknown"
+          }
+        ],
+        "endpointReview": {
+          "proposal": {
+            "id": "fba4e3ab-6d85-44af-8924-a83fcacd3a33",
+            "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+            "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+            "wireCandidateId": "jumper_wire_7",
+            "calibrationRevisions": {
+              "board_1": 1
+            },
+            "model": "muse-spark-1.3",
+            "diagnostics": {
+              "requestId": "9476fe9e-90ff-49e8-a835-5f583748475a",
+              "elapsedMs": 16825,
+              "timings": [
+                {
+                  "stage": "upload",
+                  "startedAtMs": 0,
+                  "durationMs": 3,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "image.prepare",
+                  "startedAtMs": 4,
+                  "durationMs": 30,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "wire.grounding",
+                  "startedAtMs": 34,
+                  "durationMs": 59,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "muse.endpoints",
+                  "startedAtMs": 94,
+                  "durationMs": 16730,
+                  "status": "completed",
+                  "kind": "request",
+                  "model": "muse-spark-1.3",
+                  "attempt": 1,
+                  "timeoutMs": 45000,
+                  "upstreamStatus": 200
+                }
+              ]
+            },
+            "endpoints": [
+              {
+                "role": "A",
+                "proposedImagePosition": [
+                  156,
+                  616
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": null,
+                "reviewStatus": "proposed"
+              },
+              {
+                "role": "B",
+                "proposedImagePosition": [
+                  351,
+                  614
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "h25",
+                  "snapDistancePx": 3.4068068813519896
+                },
+                "reviewStatus": "proposed"
+              }
+            ],
+            "clientElapsedMs": 16904.099999999627
+          },
+          "endpoints": [
+            {
+              "role": "A",
+              "originalProposal": {
+                "role": "A",
+                "proposedImagePosition": [
+                  156,
+                  616
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": null,
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                173,
+                615
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "h30",
+                "snapDistancePx": 2.476959962744392
+              },
+              "reviewStatus": "corrected",
+              "source": "manual_correction",
+              "observation": {
+                "selectionSource": "manual_correction",
+                "inputMethod": "pixel_entry",
+                "locationVerification": "user_selected",
+                "selectedImagePosition": {
+                  "x": 173,
+                  "y": 615
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "h30",
+                  "imagePosition": {
+                    "x": 172.01262843829562,
+                    "y": 612.7283424430218
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-30",
+                  "groupBasis": "template",
+                  "snapDistancePx": 2.476959962744392
+                },
+                "electricalContact": "unknown"
+              }
+            },
+            {
+              "role": "B",
+              "originalProposal": {
+                "role": "B",
+                "proposedImagePosition": [
+                  351,
+                  614
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "h25",
+                  "snapDistancePx": 3.4068068813519896
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                351,
+                614
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "h25",
+                "snapDistancePx": 3.4068068813519896
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 351,
+                  "y": 614
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "h25",
+                  "imagePosition": {
+                    "x": 353.89449167597087,
+                    "y": 612.2032665571759
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-25",
+                  "groupBasis": "template",
+                  "snapDistancePx": 3.4068068813519896
+                },
+                "electricalContact": "unknown"
+              }
+            }
+          ],
+          "pendingCorrections": [
+            null,
+            null
+          ],
+          "savedAssignmentId": "connection_3",
+          "dirty": false
+        },
+        "validity": {
+          "status": "complete",
+          "reasons": []
+        }
+      },
+      {
+        "id": "connection_2",
+        "photoId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "analysisRunId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "wireCandidateId": "jumper_wire_6",
+        "wireIdentity": {
+          "status": "unverified",
+          "associationSource": "user"
+        },
+        "endpoints": [
+          {
+            "selectionSource": "manual_correction",
+            "inputMethod": "pixel_entry",
+            "locationVerification": "user_selected",
+            "selectedImagePosition": {
+              "x": 428,
+              "y": 612
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "h23",
+              "imagePosition": {
+                "x": 426.1462493651224,
+                "y": 611.9946825070829
+              },
+              "electricalGroup": "board_1:terminal-f-j-23",
+              "groupBasis": "template",
+              "snapDistancePx": 1.8537582614893522
+            },
+            "electricalContact": "unknown"
+          },
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 893,
+              "y": 602
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "h10",
+              "imagePosition": {
+                "x": 888.9401904264877,
+                "y": 610.6586397909965
+              },
+              "electricalGroup": "board_1:terminal-f-j-10",
+              "groupBasis": "template",
+              "snapDistancePx": 9.563163535327131
+            },
+            "electricalContact": "unknown"
+          }
+        ],
+        "endpointReview": {
+          "proposal": {
+            "id": "7db29a43-fe6d-469e-a9cf-18ed1a2881bb",
+            "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+            "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+            "wireCandidateId": "jumper_wire_6",
+            "calibrationRevisions": {
+              "board_1": 1
+            },
+            "model": "muse-spark-1.3",
+            "diagnostics": {
+              "requestId": "6e79dfc8-2350-405c-b466-9366bd5c730d",
+              "elapsedMs": 22689,
+              "timings": [
+                {
+                  "stage": "upload",
+                  "startedAtMs": 0,
+                  "durationMs": 8,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "image.prepare",
+                  "startedAtMs": 10,
+                  "durationMs": 41,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "wire.grounding",
+                  "startedAtMs": 51,
+                  "durationMs": 84,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "muse.endpoints",
+                  "startedAtMs": 139,
+                  "durationMs": 22549,
+                  "status": "completed",
+                  "kind": "request",
+                  "model": "muse-spark-1.3",
+                  "attempt": 1,
+                  "timeoutMs": 45000,
+                  "upstreamStatus": 200
+                }
+              ]
+            },
+            "endpoints": [
+              {
+                "role": "A",
+                "proposedImagePosition": [
+                  412,
+                  604
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": null,
+                "reviewStatus": "proposed"
+              },
+              {
+                "role": "B",
+                "proposedImagePosition": [
+                  893,
+                  602
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "h10",
+                  "snapDistancePx": 9.563163535327131
+                },
+                "reviewStatus": "proposed"
+              }
+            ],
+            "clientElapsedMs": 22851.39999999851
+          },
+          "endpoints": [
+            {
+              "role": "A",
+              "originalProposal": {
+                "role": "A",
+                "proposedImagePosition": [
+                  412,
+                  604
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": null,
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                428,
+                612
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "h23",
+                "snapDistancePx": 1.8537582614893522
+              },
+              "reviewStatus": "corrected",
+              "source": "manual_correction",
+              "observation": {
+                "selectionSource": "manual_correction",
+                "inputMethod": "pixel_entry",
+                "locationVerification": "user_selected",
+                "selectedImagePosition": {
+                  "x": 428,
+                  "y": 612
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "h23",
+                  "imagePosition": {
+                    "x": 426.1462493651224,
+                    "y": 611.9946825070829
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-23",
+                  "groupBasis": "template",
+                  "snapDistancePx": 1.8537582614893522
+                },
+                "electricalContact": "unknown"
+              }
+            },
+            {
+              "role": "B",
+              "originalProposal": {
+                "role": "B",
+                "proposedImagePosition": [
+                  893,
+                  602
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "h10",
+                  "snapDistancePx": 9.563163535327131
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                893,
+                602
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "h10",
+                "snapDistancePx": 9.563163535327131
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 893,
+                  "y": 602
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "h10",
+                  "imagePosition": {
+                    "x": 888.9401904264877,
+                    "y": 610.6586397909965
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-10",
+                  "groupBasis": "template",
+                  "snapDistancePx": 9.563163535327131
+                },
+                "electricalContact": "unknown"
+              }
+            }
+          ],
+          "pendingCorrections": [
+            null,
+            null
+          ],
+          "savedAssignmentId": "connection_2",
+          "dirty": false
+        },
+        "validity": {
+          "status": "complete",
+          "reasons": []
+        }
+      },
+      {
+        "id": "connection_1",
+        "photoId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+        "analysisRunId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+        "wireCandidateId": "jumper_wire_5",
+        "wireIdentity": {
+          "status": "unverified",
+          "associationSource": "user"
+        },
+        "endpoints": [
+          {
+            "selectionSource": "ai_user_confirmed",
+            "inputMethod": "ai_proposal",
+            "locationVerification": "user_confirmed",
+            "selectedImagePosition": {
+              "x": 432,
+              "y": 544
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "f23",
+              "imagePosition": {
+                "x": 427.785794667476,
+                "y": 540.4221685398437
+              },
+              "electricalGroup": "board_1:terminal-f-j-23",
+              "groupBasis": "template",
+              "snapDistancePx": 5.528146573848934
+            },
+            "electricalContact": "unknown"
+          },
+          {
+            "selectionSource": "manual_correction",
+            "inputMethod": "pixel_entry",
+            "locationVerification": "user_selected",
+            "selectedImagePosition": {
+              "x": 886,
+              "y": 538
+            },
+            "boardId": "board_1",
+            "calibrationRevision": 1,
+            "resolution": {
+              "status": "resolved",
+              "source": "calibrated_grid",
+              "holeId": "f10",
+              "imagePosition": {
+                "x": 889.923177454563,
+                "y": 539.9904740939179
+              },
+              "electricalGroup": "board_1:terminal-f-j-10",
+              "groupBasis": "template",
+              "snapDistancePx": 4.399239531845178
+            },
+            "electricalContact": "unknown"
+          }
+        ],
+        "endpointReview": {
+          "proposal": {
+            "id": "6264ab42-8e76-4c81-93ca-944fc00c1d74",
+            "analysisId": "13b08953-936a-474a-adf3-79f3ec0d2c34",
+            "imageId": "e3fb4b2b-968a-4870-be62-65b9866f6883",
+            "wireCandidateId": "jumper_wire_5",
+            "calibrationRevisions": {
+              "board_1": 1
+            },
+            "model": "muse-spark-1.3",
+            "diagnostics": {
+              "requestId": "b9ad431c-6acd-40e6-b7fc-a5d65ea66a07",
+              "elapsedMs": 16435,
+              "timings": [
+                {
+                  "stage": "upload",
+                  "startedAtMs": 1,
+                  "durationMs": 7,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "image.prepare",
+                  "startedAtMs": 12,
+                  "durationMs": 50,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "wire.grounding",
+                  "startedAtMs": 62,
+                  "durationMs": 82,
+                  "status": "completed",
+                  "kind": "work"
+                },
+                {
+                  "stage": "muse.endpoints",
+                  "startedAtMs": 146,
+                  "durationMs": 16288,
+                  "status": "completed",
+                  "kind": "request",
+                  "model": "muse-spark-1.3",
+                  "attempt": 1,
+                  "timeoutMs": 45000,
+                  "upstreamStatus": 200
+                }
+              ]
+            },
+            "endpoints": [
+              {
+                "role": "A",
+                "proposedImagePosition": [
+                  432,
+                  544
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "f23",
+                  "snapDistancePx": 5.528146573848934
+                },
+                "reviewStatus": "proposed"
+              },
+              {
+                "role": "B",
+                "proposedImagePosition": [
+                  898,
+                  532
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": null,
+                "reviewStatus": "proposed"
+              }
+            ],
+            "clientElapsedMs": 16591.599999999627
+          },
+          "endpoints": [
+            {
+              "role": "A",
+              "originalProposal": {
+                "role": "A",
+                "proposedImagePosition": [
+                  432,
+                  544
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": {
+                  "boardId": "board_1",
+                  "holeId": "f23",
+                  "snapDistancePx": 5.528146573848934
+                },
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                432,
+                544
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "f23",
+                "snapDistancePx": 5.528146573848934
+              },
+              "reviewStatus": "confirmed",
+              "source": "ai_user_confirmed",
+              "observation": {
+                "selectionSource": "ai_user_confirmed",
+                "inputMethod": "ai_proposal",
+                "locationVerification": "user_confirmed",
+                "selectedImagePosition": {
+                  "x": 432,
+                  "y": 544
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "f23",
+                  "imagePosition": {
+                    "x": 427.785794667476,
+                    "y": 540.4221685398437
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-23",
+                  "groupBasis": "template",
+                  "snapDistancePx": 5.528146573848934
+                },
+                "electricalContact": "unknown"
+              }
+            },
+            {
+              "role": "B",
+              "originalProposal": {
+                "role": "B",
+                "proposedImagePosition": [
+                  898,
+                  532
+                ],
+                "connectorJunctionPosition": null,
+                "evidence": "visible_insertion",
+                "proposedHole": null,
+                "reviewStatus": "proposed"
+              },
+              "finalPosition": [
+                886,
+                538
+              ],
+              "finalHole": {
+                "boardId": "board_1",
+                "holeId": "f10",
+                "snapDistancePx": 4.399239531845178
+              },
+              "reviewStatus": "corrected",
+              "source": "manual_correction",
+              "observation": {
+                "selectionSource": "manual_correction",
+                "inputMethod": "pixel_entry",
+                "locationVerification": "user_selected",
+                "selectedImagePosition": {
+                  "x": 886,
+                  "y": 538
+                },
+                "boardId": "board_1",
+                "calibrationRevision": 1,
+                "resolution": {
+                  "status": "resolved",
+                  "source": "calibrated_grid",
+                  "holeId": "f10",
+                  "imagePosition": {
+                    "x": 889.923177454563,
+                    "y": 539.9904740939179
+                  },
+                  "electricalGroup": "board_1:terminal-f-j-10",
+                  "groupBasis": "template",
+                  "snapDistancePx": 4.399239531845178
+                },
+                "electricalContact": "unknown"
+              }
+            }
+          ],
+          "pendingCorrections": [
+            null,
+            null
+          ],
+          "savedAssignmentId": "connection_1",
+          "dirty": false
+        },
+        "validity": {
+          "status": "complete",
+          "reasons": []
+        }
+      }
+    ]
+  }
+}

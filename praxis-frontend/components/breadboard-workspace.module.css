@@ -660,3 +660,28 @@
   stroke-dasharray: 3 3;
   fill: #fff6;
 }
+
+.workspace :global(.endpoint-review table) {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.workspace :global(.endpoint-review td),
+.workspace :global(.endpoint-review th) {
+  padding: 6px;
+  text-align: left;
+  border-bottom: 1px solid #d5ded4;
+}
+.workspace :global(.endpoint-diagnostics),
+.workspace :global(.refinement-experiment) {
+  margin: 10px 0;
+  padding: 10px;
+  border: 1px dashed #b7c8bc;
+  border-radius: 6px;
+}
+.workspace :global(.endpoint-experiment rect) {
+  stroke: #a13887;
+  stroke-width: 2px;
+  stroke-dasharray: 3 3;
+  fill: #a1388722;
+}

@@ -17,6 +17,7 @@ import {
   calibrateBoard,
   clientPointToImage,
   pickHole,
+  HOLE_RESOLVER_POLICY,
   registerRail,
   selectHole,
   type HoleSelection,
@@ -33,6 +34,16 @@ import {
   type EndpointCapture,
 } from "./wire-assignment-panel";
 import { WireEndpointOverlay } from "./wire-endpoint-overlay";
+import { CalibrationValidationPanel } from "./calibration-validation-panel";
+import {
+  startCalibrationAudit,
+  markCalibrationCheckpoint,
+  auditIsCurrent,
+  calibrationResiduals,
+  type CalibrationAudit,
+} from "@/lib/breadboard/validation";
+import { refinePhotographEndpoint } from "@/lib/wires/browser-refinement";
+import { REFINEMENT_POLICY } from "@/lib/wires/refinement";
 import { failureSchema } from "@/lib/diagnostics";
 import {
   serverRequestTiming,
@@ -43,6 +54,8 @@ import {
   confirmCorrection,
   confirmEndpoint,
   createProposal,
+  endpointResolutionDiagnostics,
+  boardPitchPx,
   endpointResponseSchema,
   markEndpointUnknown,
   ProposalRequestGate,
@@ -130,6 +143,10 @@ export function BreadboardWorkspace({
   const [assignments, setAssignments] = useState<WireAssignment[]>([]);
   const [capture, setCapture] = useState<EndpointCapture | null>(null);
   const [reviews, setReviews] = useState<WireEndpointReview[]>([]);
+  const [audits, setAudits] = useState<CalibrationAudit[]>([]);
+  const [activeAuditId, setActiveAuditId] = useState<string | null>(null);
+  const [auditTarget, setAuditTarget] = useState("");
+  const activeAudit = audits.find((audit) => audit.id === activeAuditId);
   const [proposing, setProposing] = useState(false);
   const [endpointRequests, setEndpointRequests] = useState<
     EndpointRequestTiming[]
@@ -191,8 +208,9 @@ export function BreadboardWorkspace({
   }, [clearPointer]);
   const board =
     boards.find((board) => board.calibration.breadboardId === activeId) ?? null;
-  const pausedReason =
-    draft || railPoints
+  const pausedReason = activeAudit
+    ? "Finish the blinded calibration check before assigning endpoints."
+    : draft || railPoints
       ? "Finish or cancel calibration before assigning endpoints."
       : !overlaysVisible
         ? "Show component overlays before picking wire endpoints."
@@ -314,7 +332,9 @@ export function BreadboardWorkspace({
         : "Calibrate a board to start mapping holes.";
   const photoInstruction = picking
     ? `Pick endpoint ${capture!.index + 1} of ${capturedReview?.proposal.wireCandidateId ?? capturedRecord!.wireCandidateId} on ${activeId}. Manual location only; contact remains unknown.`
-    : instruction;
+    : activeAudit
+      ? `Mark the physical center of ${auditTarget || "an additional terminal hole"}. Raw independent pixels only; all overlays hidden.`
+      : instruction;
 
   function startBoard(replace = false) {
     proposalGate.current.invalidate();
@@ -363,6 +383,29 @@ export function BreadboardWorkspace({
       return;
     }
     setNotice("");
+    if (activeAudit) {
+      try {
+        if (
+          !assignmentContext ||
+          !auditIsCurrent(activeAudit, assignmentContext.photoId, boards)
+        )
+          throw new Error(
+            "This calibration validation is stale. Finish and start a current check.",
+          );
+        const updated = markCalibrationCheckpoint(
+          activeAudit,
+          auditTarget,
+          point,
+        );
+        setAudits((current) =>
+          current.map((audit) => (audit.id === updated.id ? updated : audit)),
+        );
+        setAuditTarget("");
+      } catch (error) {
+        setNotice(message(error));
+      }
+      return;
+    }
     if (picking && capturedReview && capture && assignmentContext && board) {
       updateReview(capturedReview, (review) =>
         stageCorrection(
@@ -848,6 +891,122 @@ export function BreadboardWorkspace({
     }
   }
 
+  function beginCalibrationAudit() {
+    if (!board || !assignmentContext || disabled || draft || railPoints) return;
+    proposalGate.current.invalidate();
+    proposalRequest.current?.abort();
+    const audit = startCalibrationAudit(
+      crypto.randomUUID(),
+      assignmentContext.photoId,
+      board,
+    );
+    setAudits((current) => [...current, audit]);
+    setActiveAuditId(audit.id);
+    setAuditTarget("");
+    setCapture(null);
+    setSelected(null);
+    setNotice("");
+  }
+  function runRefinement(index: 0 | 1) {
+    if (
+      !visibleReview ||
+      !photoRef.current ||
+      !assignmentContext ||
+      disabled ||
+      pausedReason ||
+      proposalValidity(visibleReview.proposal, assignmentContext, boards)
+        .status === "stale"
+    )
+      return;
+    const original = visibleReview.endpoints[index].originalProposal;
+    const wire = wireCandidate(
+      assignmentContext,
+      visibleReview.proposal.wireCandidateId,
+    );
+    if (
+      !wire ||
+      !original.proposedImagePosition ||
+      original.evidence !== "visible_insertion"
+    )
+      return;
+    try {
+      const result = refinePhotographEndpoint(
+        photoRef.current,
+        wire,
+        {
+          x: original.proposedImagePosition[0],
+          y: original.proposedImagePosition[1],
+        },
+        Math.max(...boards.map(boardPitchPx)) * 1.5,
+      );
+      const resolutionDiagnostics = result.refinedPosition
+        ? endpointResolutionDiagnostics(
+            [result.refinedPosition.x, result.refinedPosition.y],
+            original.evidence,
+            boards,
+          )
+        : undefined;
+      updateReview(visibleReview, (review) => ({
+        ...review,
+        dirty: true,
+        refinementExperiments: {
+          ...review.refinementExperiments,
+          [original.role]: {
+            ...result,
+            ...(resolutionDiagnostics ? { resolutionDiagnostics } : {}),
+          },
+        },
+      }));
+    } catch (error) {
+      setNotice(message(error));
+    }
+  }
+  async function exportEvaluationBundle() {
+    if (!imageFile || !assignmentContext) return;
+    try {
+      const bytes = await imageFile.arrayBuffer();
+      const hash = Array.from(
+        new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("");
+      const bundle = {
+        schemaVersion: "praxis-evaluation-v1",
+        resolverPolicy: HOLE_RESOLVER_POLICY,
+        refinementPolicy: REFINEMENT_POLICY,
+        image: {
+          id: assignmentContext.photoId,
+          filename: imageFile.name,
+          sha256: hash,
+          ...image,
+        },
+        analysisRunId: assignmentContext.analysisRunId,
+        analysis: assignmentContext.analysis,
+        boards,
+        reviews,
+        assignments,
+        calibrationAudits: audits.map((audit) => ({
+          ...audit,
+          current: auditIsCurrent(audit, assignmentContext.photoId, boards),
+          residuals: calibrationResiduals(audit.checkpoints),
+        })),
+        notes:
+          "Archive the original image separately. SAM masks are retained in analysis. Refinement is experimental; original proposals and user decisions remain separate.",
+      };
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(bundle, null, 2)], {
+          type: "application/json",
+        }),
+      );
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "praxis-evaluation-bundle.json";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      setNotice(message(error));
+    }
+  }
+
   return (
     <>
       <div className="breadboard-toolbar">
@@ -860,7 +1019,7 @@ export function BreadboardWorkspace({
             <button
               type="button"
               className="button button-secondary"
-              disabled={disabled || !!draft || !!railPoints}
+              disabled={disabled || !!draft || !!railPoints || !!activeAudit}
               aria-pressed={enabled}
               onClick={() => {
                 setCapture(null);
@@ -874,7 +1033,7 @@ export function BreadboardWorkspace({
             <button
               type="button"
               className="button button-secondary"
-              disabled={disabled || boards.length >= 4}
+              disabled={disabled || boards.length >= 4 || !!activeAudit}
               onClick={() => startBoard()}
             >
               Calibrate {boards.length ? "another board" : "a board"}
@@ -951,18 +1110,20 @@ export function BreadboardWorkspace({
             className="workspace-photo"
             draggable="false"
           />
-          {children}
-          {(enabled || picking) && !disabled && (
+          {!activeAudit && children}
+          {(enabled || picking || activeAudit) && !disabled && (
             <>
-              <BreadboardOverlay
-                calibration={calibration}
-                rails={rails}
-                selected={selected}
-                anchors={anchors}
-                anchorLabels={anchorLabels}
-                activeAnchor={editingReference}
-                image={image}
-              />
+              {!activeAudit && (
+                <BreadboardOverlay
+                  calibration={calibration}
+                  rails={rails}
+                  selected={selected}
+                  anchors={anchors}
+                  anchorLabels={anchorLabels}
+                  activeAnchor={editingReference}
+                  image={image}
+                />
+              )}
               <button
                 type="button"
                 className="hole-hit-surface"
@@ -988,7 +1149,7 @@ export function BreadboardWorkspace({
               />
             </>
           )}
-          {visibleAssignment && !visibleReview && !disabled && (
+          {!activeAudit && visibleAssignment && !visibleReview && !disabled && (
             <WireEndpointOverlay
               assignment={visibleAssignment}
               image={image}
@@ -999,7 +1160,8 @@ export function BreadboardWorkspace({
               )}
             />
           )}
-          {visibleReview &&
+          {!activeAudit &&
+            visibleReview &&
             assignmentContext &&
             overlaysVisible &&
             !disabled && (
@@ -1021,7 +1183,55 @@ export function BreadboardWorkspace({
             )}
         </div>
       </div>
+      {boards.length > 0 && assignmentContext && (
+        <>
+          <CalibrationValidationPanel
+            photoId={assignmentContext.photoId}
+            boards={boards}
+            activeBoard={board}
+            audits={audits}
+            activeAuditId={activeAuditId}
+            target={auditTarget}
+            disabled={disabled || !!draft || !!railPoints}
+            onStart={beginCalibrationAudit}
+            onTarget={setAuditTarget}
+            onMark={acceptPoint}
+            onFinish={() => {
+              setActiveAuditId(null);
+              setNotice("");
+            }}
+            onRemove={(id, hole) =>
+              setAudits((current) =>
+                current.map((audit) =>
+                  audit.id === id
+                    ? {
+                        ...audit,
+                        checkpoints: audit.checkpoints.filter(
+                          (checkpoint) => checkpoint.holeId !== hole,
+                        ),
+                      }
+                    : audit,
+                ),
+              )
+            }
+          />
+          {activeAudit && notice && (
+            <p className="calibration-notice" role="status">
+              {notice}
+            </p>
+          )}
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={disabled || !!activeAudit}
+            onClick={() => void exportEvaluationBundle()}
+          >
+            Export evaluation bundle
+          </button>
+        </>
+      )}
       {assignmentContext &&
+        !activeAudit &&
         (assignmentContext.analysis || assignments.length > 0) && (
           <>
             <WireAssignmentPanel
@@ -1040,6 +1250,7 @@ export function BreadboardWorkspace({
               onBoard={changeBoard}
               onPoint={acceptPoint}
               review={visibleReview}
+              onRefine={runRefinement}
               proposing={proposing}
               requestTiming={visibleRequestTiming}
               onCancelProposal={() => {
@@ -1110,7 +1321,7 @@ export function BreadboardWorkspace({
             )}
           </>
         )}
-      {enabled && (
+      {enabled && !activeAudit && (
         <section
           className="calibration-panel"
           aria-label="Breadboard calibration"

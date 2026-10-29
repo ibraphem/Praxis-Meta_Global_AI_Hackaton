@@ -47,8 +47,30 @@ export function WireEndpointOverlay({
           const p =
             snapped ?? (position ? { x: position[0], y: position[1] } : null);
           const pending = review.pendingCorrections[index];
+          const experiment =
+            review.refinementExperiments?.[endpoint.role]?.refinedPosition;
           return (
             <g key={endpoint.role}>
+              {experiment && (
+                <g className="endpoint-experiment">
+                  <rect
+                    x={experiment.x - radius * 0.7}
+                    y={experiment.y - radius * 0.7}
+                    width={radius * 1.4}
+                    height={radius * 1.4}
+                    transform={`rotate(45 ${experiment.x} ${experiment.y})`}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                  <text
+                    x={experiment.x + radius}
+                    y={Math.max(radius * 2, experiment.y - radius)}
+                    fontSize={Math.max(image.width, image.height) / 65}
+                  >
+                    {endpoint.role} experiment
+                  </text>
+                  <title>{`Endpoint ${endpoint.role}: experimental wire-tip pixels only; physical insertion and electrical contact unverified`}</title>
+                </g>
+              )}
               {junction && (
                 <g className="endpoint-junction">
                   <rect

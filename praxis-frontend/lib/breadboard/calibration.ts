@@ -68,7 +68,28 @@ export interface HoleSelection {
 
 const COLUMNS = "abcdefghij";
 const GRID_WIDTH = 11;
-const SNAP_RADIUS = 0.32; // Less than half a hole pitch; never snap across a gap.
+export const HOLE_RESOLVER_POLICY = Object.freeze({
+  version: "calibrated-grid-v1",
+  snapRadiusPitch: 0.32,
+  ambiguityMarginPitch: 0.12,
+});
+export interface HoleCandidateDiagnostic {
+  holeId: string;
+  imagePosition: Point;
+  normalizedDistance: number;
+  distancePx: number;
+}
+export interface HoleDiagnosis {
+  reason:
+    | "accepted"
+    | "invalid_position"
+    | "no_holes"
+    | "outside_snap_radius"
+    | "ambiguous_candidates";
+  candidates: HoleCandidateDiagnostic[];
+  ambiguityMargin: number | null;
+  policy: typeof HOLE_RESOLVER_POLICY;
+}
 const finitePoint = (p: Point) => Number.isFinite(p.x) && Number.isFinite(p.y);
 const inImage = (p: Point, image: ImageSize) =>
   finitePoint(p) &&
@@ -394,18 +415,24 @@ export function selectHole(
   };
 }
 /** Reject background, center-channel and between-hole clicks rather than inventing a match. */
-export function pickHole(
+/** Candidate ranking is an observation, never acceptance by itself. */
+export function diagnoseHole(
   calibration: Calibration,
   rails: Rail[],
   pixel: Point,
-  source: "image_click" | "pixel_entry" = "image_click",
-): HoleSelection | null {
-  if (!inImage(pixel, calibration.image)) return null;
+): HoleDiagnosis {
+  const rejected = (reason: HoleDiagnosis["reason"]): HoleDiagnosis => ({
+    reason,
+    candidates: [],
+    ambiguityMargin: null,
+    policy: HOLE_RESOLVER_POLICY,
+  });
+  if (!inImage(pixel, calibration.image)) return rejected("invalid_position");
   let grid: Point;
   try {
     grid = unproject(calibration, pixel);
   } catch {
-    return null;
+    return rejected("invalid_position");
   }
   const nearest = allHoles(calibration, rails)
     .map((hole) => ({
@@ -413,11 +440,44 @@ export function pickHole(
       distance: Math.hypot(grid.x - hole.grid.x, grid.y - hole.grid.y),
     }))
     .sort((a, b) => a.distance - b.distance);
-  if (
-    !nearest[0] ||
-    nearest[0].distance > SNAP_RADIUS ||
-    (nearest[1] && nearest[1].distance - nearest[0].distance < 0.12)
-  )
-    return null;
-  return selectHole(calibration, rails, nearest[0].hole, source);
+  if (!nearest[0]) return rejected("no_holes");
+  const ambiguityMargin = nearest[1]
+    ? nearest[1].distance - nearest[0].distance
+    : null;
+  return {
+    reason:
+      nearest[0].distance > HOLE_RESOLVER_POLICY.snapRadiusPitch
+        ? "outside_snap_radius"
+        : ambiguityMargin !== null &&
+            ambiguityMargin < HOLE_RESOLVER_POLICY.ambiguityMarginPitch
+          ? "ambiguous_candidates"
+          : "accepted",
+    policy: HOLE_RESOLVER_POLICY,
+    ambiguityMargin,
+    candidates: nearest.slice(0, 2).map(({ hole, distance }) => {
+      const imagePosition = project(calibration, hole.grid);
+      return {
+        holeId: hole.id,
+        imagePosition,
+        normalizedDistance: distance,
+        distancePx: Math.hypot(
+          pixel.x - imagePosition.x,
+          pixel.y - imagePosition.y,
+        ),
+      };
+    }),
+  };
+}
+export function pickHole(
+  calibration: Calibration,
+  rails: Rail[],
+  pixel: Point,
+  source: "image_click" | "pixel_entry" = "image_click",
+): HoleSelection | null {
+  const diagnosis = diagnoseHole(calibration, rails, pixel);
+  if (diagnosis.reason !== "accepted") return null;
+  const hole = allHoles(calibration, rails).find(
+    (hole) => hole.id === diagnosis.candidates[0].holeId,
+  )!;
+  return selectHole(calibration, rails, hole, source);
 }

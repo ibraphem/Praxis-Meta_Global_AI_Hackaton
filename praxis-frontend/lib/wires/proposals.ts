@@ -1,6 +1,16 @@
 import { z } from "zod";
 import { diagnosticsSchema } from "../diagnostics";
-import type { Point } from "../breadboard/calibration";
+import {
+  diagnoseHole,
+  project,
+  type Point,
+  type HoleDiagnosis,
+} from "../breadboard/calibration";
+import {
+  spatialConsistency,
+  type WireConsistency,
+} from "./spatial-consistency";
+import type { RefinementResult } from "./refinement";
 import {
   assignmentValidity,
   createAssignment,
@@ -64,6 +74,57 @@ export interface EndpointProposal extends z.infer<
 > {
   proposedHole: ResolvedHole | null;
   reviewStatus: "proposed";
+  resolutionDiagnostics?: EndpointResolutionDiagnostics;
+}
+export interface EndpointResolutionDiagnostics {
+  decision: "accepted" | "rejected";
+  reason:
+    | "accepted"
+    | "no_visible_insertion"
+    | "no_calibrated_board"
+    | "no_strict_match"
+    | "multiple_boards_match";
+  boards: {
+    boardId: string;
+    calibrationRevision: number;
+    diagnosis: HoleDiagnosis;
+  }[];
+}
+export function endpointResolutionDiagnostics(
+  position: [number, number] | null,
+  evidence: string,
+  boards: CalibratedBoard[],
+): EndpointResolutionDiagnostics {
+  if (!position || evidence !== "visible_insertion")
+    return { decision: "rejected", reason: "no_visible_insertion", boards: [] };
+  const results = boards.map((board) => ({
+    boardId: board.calibration.breadboardId,
+    calibrationRevision: board.revision,
+    diagnosis: diagnoseHole(board.calibration, board.rails, {
+      x: position[0],
+      y: position[1],
+    }),
+  }));
+  const count = results.filter(
+    (result) => result.diagnosis.reason === "accepted",
+  ).length;
+  return {
+    decision: count === 1 ? "accepted" : "rejected",
+    reason: !boards.length
+      ? "no_calibrated_board"
+      : count === 1
+        ? "accepted"
+        : count > 1
+          ? "multiple_boards_match"
+          : "no_strict_match",
+    boards: results,
+  };
+}
+export function boardPitchPx(board: CalibratedBoard) {
+  const center = { x: 4, y: (board.calibration.rows - 1) / 2 },
+    a = project(board.calibration, center),
+    b = project(board.calibration, { x: center.x + 1, y: center.y });
+  return Math.max(2, Math.hypot(a.x - b.x, a.y - b.y));
 }
 export interface WireEndpointProposal {
   id: string;
@@ -75,6 +136,7 @@ export interface WireEndpointProposal {
   diagnostics?: z.infer<typeof diagnosticsSchema>;
   clientElapsedMs?: number;
   endpoints: [EndpointProposal, EndpointProposal];
+  spatialConsistency?: WireConsistency;
 }
 export interface ReviewedEndpoint {
   role: EndpointRole;
@@ -92,6 +154,14 @@ export interface WireEndpointReview {
   pendingCorrections: [ManualEndpoint | null, ManualEndpoint | null];
   savedAssignmentId: string | null;
   dirty: boolean;
+  refinementExperiments?: Partial<
+    Record<
+      EndpointRole,
+      RefinementResult & {
+        resolutionDiagnostics?: EndpointResolutionDiagnostics;
+      }
+    >
+  >;
 }
 export function calibrationRevisions(boards: CalibratedBoard[]) {
   return Object.fromEntries(
@@ -204,6 +274,11 @@ export function createProposal(
       ...endpoint,
       proposedHole: matches.length === 1 ? holeOf(matches[0]) : null,
       reviewStatus: "proposed",
+      resolutionDiagnostics: endpointResolutionDiagnostics(
+        position,
+        endpoint.evidence,
+        boards,
+      ),
     };
   }) as [EndpointProposal, EndpointProposal];
   return {
@@ -215,6 +290,18 @@ export function createProposal(
     model: data.model,
     ...(data.diagnostics ? { diagnostics: data.diagnostics } : {}),
     endpoints,
+    spatialConsistency: spatialConsistency(
+      wireCandidate(context, data.wireCandidateId)!,
+      endpoints.map((endpoint) =>
+        endpoint.proposedImagePosition
+          ? {
+              x: endpoint.proposedImagePosition[0],
+              y: endpoint.proposedImagePosition[1],
+            }
+          : null,
+      ) as [Point | null, Point | null],
+      2 * Math.max(...boards.map(boardPitchPx)),
+    ),
   };
 }
 export function startReview(

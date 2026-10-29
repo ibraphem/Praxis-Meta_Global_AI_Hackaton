@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { EndpointRequestTiming } from "./endpoint-request-timing";
+import { EndpointResolutionDiagnosticsPanel } from "./endpoint-resolution-diagnostics";
 import type { EndpointRequestTiming as RequestTiming } from "@/lib/wires/request-timing";
 import { componentLabel } from "@/lib/vision";
 import {
@@ -56,6 +57,7 @@ interface Props {
   onCorrectionCancel?: (index: EndpointIndex) => void;
   onReviewSave?: () => void;
   onReopen?: (record: WireAssignment) => void;
+  onRefine?: (index: EndpointIndex) => void;
 }
 export function endpointLabel(endpoint: ManualEndpoint | null) {
   return endpoint
@@ -169,6 +171,16 @@ export function WireAssignmentPanel(props: Props) {
             )}{" "}
             · endpoint review
           </h4>
+          {review.proposal.spatialConsistency?.status === "review_needed" && (
+            <p className="calibration-notice" role="status">
+              Spatial review needed:{" "}
+              {review.proposal.spatialConsistency.reasons
+                .join(", ")
+                .replaceAll("_", " ")}
+              . Mask proximity is advisory; exposed leads may extend outside the
+              insulation mask. Wire identity remains unverified.
+            </p>
+          )}
           <p className="endpoint-limits">
             Dashed amber: proposed · Green: reviewed · Purple: correction
             preview · Gray squares: junction references · ?: unknown
@@ -205,6 +217,56 @@ export function WireAssignmentPanel(props: Props) {
                     {" · "}
                     {original.evidence.replaceAll("_", " ")}
                   </p>
+                  {original.resolutionDiagnostics && (
+                    <EndpointResolutionDiagnosticsPanel
+                      diagnostics={original.resolutionDiagnostics}
+                    />
+                  )}
+                  {props.onRefine && (
+                    <details className="refinement-experiment">
+                      <summary>Local pixel refinement experiment</summary>
+                      <p>
+                        This opt-in local experiment examines original image
+                        pixels and the selected mask. It can suggest a wire-tip
+                        boundary, not verify a physical insertion. Original
+                        proposals and reviewed endpoints are preserved.
+                      </p>
+                      <button
+                        type="button"
+                        className="button button-secondary"
+                        disabled={
+                          reviewDisabled ||
+                          original.evidence !== "visible_insertion" ||
+                          !original.proposedImagePosition
+                        }
+                        onClick={() => props.onRefine?.(i)}
+                      >
+                        Experimentally refine endpoint {endpoint.role}
+                      </button>
+                      {review.refinementExperiments?.[endpoint.role] && (
+                        <>
+                          <p role="status">
+                            Experiment:{" "}
+                            {review.refinementExperiments[
+                              endpoint.role
+                            ]!.status.replaceAll("_", " ")}{" "}
+                            ·{" "}
+                            {review.refinementExperiments[
+                              endpoint.role
+                            ]!.reason.replaceAll("_", " ")}{" "}
+                            · insertion unverified
+                          </p>
+                          <pre>
+                            {JSON.stringify(
+                              review.refinementExperiments[endpoint.role],
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </>
+                      )}
+                    </details>
+                  )}
                   {original.connectorJunctionPosition && (
                     <p>
                       Visible connector junction: (

@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "benchmark:replay": "node --import tsx scripts/replay-endpoints.ts",
+    "benchmark:refine": "node --import tsx scripts/evaluate-refinement.mts"
   },
   "dependencies": {
     "next": "16.4.3",
