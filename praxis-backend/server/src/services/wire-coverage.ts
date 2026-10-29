@@ -1,3 +1,4 @@
+import { reconcileWireReviews } from './wire-review-reconciliation.js';
 import sharp from 'sharp';
 import { createHash } from 'node:crypto';
 import { decodeMaskToRaster } from '@meta-sam/parser';
@@ -10,7 +11,7 @@ import type {
 } from '../schemas/wire-recovery.js';
 import {
   recoveryReportSchema,
-  latestIdentityReviews,
+  effectiveIdentityReviews,
 } from '../schemas/wire-recovery.js';
 import { inspectWire } from './wire-inspection.js';
 import { WireGeometry } from './wire-geometry.js';
@@ -328,6 +329,7 @@ export async function auditWireCoverage(
   ref: SnapshotRef,
   reviews: WireIdentity[] = [],
   maxDimension = 1280,
+  previous?: RecoveryReport,
 ): Promise<RecoveryReport> {
   const image = { width: snapshot.image.width, height: snapshot.image.height };
   const { data, info } = await sharp(
@@ -343,6 +345,11 @@ export async function auditWireCoverage(
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+  const imageEvidenceHash = createHash('sha256')
+    .update(ref.imageHash)
+    .update(`${image.width}x${image.height}:`)
+    .update(snapshot.image.dataUrl)
+    .digest('hex');
   const raw = snapshot.candidates.filter((c) => c.type === 'jumper_wire'),
     geometry = new WireGeometry(image),
     candidates: RecoveryCandidate[] = [],
@@ -354,11 +361,6 @@ export async function auditWireCoverage(
   const reportId = createHash('sha256')
     .update('wire-coverage-v1:' + ref.samSnapshotHash + ':' + maxDimension)
     .digest('hex');
-  const verifiedIds = new Set(
-    latestIdentityReviews(reviews, reportId)
-      .filter((r) => r.state === 'verified')
-      .flatMap((r) => r.candidateIds),
-  );
   for (const c of raw) {
     const accepted = geometry.resolve(c);
     const mask = c.encodedMask;
@@ -391,7 +393,6 @@ export async function auditWireCoverage(
                   ),
                 );
               if (accepted.ok) coverage[gy * info.width + gx] = 1;
-              if (verifiedIds.has(c.id)) verified[gy * info.width + gx] = 1;
             }
       } catch {
         inspection = {
@@ -425,7 +426,7 @@ export async function auditWireCoverage(
         topologyScale: inspection.topologyScale,
       },
       candidateCoverage: accepted.ok ? 1 : 0,
-      verifiedCoverage: verifiedIds.has(c.id) ? 1 : 0,
+      verifiedCoverage: 0,
       touchesImageBoundary:
         c.bbox[0] <= 1 ||
         c.bbox[1] <= 1 ||
@@ -438,6 +439,20 @@ export async function auditWireCoverage(
       inspection.preview &&
       paths + inspection.preview.path.length <= 120000
     ) {
+      if (mask)
+        candidate.evidenceHash = createHash('sha256')
+          .update(
+            JSON.stringify([
+              imageEvidenceHash,
+              'native-mask-v1',
+              c.bbox,
+              mask.width,
+              mask.height,
+              mask.encoding,
+              mask.payload,
+            ]),
+          )
+          .digest('hex');
       candidate.mask = inspection.preview;
       paths += candidate.mask.path.length;
     }
@@ -470,10 +485,18 @@ export async function auditWireCoverage(
     trace.candidateCoverage =
       trace.points.filter((p) => hit(coverage, p)).length /
       Math.max(1, trace.points.length);
-    trace.verifiedCoverage =
-      trace.points.filter((p) => hit(verified, p)).length /
-      Math.max(1, trace.points.length);
-    if (verifiedIds.has(trace.id)) trace.verifiedCoverage = 1;
+    trace.evidenceHash = createHash('sha256')
+      .update(
+        JSON.stringify([
+          imageEvidenceHash,
+          'cv-trace-v1',
+          maxDimension,
+          trace.bbox,
+          trace.points,
+          trace.color,
+        ]),
+      )
+      .digest('hex');
     candidates.push(trace);
   }
   const hypotheses: RecoveryReport['hypotheses'] = [];
@@ -503,7 +526,7 @@ export async function auditWireCoverage(
           status: 'unverified',
         });
     }
-  return recoveryReportSchema.parse({
+  const report: RecoveryReport = {
     version: 'wire-coverage-v1',
     reportId,
     sourceSnapshotId: ref.samSnapshotId,
@@ -528,5 +551,66 @@ export async function auditWireCoverage(
     stopReason: 'audit_only',
     modelReviews: [],
     hypotheses,
-  });
+  };
+  report.reviewReconciliation = previous
+    ? reconcileWireReviews(previous, report, reviews)
+    : [];
+  if (previous?.reportId === report.reportId)
+    report.modelReviews = previous.modelReviews;
+  const verifiedIds = new Set(
+    effectiveIdentityReviews(reviews, report)
+      .filter((r) => r.state === 'verified')
+      .flatMap((r) => r.candidateIds),
+  );
+  let verifiedPixels = 0;
+  for (const c of raw) {
+    const m = c.encodedMask;
+    if (
+      !m ||
+      !verifiedIds.has(c.id) ||
+      !candidates.find((n) => n.id === c.id)?.evidenceHash ||
+      verifiedPixels + m.width * m.height > 12000000
+    )
+      continue;
+    verifiedPixels += m.width * m.height;
+    try {
+      const raster = decodeMaskToRaster(m);
+      for (let y = 0; y < m.height; y++)
+        for (let x = 0; x < m.width; x++)
+          if (raster[y * m.width + x]) {
+            const gx = Math.min(
+              info.width - 1,
+              Math.floor(
+                ((c.bbox[0] + ((x + 0.5) * c.bbox[2]) / m.width) * info.width) /
+                  image.width,
+              ),
+            );
+            const gy = Math.min(
+              info.height - 1,
+              Math.floor(
+                ((c.bbox[1] + ((y + 0.5) * c.bbox[3]) / m.height) *
+                  info.height) /
+                  image.height,
+              ),
+            );
+            verified[gy * info.width + gx] = 1;
+          }
+    } catch {
+      verifiedIds.delete(c.id);
+    }
+  }
+  for (const c of candidates)
+    c.verifiedCoverage =
+      c.source === 'cv_trace'
+        ? verifiedIds.has(c.id)
+          ? 1
+          : c.points.filter((p) => hit(verified, p)).length /
+            Math.max(1, c.points.length)
+        : verifiedIds.has(c.id) && c.evidenceHash
+          ? 1
+          : 0;
+  report.summary.unverifiedTraces = cv.candidates.filter(
+    (c) => c.verifiedCoverage < 0.8,
+  ).length;
+  return recoveryReportSchema.parse(report);
 }

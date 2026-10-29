@@ -6,7 +6,11 @@ import {
   retryStage,
 } from "../lib/analysis-jobs";
 import { createAnalysisJobProxy } from "../lib/server/analysis-job-proxy";
-import { recoveryReportSchema, wireIdentitySchema } from "../lib/wire-recovery";
+import {
+  recoveryReportSchema,
+  wireIdentitySchema,
+  effectiveIdentityReviews,
+} from "../lib/wire-recovery";
 import { completedJob } from "./fixtures/analysis-job";
 import { recoveryReport } from "./fixtures/wire-recovery";
 
@@ -127,4 +131,76 @@ test("recovery proxy forwards bounded JSON to fixed actions and validates the sa
   );
   assert.equal(oversized.status, 413);
   assert.equal(calls.length, before);
+});
+
+test("carried reviews keep human provenance and are superseded by explicit current decisions", () => {
+  const j = job(),
+    report = j.recovery!.report!;
+  const source = {
+    reviewId: j.sam.attempts[0]!.attemptId,
+    reportId: "3".repeat(64),
+    candidateIds: ["jumper_wire_8"],
+    state: "verified" as const,
+    note: "independent inspection",
+    reviewSource: "human" as const,
+    reviewedAt: 1,
+    electricalConnectionStatus: "unestablished" as const,
+  };
+  report.reviewReconciliation = [
+    {
+      sourceReviewId: source.reviewId,
+      sourceReportId: source.reportId,
+      sourceCandidateIds: source.candidateIds,
+      candidateIds: ["jumper_wire_1"],
+      status: "carried",
+      reason: "unchanged_evidence",
+    },
+  ];
+  j.wireIdentities = [source];
+  const carried = effectiveIdentityReviews(j.wireIdentities, report);
+  assert.equal(carried[0]!.reviewedAt, 1);
+  assert.equal(carried[0]!.inheritedFromReportId, source.reportId);
+  assert.deepEqual(carried[0]!.candidateIds, ["jumper_wire_1"]);
+  const direct = {
+    ...source,
+    reviewId: j.muse.attempts[0]!.attemptId,
+    reportId: report.reportId,
+    candidateIds: ["jumper_wire_1"],
+    state: "uncertain" as const,
+  };
+  assert.deepEqual(effectiveIdentityReviews([source, direct], report), [
+    direct,
+  ]);
+  report.reviewReconciliation[0]!.status = "needs_review";
+  assert.equal(effectiveIdentityReviews([source], report).length, 0);
+  assert.equal(analysisJobSchema.safeParse(j).success, true);
+});
+
+test("saved crop outcomes including interrupted and legacy unknown records pass through the proxy", async () => {
+  const j = job();
+  j.recovery!.cropAttempts = ["timed_out", "interrupted", "legacy_unknown"].map(
+    (status, i) => ({
+      attemptId: [
+        j.analysisId,
+        j.sam.attempts[0]!.attemptId,
+        j.muse.attempts[0]!.attemptId,
+      ][i]!,
+      region: [0, 0, 100, 80],
+      status: status as "timed_out" | "interrupted" | "legacy_unknown",
+      upstreamOutcome: "unknown",
+      startedAt: 1,
+    }),
+  );
+  j.recovery!.report!.stopReason = "blocked_regions";
+  const proxy = createAnalysisJobProxy({
+    fetcher: async () => Response.json(j),
+  });
+  const response = await proxy(
+    new Request("http://localhost/api/analyses"),
+    "get",
+    j.analysisId,
+  );
+  assert.equal(response.status, 200);
+  const decoded = analysisJobSchema.parse(await response.json());
+  assert.deepEqual(decoded.recovery!.cropAttempts, j.recovery!.cropAttempts);
 });

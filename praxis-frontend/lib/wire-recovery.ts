@@ -8,6 +8,10 @@ export const recoveryCandidateSchema = z
   .object({
     id: z.string().regex(/^(jumper_wire|cv_trace)_[1-9]\d*$/),
     source: z.enum(["sam_full", "sam_crop", "cv_trace"]),
+    evidenceHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     bbox: boxSchema,
     points: z.array(point).max(128),
     mask: maskSchema.optional(),
@@ -72,6 +76,47 @@ export const wireModelReviewSchema = z
     elapsedMs: z.number().nonnegative(),
   })
   .strict();
+export const cropAttemptSchema = z
+  .object({
+    attemptId: z.uuid(),
+    region: boxSchema,
+    status: z.enum([
+      "running",
+      "succeeded",
+      "failed",
+      "timed_out",
+      "interrupted",
+      "legacy_unknown",
+    ]),
+    upstreamOutcome: z.enum(["not_sent", "unknown", "response_received"]),
+    sourceSnapshotId: z.uuid().optional(),
+    sourceSnapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    startedAt: z.number().int().nonnegative(),
+    finishedAt: z.number().int().nonnegative().optional(),
+    errorCode: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+      .optional(),
+  })
+  .strict();
+const reconciliationSchema = z
+  .object({
+    sourceReviewId: z.uuid(),
+    sourceReportId: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceCandidateIds: z.array(z.string().max(64)).min(1).max(8),
+    candidateIds: z.array(z.string().max(64)).max(8),
+    status: z.enum(["carried", "needs_review"]),
+    reason: z.enum([
+      "unchanged_evidence",
+      "changed_evidence",
+      "missing_evidence",
+      "conflicting_evidence",
+    ]),
+  })
+  .strict();
 export const recoveryReportSchema = z
   .object({
     version: z.literal("wire-coverage-v1"),
@@ -98,6 +143,7 @@ export const recoveryReportSchema = z
       })
       .strict(),
     cropRegions: z.array(boxSchema).max(9),
+    reviewReconciliation: z.array(reconciliationSchema).max(100).optional(),
     stopReason: z.enum([
       "audit_only",
       "no_actionable_regions",
@@ -108,6 +154,7 @@ export const recoveryReportSchema = z
       "provider_timeout",
       "provider_error",
       "candidate_budget",
+      "blocked_regions",
     ]),
     modelReviews: z.array(wireModelReviewSchema).max(16),
     hypotheses: z
@@ -148,6 +195,8 @@ export type RecoveryReport = z.infer<typeof recoveryReportSchema>;
 export type RecoveryCandidate = z.infer<typeof recoveryCandidateSchema>;
 export type WireIdentity = z.infer<typeof wireIdentitySchema>;
 export type WireModelReview = z.infer<typeof wireModelReviewSchema>;
+export type CropAttempt = z.infer<typeof cropAttemptSchema>;
+export type ReviewReconciliation = z.infer<typeof reconciliationSchema>;
 
 export function latestIdentityReviews(
   reviews: WireIdentity[],
@@ -161,4 +210,38 @@ export function latestIdentityReviews(
     review.candidateIds.forEach((id) => seen.add(id));
   }
   return current;
+}
+
+/** Derived context keeps the original human decision and provenance; it is not a new human review. */
+export function effectiveIdentityReviews(
+  reviews: WireIdentity[],
+  report: RecoveryReport,
+): (WireIdentity & { inheritedFromReportId?: string })[] {
+  const explicit = latestIdentityReviews(reviews, report.reportId);
+  const occupied = new Set(explicit.flatMap((r) => r.candidateIds));
+  const carried = (report.reviewReconciliation ?? [])
+    .filter((r) => r.status === "carried")
+    .flatMap((link) => {
+      const source = reviews.find(
+        (r) =>
+          r.reviewId === link.sourceReviewId &&
+          r.reportId === link.sourceReportId,
+      );
+      if (
+        !source ||
+        !link.candidateIds.length ||
+        link.candidateIds.some((id) => occupied.has(id))
+      )
+        return [];
+      link.candidateIds.forEach((id) => occupied.add(id));
+      return [
+        {
+          ...source,
+          reportId: report.reportId,
+          candidateIds: link.candidateIds,
+          inheritedFromReportId: source.reportId,
+        },
+      ];
+    });
+  return [...explicit, ...carried];
 }

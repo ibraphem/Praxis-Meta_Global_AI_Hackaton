@@ -124,16 +124,13 @@ export function evaluateWires(
   for (const wire of truth.wires) {
     const groups = evaluation.groups.filter((g) => g.truthWireId === wire.id);
     if (groups.some((g) => g.matchKind === 'whole_wire')) detected++;
-    const verified = groups.filter(
-      (g) => g.identityAccepted && g.matchKind === 'whole_wire',
-    );
-    if (verified.length) identityCorrect++;
     duplicates += Math.max(0, groups.length - 1);
     // Multiple competing identities cannot be cherry-picked for endpoint correctness.
     const group =
       groups.length === 1 && groups[0]!.matchKind === 'whole_wire'
         ? groups[0]
         : undefined;
+    if (group?.identityAccepted) identityCorrect++;
     let both = true;
     for (let i = 0; i < 2; i++) {
       const target = wire.endpoints[i]!,
@@ -193,7 +190,7 @@ export function evaluateWires(
     precision = ratio(identityCorrect, acceptedIdentities),
     accuracy = ratio(correct, visible);
   return {
-    version: 'wire-score-v1',
+    version: 'wire-score-v2',
     imageHash,
     reportId: report.reportId,
     sourceSnapshotHash: report.sourceSnapshotHash,

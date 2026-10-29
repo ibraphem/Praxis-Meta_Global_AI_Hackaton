@@ -787,6 +787,10 @@ SAM/Muse call. Calibration and existing endpoint reviews are separate from this 
    crops around incomplete regions. It does not send every tile. Requests, crop pixels,
    rounds, stop reasons, and truncation are visible. A failed crop preserves earlier
    evidence and consumes its budget; timeout does not prove upstream work stopped.
+   **Crop inspection outcomes** distinguishes successful inspections from failed,
+   timed-out, interrupted, and legacy unknown attempts. Previously attempted regions
+   remain blocked from redispatch, and budgets are not refunded. A `blocked regions`
+   result means uninspected regions remain, not that coverage is complete.
 3. Select a candidate with a mask and choose **Ask Muse to verify candidate** for one
    focused photo/mask/context request. Multiple wires, fragments, hidden insertions,
    and uncertainty remain explicit. Muse results cannot create human review decisions.
@@ -801,7 +805,11 @@ SAM/Muse call. Calibration and existing endpoint reviews are separate from this 
 
 Native recovery IDs refer to raw checkpoint evidence and may differ from numbered
 objects in the main interpretation. Identity decisions are tied to the report's
-snapshot and become historical after evidence changes. Candidate coverage uses the
+snapshot. On new checkpoints, only uniquely matching unchanged image/mask or trace
+fingerprints without new conflicts carry their original review provenance. The UI
+labels carried reviews and groups needing re-review; changed groups do not count
+as verified coverage. An explicit current decision overrides carried context.
+Same-report empty crops preserve reviews. Candidate coverage uses the
 existing strict geometry checks; verified coverage uses human decisions only. The
 classical trace pass is experimental, can detect printed rails/component edges,
 and has bounded output. Its counts do not measure physical wire recall.

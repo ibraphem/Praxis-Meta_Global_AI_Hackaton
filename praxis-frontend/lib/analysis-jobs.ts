@@ -1,4 +1,8 @@
-import { recoveryReportSchema, wireIdentitySchema } from "./wire-recovery";
+import {
+  recoveryReportSchema,
+  wireIdentitySchema,
+  cropAttemptSchema,
+} from "./wire-recovery";
 import { geometryBoxSchema } from "./geometry";
 import { z } from "zod";
 import { analysisSchema } from "./vision";
@@ -120,6 +124,7 @@ export const analysisJobSchema = z
           })
           .strict(),
         visited: z.array(geometryBoxSchema).max(12),
+        cropAttempts: z.array(cropAttemptSchema).max(24).optional(),
       })
       .optional(),
     wireIdentities: z.array(wireIdentitySchema).max(100).optional(),

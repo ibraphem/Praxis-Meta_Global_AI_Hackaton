@@ -675,15 +675,30 @@ The default cumulative budget is four crop requests, two rounds, six million cro
 pixels, two million pixels per crop, and eight focused verification requests per
 analysis. Each dispatched crop/verification consumes budget durably before calling
 the provider. Failed and timed-out crops are not silently retried or refunded, visited
-tiles are not resent, and earlier successful crops survive failure. A local timeout
+tiles are not resent, and earlier successful crops survive failure. `cropAttempts`
+records per-region `running`, `succeeded`, `failed`, `timed_out`, or `interrupted`
+outcomes with source snapshot, timestamps, and upstream outcome. Success requires a
+validated response and durable checkpoint (or a valid empty response). Lease loss and
+shutdown terminalize running crop records without allowing stale completions to write.
+Legacy `visited` records become stable `legacy_unknown` entries; they never imply a
+successful inspection or refund a request. `visited` remains a compatibility field
+meaning attempted, not successfully inspected. When only previously attempted,
+uninspected regions remain, recovery reports `blocked_regions` rather than
+`no_actionable_regions`. The UI shows these outcomes after reload. A local timeout
 does not prove upstream execution stopped. Lease fencing protects budgets, reports,
 and checkpoint writes from stale workers. Global experiment reservations block these
 actions and include recovery workers in workload isolation. Provider diagnostics use
 `sam.wire_crop` and `muse.wire_verify`; request bytes, dimensions, deadline, and timings
 remain in attempt diagnostics and evidence exports.
 
-Physical identity decisions are bound to the exact audit report and become historical
-when its snapshot changes. All recovery candidates retain `identityStatus=unverified`
+Physical identity decisions remain bound to their original report. Empty or duplicate-only
+crops retain same-report context. Changed checkpoints reconcile whole reviewed groups
+using exact image/native-mask or trace fingerprints, independent of candidate numbering.
+Only unique unchanged groups with no newly overlapping evidence carry verification;
+missing, changed, ambiguous, or conflicting evidence produces `needs_review` and contributes
+no verified coverage. Reconciliation links retain the original human review ID/report;
+no new human decision is fabricated. Pending re-review survives later crops. Explicit
+current decisions supersede carried context, including revocation to uncertain. All recovery candidates retain `identityStatus=unverified`
 and `guidanceEligible=false`; separate human review records can verify an identity.
 Muse cannot write a human identity decision, and every identity record retains
 `electricalConnectionStatus=unestablished`. Two endpoint proposals do not establish
@@ -737,7 +752,12 @@ wrong and unsupported accepted holes, duplicate groups, and pixel error/sample c
 Fragments alone do not count as detected physical wires. Duplicate groups cannot inflate recall and competing identities cannot be cherry-picked
 for endpoint accuracy. Missing endpoints stay in the visible-endpoint denominator;
 hidden/off-image endpoints stay recorded but are excluded from that denominator.
-Wrong or unsupported acceptances fail the gate. The scorer never performs snapping.
+Wrong or unsupported acceptances fail the gate. In `wire-score-v2`, identity correctness
+uses the same unambiguous-group rule as endpoint correctness: a physical truth wire
+requires exactly one whole-wire group, explicitly accepted. Competing groups receive
+zero correct accepted identities, while every accepted group stays in the precision
+denominator. Re-score frozen baseline and improved predictions with v2; do not compare
+v1 and v2 precision as if their definitions were identical. The scorer never performs snapping.
 The targets (≥95% recall, >98% identity precision, ≥95% exact-hole accuracy, zero wrong
 accepted holes) are engineering gates, not demonstrated performance or guarantees.
 Report per-image and held-out results, repeatability, latency, and wrong accepted

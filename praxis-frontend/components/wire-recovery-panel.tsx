@@ -2,7 +2,10 @@
 import { useState } from "react";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
 import { jobIsActive } from "@/lib/analysis-jobs";
-import { latestIdentityReviews } from "@/lib/wire-recovery";
+import {
+  effectiveIdentityReviews,
+  latestIdentityReviews,
+} from "@/lib/wire-recovery";
 export type RecoveryAction =
   | "audit-wires"
   | "recover-wires"
@@ -26,8 +29,23 @@ export function WireRecoveryPanel({
   const report = job.recovery?.report,
     disabled = busy || jobIsActive(job) || !!job.experiment,
     current = report
-      ? latestIdentityReviews(job.wireIdentities ?? [], report.reportId)
+      ? effectiveIdentityReviews(job.wireIdentities ?? [], report)
       : [];
+  const cropAttempts = job.recovery?.cropAttempts ?? [];
+  const legacyCount = cropAttempts.length
+    ? 0
+    : (job.recovery?.visited.length ?? 0);
+  const uninspected = cropAttempts.filter((a) => a.status !== "succeeded");
+  const explicit = report
+    ? latestIdentityReviews(job.wireIdentities ?? [], report.reportId)
+    : [];
+  const pending = (report?.reviewReconciliation ?? []).filter(
+    (l) =>
+      l.status === "needs_review" &&
+      !explicit.some((r) =>
+        r.candidateIds.some((id) => l.candidateIds.includes(id)),
+      ),
+  );
   const selectedCandidate = report?.candidates.find(
       (c) => c.id === selected[0],
     ),
@@ -100,6 +118,33 @@ export function WireRecoveryPanel({
           consumed budgets are preserved.
         </p>
       )}
+      {(cropAttempts.length > 0 || (job.recovery?.visited.length ?? 0) > 0) && (
+        <details open>
+          <summary>Crop inspection outcomes</summary>
+          <p>
+            {cropAttempts.filter((a) => a.status === "succeeded").length}{" "}
+            successful crop inspections · {uninspected.length + legacyCount}{" "}
+            attempts without a confirmed successful inspection. Previously
+            attempted regions are blocked from redispatch; consumed budgets
+            remain charged.
+          </p>
+          {!cropAttempts.length && (
+            <p>
+              Legacy attempted regions have unknown outcomes; they are not
+              confirmed successful inspections.
+            </p>
+          )}
+          <ul>
+            {cropAttempts.map((a) => (
+              <li key={a.attemptId}>
+                Region [{a.region.join(", ")}]: {a.status.replaceAll("_", " ")}
+                {a.errorCode ? ` (${a.errorCode})` : ""} · Upstream:{" "}
+                {a.upstreamOutcome.replaceAll("_", " ")}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {!report ? (
         <p>
           Run an offline coverage audit of the saved SAM checkpoint. This makes
@@ -118,7 +163,11 @@ export function WireRecoveryPanel({
           <p>
             {current.filter((r) => r.state === "verified").length}{" "}
             human-verified groups · Electrical connections: unestablished. Stop
-            reason: {report.stopReason.replaceAll("_", " ")}.
+            reason:{" "}
+            {report.stopReason === "blocked_regions"
+              ? "uninspected regions blocked by previous attempts"
+              : report.stopReason.replaceAll("_", " ")}
+            .
             {report.summary.truncated
               ? " Audit limits were reached; additional traces may remain."
               : ""}
@@ -288,9 +337,31 @@ export function WireRecoveryPanel({
               <li key={r.reviewId}>
                 {r.state}: {r.candidateIds.join(" + ")} · {r.note || "No note"}{" "}
                 · Electrical connection unestablished
+                {r.inheritedFromReportId
+                  ? " · Carried from an unchanged prior review"
+                  : ""}
               </li>
             ))}
           </ul>
+          {pending.length > 0 && (
+            <div role="status">
+              <p>
+                {pending.length} prior identity groups require re-review; their
+                verification does not count toward current coverage.
+              </p>
+              <ul>
+                {pending.map((l) => (
+                  <li key={l.sourceReviewId}>
+                    Needs re-review: {l.sourceCandidateIds.join(" + ")} ·{" "}
+                    {l.reason.replaceAll("_", " ")}
+                    {l.candidateIds.length
+                      ? ` · Current candidates: ${l.candidateIds.join(" + ")}`
+                      : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <details>
             <summary>Coverage diagnostics and source provenance</summary>
             <pre>{JSON.stringify(report, null, 2)}</pre>

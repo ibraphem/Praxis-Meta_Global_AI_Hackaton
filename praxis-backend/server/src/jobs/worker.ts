@@ -1,3 +1,4 @@
+import { finishRunningCrops } from '../services/crop-attempts.js';
 import {
   createWireRecovery,
   type RecoveryProgress,
@@ -147,6 +148,7 @@ export class AnalysisWorker {
                   reviews: job.wireIdentities,
                   budget: job.recovery.budget,
                   visited: job.recovery.visited,
+                  cropAttempts: job.recovery.cropAttempts,
                   operation: job.recovery.operation,
                   ...(job.recovery.candidateId
                     ? { candidateId: job.recovery.candidateId }
@@ -167,6 +169,7 @@ export class AnalysisWorker {
                     (j) => {
                       j.recovery.budget = value.budget;
                       j.recovery.visited = value.visited;
+                      j.recovery.cropAttempts = value.cropAttempts;
                       if (value.changed) {
                         saved = this.store.checkpointSnapshot(
                           j,
@@ -238,6 +241,7 @@ export class AnalysisWorker {
           j.recovery.report = result.report;
           j.recovery.budget = result.budget;
           j.recovery.visited = result.visited;
+          j.recovery.cropAttempts = result.cropAttempts;
           a.recoveryReport = result.report;
           const output = j.recovery.snapshotRef ?? bound!.ref;
           a.outputSnapshotId = output.samSnapshotId;
@@ -292,6 +296,16 @@ export class AnalysisWorker {
         a.finishedAt = Date.now();
         a.diagnostics = trace.snapshot();
         j[stage].status = a.status;
+        if (stage === 'recovery')
+          finishRunningCrops(
+            j.recovery.cropAttempts,
+            a.status === 'interrupted'
+              ? 'interrupted'
+              : a.status === 'timed_out'
+                ? 'timed_out'
+                : 'failed',
+            e.code,
+          );
         if (stage === 'recovery' && j.recovery.report) {
           a.recoveryReport = j.recovery.report;
           const output = j.recovery.snapshotRef ?? j.sam.snapshotRef;

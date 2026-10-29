@@ -1,8 +1,13 @@
 import {
+  normalizeCropAttempts,
+  finishRunningCrops,
+} from '../services/crop-attempts.js';
+import {
   type RecoveryReport,
   type WireIdentity,
   wireIdentitySchema,
-  latestIdentityReviews,
+  effectiveIdentityReviews,
+  type CropAttempt,
 } from '../schemas/wire-recovery.js';
 import type { RecoveryBudget } from '../services/wire-recovery.js';
 import { ExperimentRegistry } from './experiments.js';
@@ -89,6 +94,7 @@ export interface Job {
     report?: RecoveryReport;
     budget: RecoveryBudget;
     visited: [number, number, number, number][];
+    cropAttempts: CropAttempt[];
   };
   wireIdentities: WireIdentity[];
   experiment?: {
@@ -182,6 +188,10 @@ export class JobStore {
       );
     const job = JSON.parse(row.data as string) as Job;
     job.recovery ??= emptyRecovery();
+    job.recovery.cropAttempts = normalizeCropAttempts(
+      job.recovery.visited,
+      job.recovery.cropAttempts,
+    );
     job.wireIdentities ??= [];
     if (row.owner) {
       job.owner = row.owner as string;
@@ -646,10 +656,7 @@ export class JobStore {
           'REVIEW_LIMIT',
           'The identity review limit was reached.',
         );
-      const current = latestIdentityReviews(
-        job.wireIdentities,
-        report.reportId,
-      );
+      const current = effectiveIdentityReviews(job.wireIdentities, report);
       if (
         input.state === 'verified' &&
         current.some(
@@ -694,6 +701,13 @@ export class JobStore {
           a.errorCode = 'WORKER_INTERRUPTED';
           a.finishedAt = now;
           job[stage].status = 'interrupted';
+          if (stage === 'recovery')
+            finishRunningCrops(
+              job.recovery.cropAttempts,
+              'interrupted',
+              'WORKER_INTERRUPTED',
+              now,
+            );
         }
       }
       delete job.owner;
@@ -864,5 +878,6 @@ export function emptyRecovery(): Job['recovery'] {
     operation: 'audit',
     budget: { requests: 0, pixels: 0, verificationRequests: 0, rounds: 0 },
     visited: [],
+    cropAttempts: [],
   };
 }

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { normalizeCropAttempts, sameRegion } from './crop-attempts.js';
 import sharp from 'sharp';
 import { decodeMaskToRaster } from '@meta-sam/parser';
 import { createMetaClient, type MetaClient } from '../lib/meta-client.js';
@@ -14,7 +16,11 @@ import type {
   PreparedImage,
 } from '../schemas/vision.js';
 import type { SnapshotRef } from '../jobs/snapshots.js';
-import type { RecoveryReport, WireIdentity } from '../schemas/wire-recovery.js';
+import type {
+  RecoveryReport,
+  WireIdentity,
+  CropAttempt,
+} from '../schemas/wire-recovery.js';
 export interface RecoveryBudget {
   requests: number;
   pixels: number;
@@ -26,6 +32,7 @@ export interface RecoveryProgress {
   snapshot: SamSnapshot;
   budget: RecoveryBudget;
   visited: BoundingBox[];
+  cropAttempts: CropAttempt[];
   changed: boolean;
 }
 /** High-resolution crop masks retain native raster resolution; only their origin changes. */
@@ -93,6 +100,7 @@ export function createWireRecovery(
       reviews: WireIdentity[];
       budget: RecoveryBudget;
       visited: BoundingBox[];
+      cropAttempts?: CropAttempt[];
       operation: 'audit' | 'recover' | 'verify';
       candidateId?: string;
       previous?: RecoveryReport;
@@ -104,12 +112,14 @@ export function createWireRecovery(
     let currentRef = input.ref;
     const snapshot = structuredClone(input.snapshot),
       budget = { ...input.budget },
-      visited = [...input.visited];
+      visited = [...input.visited],
+      cropAttempts = normalizeCropAttempts(input.visited, input.cropAttempts);
     let report = await auditWireCoverage(
       snapshot,
       input.ref,
       input.reviews,
       config.WIRE_AUDIT_MAX_DIMENSION,
+      input.previous,
     );
     if (input.previous?.reportId === report.reportId)
       report.modelReviews = input.previous.modelReviews;
@@ -120,6 +130,7 @@ export function createWireRecovery(
         snapshot,
         budget: { ...budget },
         visited: [...visited],
+        cropAttempts: structuredClone(cropAttempts),
         changed,
       };
       progress?.(state);
@@ -179,7 +190,7 @@ export function createWireRecovery(
     let changed = false,
       requests = 0;
     const regions = report.cropRegions.filter(
-      (b) => !visited.some((v) => v.every((n, i) => n === b[i])),
+      (b) => !cropAttempts.some((a) => sameRegion(a.region, b)),
     );
     for (const crop of regions) {
       if (snapshot.candidates.length >= 100) {
@@ -208,6 +219,16 @@ export function createWireRecovery(
       budget.pixels += area;
       requests++;
       visited.push(crop);
+      const attempt: CropAttempt = {
+        attemptId: randomUUID(),
+        region: crop,
+        status: 'running',
+        upstreamOutcome: 'not_sent',
+        startedAt: Date.now(),
+        sourceSnapshotId: currentRef.samSnapshotId,
+        sourceSnapshotHash: currentRef.samSnapshotHash,
+      };
+      cropAttempts.push(attempt);
       emit();
       try {
         const [left, top, width, height] = crop,
@@ -222,6 +243,9 @@ export function createWireRecovery(
           height,
           dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`,
         };
+        signal.throwIfAborted();
+        attempt.upstreamOutcome = 'unknown';
+        emit();
         const raw = await client.post(
           'responses',
           {
@@ -251,6 +275,7 @@ export function createWireRecovery(
             ...(trace ? { trace } : {}),
           },
         );
+        attempt.upstreamOutcome = 'response_received';
         signal.throwIfAborted();
         const native = decodeSamResponse(raw, 'jumper_wire', image, true),
           first =
@@ -285,6 +310,7 @@ export function createWireRecovery(
             snapshot,
             budget: { ...budget },
             visited: [...visited],
+            cropAttempts: structuredClone(cropAttempts),
             changed: true,
           });
           if (!saved)
@@ -295,17 +321,31 @@ export function createWireRecovery(
             );
           currentRef = saved;
         }
+        attempt.status = 'succeeded';
+        attempt.finishedAt = Date.now();
+        emit();
         report = await auditWireCoverage(
           snapshot,
           currentRef,
-          [],
+          input.reviews,
           config.WIRE_AUDIT_MAX_DIMENSION,
+          report,
         );
         report.stopReason = 'round_complete';
         changed = false;
         emit();
       } catch (error) {
         if (signal.aborted) throw error;
+        if (attempt.status === 'running') {
+          attempt.status =
+            error instanceof AppError &&
+            ['PROVIDER_TIMEOUT', 'META_API_TIMEOUT'].includes(error.code)
+              ? 'timed_out'
+              : 'failed';
+          attempt.finishedAt = Date.now();
+          attempt.errorCode =
+            error instanceof AppError ? error.code : 'CROP_FAILED';
+        }
         report.stopReason =
           error instanceof AppError &&
           ['PROVIDER_TIMEOUT', 'META_API_TIMEOUT'].includes(error.code)
@@ -315,7 +355,10 @@ export function createWireRecovery(
         throw error;
       }
     }
-    if (!regions.length) report.stopReason = 'no_actionable_regions';
+    if (!regions.length)
+      report.stopReason = cropAttempts.some((a) => a.status !== 'succeeded')
+        ? 'blocked_regions'
+        : 'no_actionable_regions';
     else if (report.stopReason === 'audit_only')
       report.stopReason = 'round_complete';
     return emit(changed);

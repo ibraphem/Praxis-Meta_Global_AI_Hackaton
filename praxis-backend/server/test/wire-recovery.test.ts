@@ -251,6 +251,7 @@ test('recovery consumes a budget before dispatch, checkpoints derived masks, and
       reviews: [],
       budget: result.budget,
       visited: result.visited,
+      cropAttempts: result.cropAttempts,
       operation: 'recover',
     },
     new AbortController().signal,
@@ -458,6 +459,10 @@ test('a recovery worker that loses its lease cannot checkpoint late masks after 
   assert.equal(b.snapshots(job.analysisId).length, 1);
   assert.equal(b.get(job.analysisId).recovery.budget.requests, 1);
   assert.equal(
+    b.get(job.analysisId).recovery.cropAttempts[0]!.status,
+    'interrupted',
+  );
+  assert.equal(
     a.renewLease(job.analysisId, stale.owner, 'recovery', oldAttempt),
     false,
   );
@@ -644,10 +649,22 @@ test('offline scoring penalizes unresolved and duplicate identities and rejects 
     duplicate,
   );
   assert.equal(duplicated.metrics.wireDetectionRecall, 1);
-  assert.equal(duplicated.metrics.wireIdentityPrecision, 0.5);
+  assert.equal(duplicated.metrics.wireIdentityPrecision, 0);
+  assert.equal(duplicated.metrics.correctAcceptedIdentities, 0);
   assert.equal(duplicated.metrics.duplicateGroups, 1);
   assert.equal(duplicated.metrics.correctEndpoints, 0);
   assert.equal(duplicated.targetsMet, false);
+  duplicate.groups[1]!.identityAccepted = false;
+  const competing = evaluateWires(
+    duplicateReport,
+    report.imageHash,
+    truth,
+    duplicate,
+  );
+  assert.equal(competing.metrics.acceptedIdentities, 1);
+  assert.equal(competing.metrics.correctAcceptedIdentities, 0);
+  assert.equal(competing.metrics.wireIdentityPrecision, 0);
+  assert.equal(competing.version, 'wire-score-v2');
   const wrong = structuredClone(evaluation);
   wrong.groups[0]!.endpoints[0]!.holeId = 'board1:a2';
   const failed = evaluateWires(report, report.imageHash, truth, wrong);

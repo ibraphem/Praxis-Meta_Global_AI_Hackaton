@@ -293,6 +293,17 @@ test("wire identity verification and timed-out crop recovery preserve review and
     job.recovery!.operation = "recover";
     job.recovery!.budget.requests++;
     job.recovery!.budget.rounds++;
+    job.recovery!.cropAttempts = [
+      {
+        attemptId: job.sam.attempts[0]!.attemptId,
+        region: [50, 150, 400, 400],
+        status: "timed_out",
+        upstreamOutcome: "unknown",
+        startedAt: 1,
+        finishedAt: 2,
+        errorCode: "PROVIDER_TIMEOUT",
+      },
+    ];
     job.recovery!.attempts = [
       {
         ...job.sam.attempts[0]!,
@@ -333,6 +344,14 @@ test("wire identity verification and timed-out crop recovery preserve review and
   await expect(
     panel.getByText(/Latest recovery action: timed out/),
   ).toBeVisible();
+  await expect(
+    panel.getByText(
+      /0 successful crop inspections · 1 attempts without a confirmed successful inspection/,
+    ),
+  ).toBeVisible();
+  await expect(
+    panel.getByText(/Region \[50, 150, 400, 400\]: timed out/),
+  ).toBeVisible();
   expect(verifyCalls).toBe(1);
   expect(recoverCalls).toBe(1);
   expect(identityCalls).toBe(1);
@@ -340,7 +359,102 @@ test("wire identity verification and timed-out crop recovery preserve review and
   await page.reload();
   await expect(panel.getByText(/uncertain: jumper_wire_1/)).toBeVisible();
   await expect(
+    panel.getByText(/Region \[50, 150, 400, 400\]: timed out/),
+  ).toBeVisible();
+  await expect(
     panel.getByText(/Electrical connections: unestablished/),
   ).toBeVisible();
   expect(recoverCalls).toBe(1);
+});
+
+test("reconciled reviews disclose provenance and pending re-review without promoting changed evidence", async ({
+  page,
+}) => {
+  const job = partial(),
+    id = job.analysisId,
+    report = recoveryReport(job.sam.attempts[0]!.attemptId);
+  const first = {
+    reviewId: job.sam.attempts[0]!.attemptId,
+    reportId: "3".repeat(64),
+    candidateIds: ["jumper_wire_8"],
+    state: "verified" as const,
+    note: "prior physical inspection",
+    reviewSource: "human" as const,
+    reviewedAt: 1,
+    electricalConnectionStatus: "unestablished" as const,
+  };
+  const second = {
+    ...first,
+    reviewId: job.muse.attempts[0]!.attemptId,
+    candidateIds: ["jumper_wire_9"],
+  };
+  report.candidates.push({
+    ...report.candidates[0]!,
+    id: "jumper_wire_2",
+    bbox: [400, 200, 200, 100],
+  });
+  report.reviewReconciliation = [
+    {
+      sourceReviewId: first.reviewId,
+      sourceReportId: first.reportId,
+      sourceCandidateIds: first.candidateIds,
+      candidateIds: ["jumper_wire_1"],
+      status: "carried",
+      reason: "unchanged_evidence",
+    },
+    {
+      sourceReviewId: second.reviewId,
+      sourceReportId: second.reportId,
+      sourceCandidateIds: second.candidateIds,
+      candidateIds: ["jumper_wire_2"],
+      status: "needs_review",
+      reason: "changed_evidence",
+    },
+  ];
+  job.recovery = {
+    status: "succeeded",
+    attempts: [],
+    operation: "audit",
+    budget: { requests: 0, pixels: 0, verificationRequests: 0, rounds: 0 },
+    visited: [],
+    cropAttempts: [],
+    report,
+  };
+  job.wireIdentities = [first, second];
+  await page.route(`**/api/analyses/${id}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${id}/image`, (route) =>
+    route.fulfill({ contentType: "image/png", body: readFileSync(photograph) }),
+  );
+  await page.route(`**/api/analyses/${id}/wire-identities`, (route) => {
+    const body = route.request().postDataJSON();
+    job.wireIdentities!.push({
+      ...body,
+      reviewId: id,
+      reviewSource: "human",
+      reviewedAt: 2,
+      electricalConnectionStatus: "unestablished",
+    });
+    return route.fulfill({ json: job });
+  });
+  await page.goto(`/?analysis=${id}`);
+  const panel = page.getByRole("region", {
+    name: "Wire coverage and identity review",
+  });
+  await expect(panel.getByText(/1 human-verified groups/)).toBeVisible();
+  await expect(
+    panel.getByText(/Carried from an unchanged prior review/),
+  ).toBeVisible();
+  await expect(panel.getByText(/Needs re-review: jumper_wire_9/)).toBeVisible();
+  await panel
+    .locator("label")
+    .filter({ hasText: "jumper_wire_1" })
+    .getByRole("checkbox")
+    .check();
+  await panel.getByRole("button", { name: "Keep identity uncertain" }).click();
+  await expect(panel.getByText(/0 human-verified groups/)).toBeVisible();
+  await page.reload();
+  await expect(panel.getByText(/0 human-verified groups/)).toBeVisible();
+  await expect(panel.getByText(/Needs re-review: jumper_wire_9/)).toBeVisible();
 });
