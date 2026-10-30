@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+import { comparisonProgress, type VariantRun } from './muse-report.js';
 import { RUNTIME } from '../lib/runtime.js';
 import { admittedClient } from './model-admission.js';
 import { auditWireCoverage } from '../services/wire-coverage.js';
@@ -35,15 +37,23 @@ export interface ExperimentMeasurement {
   errorCode?: string;
 }
 export interface MuseExperimentReport {
-  schemaVersion: 2;
+  schemaVersion: 3;
+  budgetScope: 'per_variant';
+  variantBudgetMs: number;
+  experimentElapsedMs: number;
+  plannedVariants: string[];
+  attemptedVariants: string[];
+  unattemptedVariants: string[];
+  unattemptedCandidates: { variant: string; candidateId: string }[];
+  comparisonComplete: boolean;
+  variantRuns: VariantRun[];
   runtime: typeof RUNTIME;
-  phaseBudgetMs: number;
   focusedPlan: {
     candidateId: string;
     evidenceHash: string;
     cropTruncated: boolean;
   }[];
-  phaseTimings: { variant: string; elapsedMs: number }[];
+  variantTimings: { variant: string; elapsedMs: number }[];
   experimentId: string;
   analysisId: string;
   imageHash: string;
@@ -82,49 +92,66 @@ export async function runMuseExperiment(
     variants?: (typeof MUSE_EXPERIMENT_VARIANTS)[number]['name'][];
     snapshotId?: string;
     candidateIds?: string[];
+    variantBudgetMs?: number;
+    /** Deprecated alias for callers using the v2 runner. */
     phaseBudgetMs?: number;
     verificationClient?: MetaClient;
     stagesFactory?: (settings: Config) => VisionStages;
     onProgress?: (report: MuseExperimentReport) => void;
   } = {},
 ): Promise<MuseExperimentReport> {
-  const names =
-    options.variants ?? MUSE_EXPERIMENT_VARIANTS.slice(0, 3).map((v) => v.name);
+  const experimentStarted = performance.now();
+  if (
+    options.variantBudgetMs !== undefined &&
+    options.phaseBudgetMs !== undefined &&
+    options.variantBudgetMs !== options.phaseBudgetMs
+  )
+    throw new AppError(
+      400,
+      'INVALID_EXPERIMENT',
+      'Conflicting variantBudgetMs and legacy phaseBudgetMs settings.',
+    );
+  const requestedBudget = options.variantBudgetMs ?? options.phaseBudgetMs;
+  const names = [
+    ...(options.variants ??
+      MUSE_EXPERIMENT_VARIANTS.slice(0, 3).map((v) => v.name)),
+  ];
+  const candidateIds = options.candidateIds
+    ? [...options.candidateIds]
+    : undefined;
   if (
     !names.length ||
     names.length > 4 ||
     new Set(names).size !== names.length ||
     names.some((n) => !MUSE_EXPERIMENT_VARIANTS.some((v) => v.name === n)) ||
-    (options.candidateIds &&
-      (!options.candidateIds.length ||
-        options.candidateIds.length > 4 ||
-        new Set(options.candidateIds).size !== options.candidateIds.length ||
-        options.candidateIds.some(
-          (id) => !/^jumper_wire_[1-9]\d*$/.test(id),
-        ))) ||
-    (options.phaseBudgetMs !== undefined &&
-      (!Number.isInteger(options.phaseBudgetMs) ||
-        options.phaseBudgetMs < 1 ||
-        options.phaseBudgetMs > config.PROVIDER_TIMEOUT_MS))
+    (candidateIds &&
+      (!candidateIds.length ||
+        candidateIds.length > 4 ||
+        new Set(candidateIds).size !== candidateIds.length ||
+        candidateIds.some((id) => !/^jumper_wire_[1-9]\d*$/.test(id)))) ||
+    (requestedBudget !== undefined &&
+      (!Number.isInteger(requestedBudget) ||
+        requestedBudget < 1 ||
+        requestedBudget > config.PROVIDER_TIMEOUT_MS))
   )
     throw new AppError(
       400,
       'INVALID_EXPERIMENT',
-      'Choose distinct variants, up to four candidate IDs, and a phase budget within the provider deadline.',
+      'Choose distinct variants, up to four candidate IDs, and a per-variant budget within the provider deadline.',
     );
-  if (options.candidateIds && !names.includes('focused-candidates'))
+  if (candidateIds && !names.includes('focused-candidates'))
     throw new AppError(
       400,
       'INVALID_EXPERIMENT',
       'Candidate IDs require the focused-candidates variant.',
     );
-  const phaseBudgetMs = Math.min(
-    options.phaseBudgetMs ?? config.PROVIDER_TIMEOUT_MS,
+  const variantBudgetMs = Math.min(
+    requestedBudget ?? config.PROVIDER_TIMEOUT_MS,
     config.ANALYSIS_TIMEOUT_MS,
   );
-  const variants = names.map((n) =>
-    MUSE_EXPERIMENT_VARIANTS.find((v) => v.name === n)!,
-  );
+  const variants = names.map((n) => ({
+    ...MUSE_EXPERIMENT_VARIANTS.find((v) => v.name === n)!,
+  }));
   const reservation = store.experiments.reserve(analysisId, options.snapshotId),
     owner = reservation.owner!;
   let job: ReturnType<JobStore['get']>,
@@ -172,12 +199,28 @@ export async function runMuseExperiment(
     ownership.signal,
     ...(options.signal ? [options.signal] : []),
   ]);
+  const variantStarts = new Map<string, number>();
   const report: MuseExperimentReport = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     runtime: RUNTIME,
-    phaseBudgetMs,
+    budgetScope: 'per_variant',
+    variantBudgetMs,
+    experimentElapsedMs: 0,
+    plannedVariants: names,
+    attemptedVariants: [],
+    unattemptedVariants: names,
+    unattemptedCandidates: [],
+    comparisonComplete: false,
+    variantRuns: names.map((variant) => ({
+      variant,
+      status: 'unattempted',
+      elapsedMs: 0,
+      plannedCandidateIds:
+        variant === 'focused-candidates' ? (candidateIds ?? []) : [],
+      attemptedCandidateIds: [],
+    })),
     focusedPlan: [],
-    phaseTimings: [],
+    variantTimings: [],
     experimentId: reservation.experimentId,
     analysisId,
     imageHash: job.imageHash,
@@ -189,9 +232,24 @@ export async function runMuseExperiment(
     status: 'running',
     variants,
     measurements: [],
-    note: 'Admission is reserved across jobs and legacy requests sharing this database. Other provider clients are outside this reservation. A timeout leaves upstream execution unknown and can confound later variants. Original jobs and predictions are unchanged. Unknown upstream outcomes stop the experiment; request success and model identity decisions are not physical-wire accuracy. Focused checks never localize insertion holes.',
+    note: 'Admission is reserved across jobs and legacy requests sharing this database. Other provider clients are outside this reservation. A timeout leaves upstream execution unknown and can confound later variants. Original jobs and predictions are unchanged. Unknown upstream outcomes stop the experiment; request success and model identity decisions are not physical-wire accuracy. Focused checks never localize insertion holes. variantBudgetMs applies separately to each variant, including all its focused checks; there is no total experiment deadline. experimentElapsedMs records the whole experiment.',
+  };
+  const refresh = () => {
+    report.experimentElapsedMs = Math.round(
+      performance.now() - experimentStarted,
+    );
+    for (const run of report.variantRuns)
+      if (run.status === 'running')
+        run.elapsedMs = Math.round(
+          performance.now() - variantStarts.get(run.variant)!,
+        );
+    Object.assign(
+      report,
+      comparisonProgress(report.status, report.variantRuns),
+    );
   };
   const persist = () => {
+    refresh();
     if (
       !store.experiments.record(
         report.experimentId,
@@ -217,6 +275,9 @@ export async function runMuseExperiment(
           'EXPERIMENT_INTERRUPTED',
           'Experiment ownership was lost.',
         );
+      const run = report.variantRuns.find((r) => r.variant === variant.name)!;
+      run.status = 'running';
+      variantStarts.set(variant.name, performance.now());
       const trace = new AnalysisTrace(randomUUID(), () => undefined);
       const settings: Config = {
         ...config,
@@ -236,10 +297,12 @@ export async function runMuseExperiment(
               'The experiment variant deadline expired.',
             ),
           ),
-        phaseBudgetMs,
+        variantBudgetMs,
       );
       const variantSignal = AbortSignal.any([signal, deadline.signal]);
       try {
+        persist();
+        variantSignal.throwIfAborted();
         if (variant.name === 'focused-candidates') {
           const audit = await bounded(
             auditWireCoverage(snapshot, reservation.snapshotRef),
@@ -248,8 +311,8 @@ export async function runMuseExperiment(
           const available = audit.candidates.filter(
             (c) => c.geometryAccepted && c.mask,
           );
-          const candidates = options.candidateIds
-            ? options.candidateIds
+          const candidates = candidateIds
+            ? candidateIds
                 .map((id) => available.find((c) => c.id === id))
                 .filter((c) => !!c)
             : [...available]
@@ -261,8 +324,7 @@ export async function runMuseExperiment(
                 )
                 .slice(0, 3);
           if (
-            (options.candidateIds &&
-              candidates.length !== options.candidateIds.length) ||
+            (candidateIds && candidates.length !== candidateIds.length) ||
             !candidates.length
           )
             throw new AppError(
@@ -270,6 +332,7 @@ export async function runMuseExperiment(
               'INVALID_EXPERIMENT_CANDIDATE',
               'Choose geometry-passing native checkpoint candidates; no inference was dispatched.',
             );
+          run.plannedCandidateIds = candidates.map((c) => c.id);
           report.focusedPlan = candidates.map((c) => ({
             candidateId: c.id,
             evidenceHash: c.evidenceHash!,
@@ -287,6 +350,8 @@ export async function runMuseExperiment(
           );
           for (const candidate of candidates) {
             variantSignal.throwIfAborted();
+            run.attemptedCandidateIds.push(candidate.id);
+            persist();
             const candidateTrace = new AnalysisTrace(
               randomUUID(),
               () => undefined,
@@ -373,8 +438,12 @@ export async function runMuseExperiment(
             result,
           });
         }
+        run.status = 'completed';
       } catch (error) {
-        if (signal.aborted) throw signal.reason;
+        if (signal.aborted) {
+          run.status = 'interrupted';
+          throw signal.reason;
+        }
         const code =
           error instanceof AppError ? error.code : 'EXPERIMENT_FAILED';
         const timedOut = [
@@ -382,6 +451,7 @@ export async function runMuseExperiment(
           'META_API_TIMEOUT',
           'ANALYSIS_TIMEOUT',
         ].includes(code);
+        run.status = timedOut ? 'timed_out' : 'failed';
         if (!(
           variant.name === 'focused-candidates' &&
           report.measurements.some((m) => m.variant === variant.name)
@@ -403,13 +473,19 @@ export async function runMuseExperiment(
           });
       } finally {
         clearTimeout(timer);
-        report.phaseTimings.push({
+        if (run.status === 'running') run.status = 'interrupted';
+        run.elapsedMs = trace.elapsedMs;
+        report.variantTimings.push({
           variant: variant.name,
           elapsedMs: trace.elapsedMs,
         });
       }
       persist();
-      if (report.measurements.at(-1)?.upstreamOutcome === 'unknown')
+      if (
+        run.status === 'timed_out' ||
+        run.status === 'interrupted' ||
+        report.measurements.at(-1)?.upstreamOutcome === 'unknown'
+      )
         throw new AppError(
           503,
           'EXPERIMENT_INTERRUPTED',
@@ -422,6 +498,10 @@ export async function runMuseExperiment(
     return report;
   } catch {
     report.status = 'interrupted';
+    refresh();
+    for (const run of report.variantRuns)
+      if (run.status === 'running') run.status = 'interrupted';
+    refresh();
     store.experiments.record(report.experimentId, owner, report, 'interrupted');
     options.onProgress?.(report);
     throw new AppError(

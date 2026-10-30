@@ -1,3 +1,5 @@
+import { summarizeMuseExperiment } from '../src/jobs/muse-report.js';
+import { readFileSync } from 'node:fs';
 import { Console } from 'node:console';
 import { openSync, closeSync, ftruncateSync, writeSync } from 'node:fs';
 import { loadConfig } from '../src/config.js';
@@ -11,9 +13,28 @@ import { AppError } from '../src/lib/errors.js';
 async function main() {
   const args = process.argv.slice(2);
   const usage =
-    'Usage: npm run experiment:muse -- ANALYSIS_ID [--output NEW_REPORT.json] [--variants original-current,1280-current,1280-minimal,focused-candidates] [--snapshot SNAPSHOT_ID] [--candidate-ids jumper_wire_31,jumper_wire_43] [--budget-ms 45000]\n       npm run experiment:muse -- --release INTERRUPTED_EXPERIMENT_ID\nLIVE MODEL EXPERIMENT. Default: three scene variants. Focused checks are opt-in, up to four candidates. Stops on unknown upstream outcome; no automatic retries. Output paths must be new.';
+    'Usage: npm run experiment:muse -- ANALYSIS_ID [--output NEW_REPORT.json] [--variants original-current,1280-current,1280-minimal,focused-candidates] [--snapshot SNAPSHOT_ID] [--candidate-ids jumper_wire_31,jumper_wire_43] [--variant-budget-ms 45000]\n       npm run experiment:muse -- --summarize REPORT.json (offline; supports v1/v2/v3)\n       npm run experiment:muse -- --release INTERRUPTED_EXPERIMENT_ID\nLIVE MODEL EXPERIMENT. Default: three scene variants. Focused checks are opt-in, up to four candidates. Budget is per variant, not a total experiment deadline. --budget-ms remains a deprecated alias. Stops on unknown upstream outcome; no automatic retries. Output paths must be new.';
   if (args.includes('--help')) {
     console.log(usage);
+    return;
+  }
+  if (args[0] === '--summarize') {
+    if (args.length !== 2) throw new Error(usage);
+    try {
+      process.stdout.write(
+        JSON.stringify(
+          summarizeMuseExperiment(JSON.parse(readFileSync(args[1]!, 'utf8'))),
+          null,
+          2,
+        ) + '\n',
+      );
+    } catch {
+      throw new AppError(
+        400,
+        'INVALID_EXPERIMENT_REPORT',
+        'Could not read a consistent v1/v2/v3 experiment report. Check the file path, budget fields and execution plan. No provider request was made.',
+      );
+    }
     return;
   }
   const release = args[0] === '--release';
@@ -29,6 +50,7 @@ async function main() {
           '--variants',
           '--snapshot',
           '--candidate-ids',
+          '--variant-budget-ms',
           '--budget-ms',
         ].includes(key) ||
         flags[key] ||
@@ -45,6 +67,17 @@ async function main() {
     variants?.some((n) => !MUSE_EXPERIMENT_VARIANTS.some((v) => v.name === n))
   )
     throw new Error(usage);
+  if (
+    flags['--variant-budget-ms'] &&
+    flags['--budget-ms'] &&
+    Number(flags['--variant-budget-ms']) !== Number(flags['--budget-ms'])
+  )
+    throw new Error(usage);
+  const budget = flags['--variant-budget-ms'] ?? flags['--budget-ms'];
+  if (flags['--budget-ms'])
+    console.error(
+      '--budget-ms is deprecated; use --variant-budget-ms. This deadline applies separately to each variant.',
+    );
   const config = loadConfig(),
     store = new JobStore(config);
   let descriptor: number | undefined;
@@ -89,11 +122,13 @@ async function main() {
       ...(flags['--candidate-ids']
         ? { candidateIds: flags['--candidate-ids'].split(',') }
         : {}),
-      ...(flags['--budget-ms']
-        ? { phaseBudgetMs: Number(flags['--budget-ms']) }
-        : {}),
+      ...(budget ? { variantBudgetMs: Number(budget) } : {}),
       onProgress: (report) => {
         began = true;
+        if (report.status !== 'running')
+          terminal.log(
+            `Comparison complete: ${report.comparisonComplete}; experiment elapsed: ${report.experimentElapsedMs} ms; attempted: ${report.attemptedVariants.join(', ') || 'none'}; unattempted: ${report.unattemptedVariants.join(', ') || 'none'}`,
+          );
         for (const measurement of report.measurements.slice(printed))
           terminal.log(
             `${measurement.variant}${measurement.candidateId ? `/${measurement.candidateId}` : ''}: ${measurement.status} (${measurement.elapsedMs} ms)${measurement.modelReview ? `; model decision=${measurement.modelReview.decision}` : ''}`,
@@ -133,7 +168,7 @@ async function main() {
         };
       }),
     );
-    terminal.table(report.phaseTimings);
+    terminal.table(report.variantTimings);
     if (descriptor === undefined)
       process.stdout.write(JSON.stringify(report, null, 2) + '\n');
   } catch (error) {

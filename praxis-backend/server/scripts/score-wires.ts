@@ -21,6 +21,14 @@ try {
       mode: 0o600,
     });
     console.table(score.metrics);
+    if (!score.verificationEvidence.humanVerificationRecorded)
+      console.log(
+        'Confirmed physical-wire coverage is unknown: explicit independent human provenance is required for both the inventory and associations.',
+      );
+    if (score.metrics.selectableMaskCandidates === null)
+      console.log(
+        'Selectable-mask coverage is unknown: supply selectableCandidateIds mapped to this frozen report.',
+      );
     console.log(`Acceptance targets met on this image: ${score.targetsMet}`);
   }
 } catch (error) {

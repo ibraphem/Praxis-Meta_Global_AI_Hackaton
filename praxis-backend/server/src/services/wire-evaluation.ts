@@ -17,9 +17,23 @@ const truthEndpoint = z
       e.visibility !== 'visible' || (e.holeId !== null && e.position !== null),
     'Visible ground truth requires an independently marked hole and center.',
   );
+/** Optional evidence attribution. Absent or assistant-only attribution is not human verification. */
+const reviewProvenanceSchema = z
+  .object({
+    source: z.enum([
+      'human_visual',
+      'assistant_visual',
+      'physical_inspection',
+      'continuity_test',
+    ]),
+    reviewer: z.string().trim().min(1).max(100),
+    recordedAt: z.iso.datetime(),
+  })
+  .strict();
 export const wireTruthSchema = z
   .object({
     version: z.literal('wire-truth-v1'),
+    reviewProvenance: reviewProvenanceSchema.optional(),
     imageHash: z.string().regex(/^[a-f0-9]{64}$/),
     recordedBeforeInference: z.literal(true),
     completeInventory: z.literal(true),
@@ -54,6 +68,12 @@ const predictionEndpoint = z
 export const wireEvaluationSchema = z
   .object({
     version: z.literal('wire-evaluation-v1'),
+    reviewProvenance: reviewProvenanceSchema.optional(),
+    // Native IDs in the frozen recovery report, explicitly mapped from the selectable view.
+    selectableCandidateIds: z
+      .array(z.string().min(1).max(64))
+      .max(100)
+      .optional(),
     imageHash: z.string().regex(/^[a-f0-9]{64}$/),
     reportId: z.string().regex(/^[a-f0-9]{64}$/),
     sourceSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
@@ -109,6 +129,43 @@ export function evaluateWires(
     throw new Error(
       'Assign every candidate exactly once, using existing truth identities or null for clutter.',
     );
+  if (
+    evaluation.selectableCandidateIds &&
+    (new Set(evaluation.selectableCandidateIds).size !==
+      evaluation.selectableCandidateIds.length ||
+      evaluation.selectableCandidateIds.some((id) => !expected.includes(id)))
+  )
+    throw new Error(
+      'Selectable candidate IDs must be unique native IDs in the frozen report.',
+    );
+  const isHuman = (source?: string) =>
+    !!source &&
+    ['human_visual', 'physical_inspection', 'continuity_test'].includes(source);
+  const humanVerificationRecorded =
+    isHuman(truth.reviewProvenance?.source) &&
+    isHuman(evaluation.reviewProvenance?.source);
+  const selectedIds = evaluation.selectableCandidateIds
+    ? new Set(evaluation.selectableCandidateIds)
+    : null;
+  const selectableGroups = selectedIds
+    ? evaluation.groups.filter((g) =>
+        g.candidateIds.some((id) => selectedIds.has(id)),
+      )
+    : null;
+  const selectablePhysicalWires = selectableGroups
+    ? new Set(
+        selectableGroups.flatMap((g) => (g.truthWireId ? [g.truthWireId] : [])),
+      ).size
+    : null;
+  const completeMaskGroup = (
+    g: z.infer<typeof wireEvaluationSchema>['groups'][number],
+  ) =>
+    g.matchKind === 'whole_wire' &&
+    g.candidateIds.every((id) => {
+      const c = report.candidates.find((c) => c.id === id)!;
+      return !!c.mask && c.geometryAccepted && !c.touchesCropBoundary;
+    });
+  let completeMaskWires = 0;
   let detected = 0,
     identityCorrect = 0,
     correct = 0,
@@ -131,6 +188,7 @@ export function evaluateWires(
         ? groups[0]
         : undefined;
     if (group?.identityAccepted) identityCorrect++;
+    if (group && completeMaskGroup(group)) completeMaskWires++;
     let both = true;
     for (let i = 0; i < 2; i++) {
       const target = wire.endpoints[i]!,
@@ -190,12 +248,61 @@ export function evaluateWires(
     precision = ratio(identityCorrect, acceptedIdentities),
     accuracy = ratio(correct, visible);
   return {
-    version: 'wire-score-v2',
+    version: 'wire-score-v3',
+    verificationEvidence: {
+      truthReview: truth.reviewProvenance ?? null,
+      associationReview: evaluation.reviewProvenance ?? null,
+      humanVerificationRecorded,
+      basis: 'independent_benchmark_annotations',
+      nativeIdentityLedgerUpdated: false,
+    },
     imageHash,
     reportId: report.reportId,
     sourceSnapshotHash: report.sourceSnapshotHash,
     metrics: {
       physicalWires: truth.wires.length,
+      auditedCandidates: report.candidates.length,
+      rawSamCandidates: report.summary.rawSamCandidates,
+      geometryPassingMaskCandidates: report.candidates.filter(
+        (c) => c.geometryAccepted && c.mask,
+      ).length,
+      selectableMaskCandidates: selectedIds?.size ?? null,
+      selectablePhysicalWires,
+      selectablePhysicalWireCoverage:
+        selectablePhysicalWires === null
+          ? null
+          : ratio(selectablePhysicalWires, truth.wires.length),
+      fragmentGroups: evaluation.groups.filter(
+        (g) => g.matchKind === 'fragment',
+      ).length,
+      fragmentPhysicalWires: new Set(
+        evaluation.groups
+          .filter((g) => g.matchKind === 'fragment')
+          .flatMap((g) => (g.truthWireId ? [g.truthWireId] : [])),
+      ).size,
+      cropTruncatedMaskCandidates: report.candidates.filter(
+        (c) => c.mask && c.touchesCropBoundary,
+      ).length,
+      selectableCropTruncatedMasks: selectedIds
+        ? report.candidates.filter(
+            (c) => selectedIds.has(c.id) && c.mask && c.touchesCropBoundary,
+          ).length
+        : null,
+      completeSegmentationWires: completeMaskWires,
+      completeSegmentationCoverage: ratio(
+        completeMaskWires,
+        truth.wires.length,
+      ),
+      confirmedPhysicalWires: humanVerificationRecorded
+        ? identityCorrect
+        : null,
+      confirmedPhysicalWireCoverage: humanVerificationRecorded
+        ? ratio(identityCorrect, truth.wires.length)
+        : null,
+      correctAcceptedIdentityCoverage: ratio(
+        identityCorrect,
+        truth.wires.length,
+      ),
       detectedWires: detected,
       wireDetectionRecall: recall,
       acceptedIdentities,
@@ -228,6 +335,6 @@ export function evaluateWires(
       accuracy >= 0.95 &&
       wrongAccepted === 0 &&
       unsupportedAccepted === 0,
-    note: 'Single-image benchmark only. Hidden/off-image endpoints are excluded from exact-hole accuracy, remain recorded, and cannot be accepted. Pixel errors cover available coordinates only; missing coordinates are reported as unresolved. Hole IDs must include board identity. Use the unchanged resolver to populate predictions; this scorer does not snap points.',
+    note: 'Single-image annotated benchmark only. Selectable counts require explicit native-ID mapping; missing mapping is unknown, not zero. Confirmed coverage requires explicit human provenance for both inventory and associations; model decisions or assistant-only labels do not supply it. Confirmed identities require unique accepted whole-wire groups. Complete segmentation excludes truncated, missing or geometry-rejected masks. No electrical contact or native review state is established. Hidden/off-image endpoints are excluded from exact-hole accuracy, remain recorded, and cannot be accepted. Pixel errors cover available coordinates only; missing coordinates are reported as unresolved. Hole IDs must include board identity. Use the unchanged resolver to populate predictions; this scorer does not snap points.',
   };
 }

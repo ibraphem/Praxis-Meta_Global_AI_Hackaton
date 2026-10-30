@@ -434,6 +434,15 @@ test('three-variant runner persists isolated results against one snapshot withou
   );
   assert.equal(report.measurements[1]!.upstreamOutcome, 'response_received');
   assert.equal(report.status, 'completed');
+  assert.equal(report.schemaVersion, 3);
+  assert.equal(report.budgetScope, 'per_variant');
+  assert.equal(report.comparisonComplete, true);
+  assert.equal(report.attemptedVariants.length, 3);
+  assert.deepEqual(report.unattemptedVariants, []);
+  assert.ok(
+    report.experimentElapsedMs >=
+      report.variantTimings.reduce((n, t) => n + t.elapsedMs, 0) - 3,
+  );
   assert.equal(store.experiments.active(), undefined);
   assert.deepEqual(store.experiments.get(report.experimentId).report, report);
   assert.equal(
@@ -681,10 +690,25 @@ test('an unknown experiment outcome stops later variants and retains prior succe
   assert.equal(reservation.status, 'interrupted');
   const report = reservation.report as {
     measurements: { status: string; result?: unknown }[];
+    comparisonComplete: boolean;
+    plannedVariants: string[];
+    attemptedVariants: string[];
+    unattemptedVariants: string[];
   };
   assert.deepEqual(
     report.measurements.map((m) => m.status),
     ['succeeded', 'timed_out'],
   );
   assert.ok(report.measurements[0]!.result);
+  assert.equal(report.comparisonComplete, false);
+  assert.deepEqual(report.plannedVariants, [
+    'original-current',
+    '1280-current',
+    '1280-minimal',
+  ]);
+  assert.deepEqual(report.attemptedVariants, [
+    'original-current',
+    '1280-current',
+  ]);
+  assert.deepEqual(report.unattemptedVariants, ['1280-minimal']);
 });

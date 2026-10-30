@@ -681,7 +681,7 @@ test('offline scoring penalizes unresolved and duplicate identities and rejects 
   assert.equal(competing.metrics.acceptedIdentities, 1);
   assert.equal(competing.metrics.correctAcceptedIdentities, 0);
   assert.equal(competing.metrics.wireIdentityPrecision, 0);
-  assert.equal(competing.version, 'wire-score-v2');
+  assert.equal(competing.version, 'wire-score-v3');
   const wrong = structuredClone(evaluation);
   wrong.groups[0]!.endpoints[0]!.holeId = 'board1:a2';
   const failed = evaluateWires(report, report.imageHash, truth, wrong);

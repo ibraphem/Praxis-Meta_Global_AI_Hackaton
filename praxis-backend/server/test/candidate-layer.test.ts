@@ -378,12 +378,12 @@ test('one focused phase budget covers all checks and retains completed checks wh
   );
   assert.equal(calls, 2);
   const report = store.experiments.active()!.report as MuseExperimentReport;
-  assert.equal(report.phaseBudgetMs, 300);
+  assert.equal(report.variantBudgetMs, 300);
   assert.deepEqual(
     report.measurements.map((m) => m.status),
     ['succeeded', 'timed_out'],
   );
-  assert.ok(report.phaseTimings[0]!.elapsedMs >= 280);
+  assert.ok(report.variantTimings[0]!.elapsedMs >= 280);
 });
 
 test('local audit publishes an already-saved recovered checkpoint even after its crop budget is exhausted', async (t) => {
@@ -438,4 +438,110 @@ test('local audit publishes an already-saved recovered checkpoint even after its
   assert.equal(audited.recovery.budget.requests, 4);
   assert.equal(audited.muse.status, 'timed_out');
   assert.equal(JSON.stringify(audited.sam.result), originalSam);
+});
+
+test('the named variant budget resets per configuration while total experiment elapsed time is recorded independently', async (t) => {
+  const store = new JobStore(testConfig(), ':memory:');
+  t.after(() => store.close());
+  const job = await saved(store);
+  const report = await runMuseExperiment(store, job.analysisId, store.config, {
+    variantBudgetMs: 150,
+    stagesFactory: () => ({
+      async segment() {
+        assert.fail('No SAM');
+      },
+      async interpret(snapshot) {
+        await delay(65);
+        return {
+          image: { width: snapshot.image.width, height: snapshot.image.height },
+          objects: [],
+          provenance: { mode: 'combined', reasoningModel: 'test' },
+        };
+      },
+    }),
+  });
+  assert.equal(report.variantBudgetMs, 150);
+  assert.equal(report.budgetScope, 'per_variant');
+  assert.ok(report.experimentElapsedMs > report.variantBudgetMs);
+  assert.equal(report.comparisonComplete, true);
+  assert.deepEqual(report.unattemptedVariants, []);
+  assert.equal(report.variantRuns.length, 3);
+  assert.ok(report.variantRuns.every((v) => v.status === 'completed'));
+  assert.equal('phaseBudgetMs' in report, false);
+});
+
+test('conflicting legacy and canonical budgets fail before acquiring a reservation or dispatching work', async (t) => {
+  const store = new JobStore(testConfig(), ':memory:');
+  t.after(() => store.close());
+  const job = await saved(store);
+  await assert.rejects(
+    () =>
+      runMuseExperiment(store, job.analysisId, store.config, {
+        phaseBudgetMs: 100,
+        variantBudgetMs: 200,
+      }),
+    /Conflicting/,
+  );
+  assert.equal(store.experiments.active(), undefined);
+});
+
+test('cancellation between focused checks preserves completed evidence and explicitly records the unattempted plan', async (t) => {
+  const store = new JobStore(testConfig(), ':memory:');
+  t.after(() => store.close());
+  const job = await saved(store),
+    snapshot = {
+      image: job.sam.snapshot!.image,
+      candidates: [wire(1, 30), wire(2, 250), wire(3, 450)],
+    };
+  job.recovery.snapshotRef = store.checkpointSnapshot(
+    job,
+    snapshot,
+    randomUUID(),
+    'recorded',
+    job.sam.snapshotRef!,
+  );
+  store.save(job);
+  const controller = new AbortController();
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      runMuseExperiment(store, job.analysisId, store.config, {
+        variants: ['focused-candidates', '1280-minimal'],
+        candidateIds: ['jumper_wire_1', 'jumper_wire_2', 'jumper_wire_3'],
+        signal: controller.signal,
+        verificationClient: {
+          async post() {
+            calls++;
+            return completion({ decision: 'one_visible_wire' });
+          },
+        },
+        stagesFactory: () => ({
+          async segment() {
+            assert.fail('No SAM');
+          },
+          async interpret() {
+            assert.fail('Unattempted variant must not run');
+          },
+        }),
+        onProgress: (r) => {
+          if (r.measurements.length === 1 && r.status === 'running')
+            controller.abort(new Error('Stop after first check'));
+        },
+      }),
+    /interrupted/,
+  );
+  const report = store.experiments.active()!.report as MuseExperimentReport;
+  assert.equal(calls, 1);
+  assert.equal(report.comparisonComplete, false);
+  assert.deepEqual(report.attemptedVariants, ['focused-candidates']);
+  assert.deepEqual(report.unattemptedVariants, ['1280-minimal']);
+  assert.deepEqual(
+    report.unattemptedCandidates.map((c) => c.candidateId),
+    ['jumper_wire_2', 'jumper_wire_3'],
+  );
+  assert.equal(report.variantRuns[0]!.status, 'interrupted');
+  assert.equal(
+    report.measurements[0]!.modelReview!.decision,
+    'one_visible_wire',
+  );
 });

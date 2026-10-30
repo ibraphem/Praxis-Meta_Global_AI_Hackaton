@@ -1047,7 +1047,7 @@ npm run experiment:muse -- ANALYSIS_ID --variants 1280-minimal \
 
 npm run experiment:muse -- ANALYSIS_ID --variants focused-candidates \
   --snapshot SAM_SNAPSHOT_ID --candidate-ids jumper_wire_31,jumper_wire_43 \
-  --budget-ms 45000 --output NEW_FOCUSED_REPORT.json
+  --variant-budget-ms 45000 --output NEW_FOCUSED_REPORT.json
 ```
 
 These are **live provider calls**, not offline replay. IDs are native candidates in
@@ -1067,10 +1067,10 @@ scene inventory. Crop-truncated candidates are recorded as skipped with no provi
 request. The identity decision remains a model proposal; it does not create a human
 identity review, accepted endpoint or electrical connection.
 
-Reports use schema version 2 and save each successful focused check independently,
+Reports use schema version 3 and save each successful focused check independently,
 including candidate ID, evidence fingerprint, snapshot, decision, diagnostics and
 backend runtime fingerprint. The per-variant budget defaults to the smaller of the
-provider and stage limits; `--budget-ms` may lower it. It covers audit, preparation,
+provider and stage limits; `--variant-budget-ms` may lower it. It covers audit, preparation,
 admission and **all** focused checks together. Phase wall time is saved separately
 from each check. Comparing several variants can exceed one phase budget overall.
 
@@ -1110,3 +1110,105 @@ servers after code edits before a controlled benchmark. Production fingerprints 
 the built client source snapshot and running backend artifacts. No environment
 values, credentials, source files, or photograph bytes are included in fingerprints.
 Inspect **Benchmark build provenance** beside the evaluation export control.
+
+### Experiment budgets and comparison completeness
+
+`variantBudgetMs` and `--variant-budget-ms` are the canonical names. The deadline
+restarts for **each variant**; all focused checks within that variant share it.
+There is no total-experiment deadline. `experimentElapsedMs` measures monotonic
+runner elapsed time from entry through the report snapshot, including checkpoint
+loading, admission and work across variants; it excludes CLI startup. Multiple
+variants may consume several budgets. `variantTimings` contains per-variant durations.
+
+For compatibility, the old programmatic `phaseBudgetMs` and CLI `--budget-ms` remain
+accepted aliases. The CLI prints a deprecation notice. Supplying conflicting alias
+and canonical values is rejected before reservation or provider dispatch. New v3
+reports emit the canonical fields; existing v1/v2 reports are not rewritten.
+
+Reports explicitly record `plannedVariants`, `attemptedVariants`,
+`unattemptedVariants`, `variantRuns`, `unattemptedCandidates`, and
+`comparisonComplete`. A variant is attempted when its operation starts; that does
+not guarantee an HTTP request was sent. Focused records additionally show planned
+and attempted native candidate IDs. An automatic candidate plan is materialized
+only when its audit runs; an unattempted automatic variant has no known candidate
+list. Measurements retain `upstreamOutcome`, including `not_sent` for local skips.
+
+`comparisonComplete` means the requested plan was executed to terminal observations,
+including all planned focused checks, and the runner completed normally. It does
+not mean requests succeeded, identities were correct, or latency targets were met.
+Interrupted reports always set it false. Unattempted variants/checks are neither
+model abstentions nor failures. A failed provider request can be a valid terminal
+observation, while a focused batch that stopped early remains an incomplete
+comparison even if the runner processed its other variants and completed.
+
+Read a saved report offline without provider credentials, modifying the file or
+starting any model requests:
+
+```sh
+npm run experiment:muse -- --summarize /actual/path/report.json
+```
+
+The summary supports v1/v2/v3, retains available image/snapshot/model/runtime
+provenance, maps the legacy budget/timing names, and infers legacy completeness
+conservatively. Missing historical total elapsed time stays `null`; per-variant
+durations are not added and mislabeled as a measured experiment total.
+
+If the first variant times out, collect other configurations with separate explicit
+experiments after inspecting and releasing the interrupted reservation:
+
+```sh
+npm run experiment:muse -- ANALYSIS_ID --variants 1280-current \
+  --snapshot SAM_SNAPSHOT_ID --variant-budget-ms 45000 --output NEW_REDUCED_REPORT.json
+```
+
+Keep image, checkpoint, model settings and deadline fixed where applicable. A
+single-variant report describes only that configuration; it does not declare an
+entire multi-configuration study complete. A timed-out configuration remains an
+observed failure in the evidence. Separate local experiments and explicit release
+still do not prove earlier upstream work stopped. Retain this isolation uncertainty
+when comparing latency, and do not rerun until a favorable result appears.
+
+### Physical-wire metrics and reviewer evidence
+
+`wire:score` now emits `wire-score-v3`; the v1 truth/evaluation inputs remain valid.
+New metrics separate raw SAM candidate count, audited candidate count, geometry-
+passing mask candidates, explicitly selectable masks, selectable physical-wire
+coverage, fragment groups, crop-truncated masks, duplicate groups, complete
+segmentation coverage, and confirmed physical-wire coverage. The complete inventory
+remains the denominator: use all 17 physical wire IDs for the current experiment.
+
+Optionally add `selectableCandidateIds` to the evaluation JSON. These must be unique
+native IDs from the frozen recovery report, independently mapped from the actual
+selectable view; reconciled display IDs can differ. Missing mapping yields `null`,
+not a guessed count from geometry passes. An explicit empty list means zero.
+Selectable physical coverage counts each annotated physical wire once, including
+selected partial traces; duplicate masks cannot increase it. Complete segmentation
+requires an unambiguous whole-wire group with usable, geometry-passing masks and no
+crop truncation, separately from the existing endpoint-pair `completeWires` metric.
+
+Both truth and evaluation JSON can optionally record the actual annotation source:
+
+```json
+"reviewProvenance": {
+  "source": "human_visual",
+  "reviewer": "independent reviewer identifier",
+  "recordedAt": "2026-10-30T12:00:00Z"
+}
+```
+
+Allowed sources are `human_visual`, `assistant_visual`, `physical_inspection`, and
+`continuity_test`. Use the actual reviewer and timestamp; do not label an assistant
+visual audit as human review. Confirmed coverage is emitted only when both the
+inventory and candidate associations explicitly record human review or physical
+inspection. Otherwise `confirmedPhysicalWires` and `confirmedPhysicalWireCoverage`
+stay `null`. Counts require unambiguous accepted whole-wire identities against that
+inventory; competing groups cannot be cherry-picked, even if only one is accepted.
+`correctAcceptedIdentityCoverage` remains the annotation-relative metric available
+for legacy/assistant-only files, with the same fixed denominator.
+
+These are independently supplied benchmark annotations, not proof generated by SAM
+or Muse. Scoring never changes the native identity-review ledger or establishes
+electrical contact. Existing `targetsMet` remains the annotation-relative benchmark
+gate, not a physical-verification or deployment certificate. Earlier score artifacts
+are unchanged; no higher physical-wire coverage is claimed without an annotated
+retest on real photographs.
