@@ -1,3 +1,8 @@
+import { extendsCropFragment } from './wire-continuation.js';
+import {
+  maskEvidenceReader,
+  prioritizeWireEvidence,
+} from './wire-mask-evidence.js';
 import { cropFragment } from './wire-fragments.js';
 import { reconcileWireReviews } from './wire-review-reconciliation.js';
 import sharp from 'sharp';
@@ -327,6 +332,8 @@ export function selectRecoveryTiles(
 ): BoundingBox[] {
   const scores = new Map<number, number>();
   for (const c of candidates) {
+    // Crop exits have dedicated wire-centered recovery; broad tiles truncate them again.
+    if (c.touchesCropBoundary) continue;
     if (
       c.source === 'cv_trace' ? c.candidateCoverage >= 0.8 : c.geometryAccepted
     )
@@ -390,7 +397,9 @@ export async function auditWireCoverage(
     .update(`${image.width}x${image.height}:`)
     .update(snapshot.image.dataUrl)
     .digest('hex');
-  const raw = snapshot.candidates.filter((c) => c.type === 'jumper_wire'),
+  const raw = prioritizeWireEvidence(
+      snapshot.candidates.filter((c) => c.type === 'jumper_wire'),
+    ),
     geometry = new WireGeometry(image),
     candidates: RecoveryCandidate[] = [],
     coverage = new Uint8Array(info.width * info.height),
@@ -544,7 +553,22 @@ export async function auditWireCoverage(
     candidates.push(trace);
   }
   const hypotheses: RecoveryReport['hypotheses'] = [];
-  for (let i = 0; i < cv.candidates.length; i++)
+  const readExtension = maskEvidenceReader();
+  for (const a of raw)
+    for (const b of raw) {
+      if (a === b || hypotheses.length >= 32) continue;
+      if (
+        candidates.find((c) => c.id === b.id)?.candidateCoverage === 1 &&
+        extendsCropFragment(a, b, readExtension)
+      )
+        hypotheses.push({
+          candidateIds: [a.id, b.id],
+          kind: 'mask_extension_proposal',
+          signals: ['spatial_overlap'],
+          status: 'unverified',
+        });
+    }
+  for (let i = 0; i < cv.candidates.length && hypotheses.length < 32; i++)
     for (
       let j = i + 1;
       j < cv.candidates.length && hypotheses.length < 32;

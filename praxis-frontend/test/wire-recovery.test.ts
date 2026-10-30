@@ -263,3 +263,63 @@ test("selectable-evidence reconciliation metadata survives the saved-analysis sc
   unsafe.objects[0].guidanceEligible = true;
   assert.throws(() => completedJob(unsafe));
 });
+
+test("batched continuation provenance and reviewable mask extensions survive the saved-job proxy", async () => {
+  const j = job(),
+    report = j.recovery!.report!;
+  report.hypotheses = [
+    {
+      candidateIds: ["jumper_wire_1", "jumper_wire_2"],
+      kind: "mask_extension_proposal",
+      signals: ["spatial_overlap"],
+      status: "unverified",
+    },
+  ];
+  j.recovery!.cropAttempts = [
+    {
+      attemptId: j.analysisId,
+      region: [0, 0, 100, 80],
+      mode: "continuation",
+      workKeys: ["a".repeat(64), "b".repeat(64)],
+      spatialPrompt: {
+        bbox: [0, 0, 100, 80],
+        positivePoints: [[10, 20]],
+        negativePoints: [],
+      },
+      spatialPrompts: [
+        {
+          bbox: [0, 0, 100, 80],
+          positivePoints: [[10, 20]],
+          negativePoints: [],
+        },
+        {
+          bbox: [0, 0, 100, 80],
+          positivePoints: [[30, 40]],
+          negativePoints: [],
+        },
+      ],
+      sourceCandidateIds: ["jumper_wire_1", "jumper_wire_2"],
+      status: "succeeded",
+      upstreamOutcome: "response_received",
+      startedAt: 1,
+      finishedAt: 2,
+    },
+  ];
+  const proxy = createAnalysisJobProxy({
+    fetcher: async () => Response.json(j),
+  });
+  const response = await proxy(
+    new Request("http://localhost/api/analyses"),
+    "get",
+    j.analysisId,
+  );
+  assert.equal(response.status, 200);
+  const decoded = analysisJobSchema.parse(await response.json());
+  assert.deepEqual(decoded.recovery!.cropAttempts, j.recovery!.cropAttempts);
+  assert.deepEqual(decoded.recovery!.report!.hypotheses, report.hypotheses);
+  assert.ok(
+    decoded.recovery!.report!.candidates.every(
+      (c) => c.identityStatus === "unverified" && c.guidanceEligible === false,
+    ),
+  );
+});

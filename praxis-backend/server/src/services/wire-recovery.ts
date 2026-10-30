@@ -1,8 +1,10 @@
+import { continuationRegions } from './wire-continuation.js';
+import { recoveryPlan } from './wire-recovery-plan.js';
 import { supportsSpatialPrompt } from './wire-fragments.js';
 import { shortWireRegions } from './short-wire-recovery.js';
 import { buildWirePrompt } from './sam.js';
 import { randomUUID } from 'node:crypto';
-import { normalizeCropAttempts, sameRegion } from './crop-attempts.js';
+import { normalizeCropAttempts } from './crop-attempts.js';
 import sharp from 'sharp';
 import { decodeMaskToRaster } from '@meta-sam/parser';
 import { createMetaClient, type MetaClient } from '../lib/meta-client.js';
@@ -203,27 +205,34 @@ export function createWireRecovery(
     const deadline = Date.now() + config.WIRE_RECOVERY_TIMEOUT_MS;
     let changed = false,
       requests = 0;
-    if (input.operation === 'recover_short') {
+    if (input.operation === 'recover_short' || input.operation === 'recover') {
       report.shortRegions = await shortWireRegions(
         snapshot,
         report,
         input.target,
         input.target?.manualPoint,
+        cropAttempts,
       );
       emit();
     }
-    const targeted =
-      input.operation === 'recover_short' ? (report.shortRegions ?? []) : [];
-    const regions = (
-      input.operation === 'recover_short'
-        ? targeted.map((t) => t.crop)
-        : report.cropRegions
-    ).filter(
-      (b, i, all) =>
-        !cropAttempts.some((a) => sameRegion(a.region, b)) &&
-        all.findIndex((a) => sameRegion(a, b)) === i,
+    const targeted = report.shortRegions ?? [];
+    const regions = recoveryPlan(
+      input.operation === 'recover'
+        ? continuationRegions(
+            snapshot,
+            report,
+            config.WIRE_RECOVERY_MAX_CROP_PIXELS,
+          )
+        : [],
+      targeted.map((t) => ({
+        ...t,
+        mode: t.source === 'human' ? ('human' as const) : ('short' as const),
+      })),
+      input.operation === 'recover' ? report.cropRegions : [],
+      cropAttempts,
     );
-    for (const crop of regions) {
+    for (const work of regions) {
+      const { crop, targets } = work;
       if (snapshot.candidates.length >= 100) {
         report.stopReason = 'candidate_budget';
         break;
@@ -250,25 +259,22 @@ export function createWireRecovery(
       budget.pixels += area;
       requests++;
       visited.push(crop);
-      const target = targeted.find((t) => sameRegion(t.crop, crop));
+      const spatialPrompts = targets.map((t) => ({
+        bbox: t.bbox,
+        positivePoints: t.positivePoints,
+        negativePoints: t.negativePoints,
+      }));
       const attempt: CropAttempt = {
         attemptId: randomUUID(),
         region: crop,
-        ...(target
-          ? {
-              spatialPrompt: {
-                bbox: target.bbox,
-                positivePoints: target.positivePoints,
-                negativePoints: target.negativePoints,
-              },
-            }
+        workKeys: work.workKeys,
+        ...(spatialPrompts.length
+          ? { spatialPrompt: spatialPrompts[0]!, spatialPrompts }
           : {}),
-        mode:
-          input.operation === 'recover_short'
-            ? input.target?.manualPoint
-              ? 'human'
-              : 'short'
-            : 'tiles',
+        sourceCandidateIds: targets.flatMap((t) =>
+          t.candidateId ? [t.candidateId] : [],
+        ),
+        mode: work.mode,
         status: 'running',
         upstreamOutcome: 'not_sent',
         startedAt: Date.now(),
@@ -293,27 +299,25 @@ export function createWireRecovery(
         signal.throwIfAborted();
         attempt.upstreamOutcome = 'unknown';
         emit();
-        const prompt = target
+        const prompt = targets.length
           ? buildWirePrompt(
-              [
-                {
-                  id: 1,
-                  bbox: [
-                    target.bbox[0] - left,
-                    target.bbox[1] - top,
-                    target.bbox[2],
-                    target.bbox[3],
-                  ],
-                  positivePoints: target.positivePoints.map(([x, y]) => [
-                    x - left,
-                    y - top,
-                  ]),
-                  negativePoints: target.negativePoints.map(([x, y]) => [
-                    x - left,
-                    y - top,
-                  ]),
-                },
-              ],
+              targets.map((target, i) => ({
+                id: i + 1,
+                bbox: [
+                  target.bbox[0] - left,
+                  target.bbox[1] - top,
+                  target.bbox[2],
+                  target.bbox[3],
+                ],
+                positivePoints: target.positivePoints.map(([x, y]) => [
+                  x - left,
+                  y - top,
+                ]),
+                negativePoints: target.negativePoints.map(([x, y]) => [
+                  x - left,
+                  y - top,
+                ]),
+              })),
               image,
             )
           : 'wire';
@@ -358,27 +362,30 @@ export function createWireRecovery(
                 .map((c) => Number(c.id.split('_').at(-1))),
             );
         const global = reprojectCrop(
-          native.map((c, i) => ({
-            ...c,
-            id: `jumper_wire_${i + 1}`,
-            ...(target
-              ? {
-                  recoveryPromptMatched:
-                    c.samObjectId === 1 &&
-                    supportsSpatialPrompt(
-                      c,
-                      target.positivePoints.map(([x, y]) => [
-                        x - left,
-                        y - top,
-                      ]),
-                      target.negativePoints.map(([x, y]) => [
-                        x - left,
-                        y - top,
-                      ]),
-                    ),
-                }
-              : {}),
-          })),
+          native.map((c, i) => {
+            const target = targets[(c.samObjectId ?? 0) - 1];
+            return {
+              ...c,
+              id: `jumper_wire_${i + 1}`,
+              ...(targets.length
+                ? {
+                    recoveryPromptMatched:
+                      !!target &&
+                      supportsSpatialPrompt(
+                        c,
+                        target.positivePoints.map(([x, y]) => [
+                          x - left,
+                          y - top,
+                        ]),
+                        target.negativePoints.map(([x, y]) => [
+                          x - left,
+                          y - top,
+                        ]),
+                      ),
+                  }
+                : {}),
+            };
+          }),
           crop,
           first,
         );

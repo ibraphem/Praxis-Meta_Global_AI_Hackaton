@@ -38,3 +38,28 @@ export function finishRunningCrops(
       a.errorCode = errorCode;
     }
 }
+
+/** Identity excludes checkpoint revisions: unchanged prompts cannot be retried by re-auditing. */
+export function cropWorkKey(
+  region: BoundingBox,
+  prompt?: CropAttempt['spatialPrompt'],
+): string {
+  return createHash('sha256')
+    .update(JSON.stringify([region, prompt ?? null]))
+    .digest('hex');
+}
+export function cropWorkAttempted(
+  attempts: CropAttempt[],
+  region: BoundingBox,
+  prompt?: CropAttempt['spatialPrompt'],
+): boolean {
+  const key = cropWorkKey(region, prompt);
+  return attempts.some(
+    (a) =>
+      a.workKeys?.includes(key) ||
+      (!a.workKeys &&
+        sameRegion(a.region, region) &&
+        (a.status === 'legacy_unknown' ||
+          cropWorkKey(a.region, a.spatialPrompt) === key)),
+  );
+}

@@ -75,6 +75,9 @@ export function WireRecoveryPanel({
         Visual candidates, reviewed physical wires, and electrical connections
         are separate. Coverage is a diagnostic, not proof that every wire was
         found. Re-audit after identity review to update verified coverage.
+        Recovery prioritizes crop-edge continuations and short-wire evidence
+        before broad tiles. A longer mask remains a separate hypothesis until
+        reviewed.
       </p>
       <div className="analysis-job-actions">
         <button
@@ -86,10 +89,10 @@ export function WireRecoveryPanel({
         </button>
         <button
           className="button button-secondary"
-          disabled={disabled || !report || report.cropRegions.length === 0}
+          disabled={disabled || !report}
           onClick={() => onAction("recover-wires")}
         >
-          Recover prioritized regions
+          Recover continuations and missing wires
         </button>
         <button
           className="button button-secondary"
@@ -196,7 +199,8 @@ export function WireRecoveryPanel({
             {cropAttempts.filter((a) => a.status === "succeeded").length}{" "}
             successful crop inspections · {uninspected.length + legacyCount}{" "}
             attempts without a confirmed successful inspection. Previously
-            attempted regions are blocked from redispatch; consumed budgets
+            attempted crop-and-prompt requests are blocked from redispatch;
+            different targets in the same crop remain eligible. Consumed budgets
             remain charged.
           </p>
           {!cropAttempts.length && (
@@ -208,7 +212,12 @@ export function WireRecoveryPanel({
           <ul>
             {cropAttempts.map((a) => (
               <li key={a.attemptId}>
-                Region [{a.region.join(", ")}]: {a.status.replaceAll("_", " ")}
+                Region [{a.region.join(", ")}] · {a.mode ?? "legacy"} ·{" "}
+                {a.spatialPrompts?.length ?? (a.spatialPrompt ? 1 : 0)} targets:{" "}
+                {a.status.replaceAll("_", " ")}
+                {a.sourceCandidateIds?.length
+                  ? ` · Source evidence: ${a.sourceCandidateIds.join(", ")}`
+                  : ""}
                 {a.errorCode ? ` (${a.errorCode})` : ""} · Upstream:{" "}
                 {a.upstreamOutcome.replaceAll("_", " ")}
               </li>
@@ -471,12 +480,28 @@ export function WireRecoveryPanel({
           )}
           {!!report.hypotheses.length && (
             <details>
-              <summary>Unverified fragment associations</summary>
+              <summary>
+                Reviewable mask extensions and fragment associations
+              </summary>
               <ul>
                 {report.hypotheses.map((h, i) => (
                   <li key={i}>
                     {h.candidateIds.join(" + ")} · {h.kind.replaceAll("_", " ")}{" "}
                     · unverified; no bridge or connection established
+                    {h.kind === "mask_extension_proposal" && (
+                      <>
+                        {" "}
+                        · Original fragment retained; longer mask is separate
+                        evidence.{" "}
+                        <button
+                          className="button button-secondary"
+                          disabled={disabled}
+                          onClick={() => setSelected([...h.candidateIds])}
+                        >
+                          Compare both masks for review
+                        </button>
+                      </>
+                    )}
                   </li>
                 ))}
               </ul>

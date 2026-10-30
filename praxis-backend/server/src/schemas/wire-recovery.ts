@@ -91,7 +91,29 @@ export const cropAttemptSchema = z
       })
       .strict()
       .optional(),
-    mode: z.enum(['tiles', 'short', 'human']).optional(),
+    mode: z.enum(['tiles', 'short', 'human', 'continuation']).optional(),
+    workKeys: z
+      .array(z.string().regex(/^[a-f0-9]{64}$/))
+      .min(1)
+      .max(3)
+      .optional(),
+    spatialPrompts: z
+      .array(
+        z
+          .object({
+            bbox: boxSchema,
+            positivePoints: z.array(point).min(1).max(3),
+            negativePoints: z.array(point).max(3),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(3)
+      .optional(),
+    sourceCandidateIds: z
+      .array(z.string().regex(/^jumper_wire_[1-9]\d*$/))
+      .max(3)
+      .optional(),
     status: z.enum([
       'running',
       'succeeded',
@@ -215,6 +237,7 @@ export const recoveryReportSchema = z
             kind: z.enum([
               'possible_fragment_continuation',
               'crop_fragment_association',
+              'mask_extension_proposal',
             ]),
             signals: z
               .array(

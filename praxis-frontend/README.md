@@ -783,13 +783,17 @@ SAM/Muse call. Calibration and existing endpoint reviews are separate from this 
 
 1. Inspect rejection reasons and unexplained pink trace hypotheses. Select a candidate
    to see its observed amber mask. Passing geometry checks does not verify identity.
-2. **Recover prioritized regions** explicitly requests bounded high-resolution SAM
-   crops around incomplete regions. It does not send every tile. Requests, crop pixels,
+2. **Recover continuations and missing wires** explicitly requests bounded native-resolution
+   SAM crops. Observed crop-edge continuations and local short-wire traces receive
+   alternating priority before broad tiles. It does not send every tile. Requests, crop pixels,
    rounds, stop reasons, and truncation are visible. A failed crop preserves earlier
    evidence and consumes its budget; timeout does not prove upstream work stopped.
    **Crop inspection outcomes** distinguishes successful inspections from failed,
-   timed-out, interrupted, and legacy unknown attempts. Previously attempted regions
-   remain blocked from redispatch, and budgets are not refunded. A `blocked regions`
+   timed-out, interrupted, and legacy unknown attempts. Previously attempted crop-and-prompt requests
+   remain blocked from redispatch, and budgets are not refunded. Different spatial
+   targets within the same crop remain eligible; up to three independent objects
+   share one SAM request, with per-object seed validation. Legacy visited regions
+   with unknown prompts remain blocked conservatively. A `blocked regions`
    result means uninspected regions remain, not that coverage is complete.
 3. Select a candidate with a mask and choose **Ask Muse to verify candidate** for one
    focused photo/mask/context request. Multiple wires, fragments, hidden insertions,
@@ -938,3 +942,53 @@ Endpoint review now labels unsupported evidence as **Original Muse evidence** an
 shows a corrected/confirmed result separately. Endpoint sources are recorded per
 endpoint rather than labeling every position as user-selected. Close-up diagnostics
 accept all input frames, including the seven-image two-endpoint/grid case.
+
+### Continuation recovery and the next benchmark
+
+Restart both servers after this change, reconnect the saved analysis, and **Audit wire
+coverage** first (no model call). **Recover continuations and missing wires** then
+uses the cached masks to anchor larger native-resolution crops. The original fragment
+and its stable selectable ID remain preserved. A longer, geometrically valid mask with
+at least 95% shared native fragment pixels, 15% size growth, and observed pixels beyond
+the old crop can survive duplicate filtering as a separate hypothesis. These are
+conservative observation checks, not identity confidence or measured recall. Unsupported
+unions, inferred bridges, and crop exits are never promoted into insertions. Crop-boundary
+endpoint blocking still applies to any mask that remains truncated. Missing audit
+previews do not block recovery from raw masks; new seed-validated masks receive priority
+within the existing decode and preview limits.
+
+Under **Reviewable mask extensions and fragment associations**, choose **Compare both
+masks for review**. Inspect both overlays, then explicitly record the identity decision.
+The longer mask gets its own selectable evidence ID, not an automatic replacement for
+the old wire. Review IDs are native checkpoint IDs and may differ from the main numbered
+list. New overlapping evidence requires re-review; earlier endpoint reviews remain tied
+to their original analysis revision. Mask count can increase without physical-wire recall
+increasing. Count an upgraded upper wire once in the 17-wire inventory.
+
+Automatic short-wire discovery samples across the breadboard, component clusters,
+calibrated grid priors and unexplained traces, instead of examining only the first twelve
+windows. It decodes the source once, limits local inspection to 64 windows / 12 million
+crop pixels, and proposes at most 16 targets. Existing mask **pixels**, rather than an
+entire bounding box, determine coverage. Dark traces remain unverified because shadows,
+rails and components can look similar. Human seeds are recorded separately and excluded
+from claims of fully automatic recovery.
+
+The existing cumulative SAM request, round and pixel limits still apply; old failed
+attempts are not refunded. If the saved analysis has exhausted its budget, raise the
+explicit backend limits for a separately recorded run as described in the backend README.
+Recovery publishes candidates locally without waiting for scene interpretation. Do not
+repeat scene interpretation to make the new masks selectable.
+
+Freeze the original bundle, calibration and the 17-wire inventory before evaluating the
+new checkpoint. Compare full-image against **Focused crop + calibrated grid reference**
+using the same eligible wires, then score with `benchmark:grounding`. Keep all ten planned
+endpoints in the denominator, including missing masks, blocked fragments, provider failures
+and abstentions. Report complete wires, wrong accepted holes, request count and wall time.
+Color-tip refinement stays opt-in: four rejected attempts provide no evidence of a gain.
+
+The interim gate remains 15/17 distinct selectable physical wires, 8/10 correct endpoints,
+4/5 complete wires, zero wrong accepted holes and under 75 seconds for the five-wire batch.
+Retain every originally correct endpoint when comparing the same wires. A two-request
+concurrency cap alone does not guarantee that latency. Annotate identities independently,
+track duplicates/fragments separately, and repeat on a held-out photograph before claiming
+reliability. No benchmark improvement is inferred from synthetic test passes.

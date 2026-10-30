@@ -339,7 +339,7 @@ test("wire identity verification and timed-out crop recovery preserve review and
   await panel.getByRole("button", { name: "Keep identity uncertain" }).click();
   await expect(panel.getByText(/uncertain: jumper_wire_1/)).toBeVisible();
   await panel
-    .getByRole("button", { name: "Recover prioritized regions" })
+    .getByRole("button", { name: "Recover continuations and missing wires" })
     .click();
   await expect(
     panel.getByText(/Latest recovery action: timed out/),
@@ -350,7 +350,7 @@ test("wire identity verification and timed-out crop recovery preserve review and
     ),
   ).toBeVisible();
   await expect(
-    panel.getByText(/Region \[50, 150, 400, 400\]: timed out/),
+    panel.getByText(/Region \[50, 150, 400, 400\].*timed out/),
   ).toBeVisible();
   expect(verifyCalls).toBe(1);
   expect(recoverCalls).toBe(1);
@@ -359,7 +359,7 @@ test("wire identity verification and timed-out crop recovery preserve review and
   await page.reload();
   await expect(panel.getByText(/uncertain: jumper_wire_1/)).toBeVisible();
   await expect(
-    panel.getByText(/Region \[50, 150, 400, 400\]: timed out/),
+    panel.getByText(/Region \[50, 150, 400, 400\].*timed out/),
   ).toBeVisible();
   await expect(
     panel.getByText(/Electrical connections: unestablished/),
@@ -589,6 +589,47 @@ test("recovered geometry becomes selectable while scene interpretation remains t
         },
       },
     } as typeof job.result;
+    const report = job.recovery!.report!;
+    const original = report.candidates[0]!;
+    original.touchesCropBoundary = true;
+    original.cropOrigin = [50, 150, 250, 200];
+    report.candidates.push({
+      ...original,
+      id: "jumper_wire_2",
+      bbox: [100, 200, 450, 100],
+      touchesCropBoundary: false,
+      geometryAccepted: true,
+      cropOrigin: [50, 150, 600, 300],
+      rejectionReasons: [],
+    });
+    report.hypotheses = [
+      {
+        candidateIds: ["jumper_wire_1", "jumper_wire_2"],
+        kind: "mask_extension_proposal",
+        signals: ["spatial_overlap"],
+        status: "unverified",
+      },
+    ];
+    job.recovery!.cropAttempts = [
+      {
+        attemptId: source,
+        region: [50, 150, 600, 300],
+        mode: "continuation",
+        sourceCandidateIds: ["jumper_wire_1"],
+        workKeys: ["c".repeat(64)],
+        spatialPrompts: [
+          {
+            bbox: [50, 150, 600, 300],
+            positivePoints: [[150, 240]],
+            negativePoints: [],
+          },
+        ],
+        status: "succeeded",
+        upstreamOutcome: "response_received",
+        startedAt: 1,
+        finishedAt: 2,
+      },
+    ];
     return route.fulfill({ status: 202, json: job });
   });
   await page.goto("/");
@@ -599,7 +640,10 @@ test("recovered geometry becomes selectable while scene interpretation remains t
     .getByRole("button", { name: "Analyze image", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Recover prioritized regions", exact: true })
+    .getByRole("button", {
+      name: "Recover continuations and missing wires",
+      exact: true,
+    })
     .click();
   await expect(
     page.getByText("Recovered SAM geometry is available now.", {
@@ -613,5 +657,29 @@ test("recovered geometry becomes selectable while scene interpretation remains t
   await mask.click();
   await expect(mask).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText(/Muse interpretation timed out/)).toBeVisible();
+  const panel = page.getByRole("region", {
+    name: "Wire coverage and identity review",
+  });
+  await panel
+    .getByText("Reviewable mask extensions and fragment associations", {
+      exact: true,
+    })
+    .click();
+  await panel
+    .getByRole("button", { name: "Compare both masks for review" })
+    .click();
+  await expect(
+    panel.getByRole("checkbox", { name: /jumper_wire_1/ }),
+  ).toBeChecked();
+  await expect(
+    panel.getByRole("checkbox", { name: /jumper_wire_2/ }),
+  ).toBeChecked();
+  await expect(
+    panel.getByRole("button", { name: "Ask Muse to verify candidate" }),
+  ).toBeDisabled();
+  await expect(
+    panel.getByRole("button", { name: "Verify one physical wire" }),
+  ).toBeEnabled();
+  await expect(panel.getByText(/Original fragment retained/)).toBeVisible();
   expect(sceneCalls).toBe(0);
 });

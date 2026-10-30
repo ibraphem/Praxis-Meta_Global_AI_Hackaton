@@ -1,3 +1,5 @@
+import { extendsCropFragment } from './wire-continuation.js';
+import { maskEvidenceReader } from './wire-mask-evidence.js';
 import { decodeMaskToRaster, decodeMaskToSVGPath } from '@meta-sam/parser';
 import type {
   BoundingBox,
@@ -222,7 +224,8 @@ function covers(
 export class WireGeometry {
   private decodedPixels = 0;
   private pathBytes = 0;
-  private readonly accepted: ResolvedMask[] = [];
+  private readonly accepted: (ResolvedMask & { source: Detection })[] = [];
+  private readonly readEvidence = maskEvidenceReader();
   constructor(
     private readonly image: Pick<PreparedImage, 'width' | 'height'>,
   ) {}
@@ -307,8 +310,15 @@ export class WireGeometry {
           (intersection / Math.min(signature.size, other.signature.size) >
             0.85 &&
             intersection / Math.max(signature.size, other.signature.size) > 0.5)
-        )
-          return { ok: false, reason: 'duplicate_mask' };
+        ) {
+          // Preserve a supported extension as a separate reviewable observation. Do not let an
+          // earlier truncated mask hide a longer mask; neither observation establishes identity.
+          if (
+            !extendsCropFragment(other.source, detection, this.readEvidence) &&
+            !extendsCropFragment(detection, other.source, this.readEvidence)
+          )
+            return { ok: false, reason: 'duplicate_mask' };
+        }
       }
       const path = simplifyPath(decodeMaskToSVGPath(raw));
       const parsed = maskSchema.safeParse({
@@ -321,7 +331,7 @@ export class WireGeometry {
         return { ok: false, reason: 'geometry_budget' };
       this.pathBytes += path.length;
       const mask = { geometry: parsed.data, signature };
-      this.accepted.push(mask);
+      this.accepted.push({ ...mask, source: detection });
       return { ok: true, mask };
     } catch {
       return { ok: false, reason: 'invalid_mask' };

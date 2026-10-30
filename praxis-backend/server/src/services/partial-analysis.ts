@@ -1,3 +1,4 @@
+import { prioritizeWireEvidence } from './wire-mask-evidence.js';
 import { RUNTIME } from '../lib/runtime.js';
 import { cropFragment } from './wire-fragments.js';
 import type { Config } from '../config.js';
@@ -17,7 +18,7 @@ export function partialAnalysis(
   const geometry = new WireGeometry(snapshot.image);
   const objects: Component[] = [];
   const proposals: NonNullable<Analysis['proposals']> = [];
-  for (const c of snapshot.candidates) {
+  for (const c of prioritizeWireEvidence(snapshot.candidates)) {
     const base = {
       id: c.id,
       type: c.type,

@@ -175,6 +175,9 @@ export interface Detection {
   /** Private checkpoints only. Never expose encoded provider masks or sampler IDs in API responses. */
   encodedMask?: EncodedMask;
   samObjectId?: number;
+  recoverySource?: 'sam_crop';
+  cropOrigin?: BoundingBox;
+  recoveryPromptMatched?: boolean;
 }
 
 export interface Candidate extends Detection {

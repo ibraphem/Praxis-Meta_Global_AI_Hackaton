@@ -68,7 +68,10 @@ test('new recovered geometry publishes without a Muse result, survives restart, 
     image: job.sam.snapshot!.image,
     candidates: [
       ...job.sam.snapshot!.candidates,
-      { ...wire(2, 250), cropOrigin: [250, 30, 100, 100] },
+      {
+        ...wire(2, 250),
+        cropOrigin: [250, 30, 100, 100] as [number, number, number, number],
+      },
     ],
   };
   const attemptId = randomUUID();

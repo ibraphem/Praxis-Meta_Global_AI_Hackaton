@@ -1,3 +1,6 @@
+import { maskEvidenceReader } from './wire-mask-evidence.js';
+import { cropWorkAttempted } from './crop-attempts.js';
+import type { CropAttempt } from '../schemas/wire-recovery.js';
 import sharp from 'sharp';
 import { classicalTraces } from './wire-coverage.js';
 import type { SamSnapshot } from './vision.js';
@@ -29,6 +32,7 @@ export async function shortWireRegions(
   report: RecoveryReport,
   context?: { pitchPx: number; gridPoints: [number, number][] },
   manual?: [number, number],
+  attempts: CropAttempt[] = [],
 ): Promise<ShortRegion[]> {
   const image = snapshot.image,
     pitch =
@@ -55,20 +59,22 @@ export async function shortWireRegions(
   report.candidates
     .filter((c) => c.touchesCropBoundary)
     .flatMap((c) => c.cropExitPoints ?? [])
-    .slice(0, 3)
     .forEach(add);
   const components = snapshot.candidates.filter(
     (c) => c.type !== 'jumper_wire' && c.type !== 'breadboard',
   );
-  components.slice(0, 2).forEach((c) => {
+  components.forEach((c) => {
     add([c.bbox[0], c.bbox[1]]);
     add([c.bbox[0] + c.bbox[2], c.bbox[1] + c.bbox[3]]);
   });
   const grid = context?.gridPoints ?? [];
-  for (let i = 0; i < 4 && grid.length; i++)
+  for (let i = 0; i < Math.min(16, grid.length) && grid.length; i++)
     add(
       grid[
-        Math.min(grid.length - 1, Math.floor(((i + 0.5) * grid.length) / 4))
+        Math.min(
+          grid.length - 1,
+          Math.floor(((i + 0.5) * grid.length) / Math.min(16, grid.length)),
+        )
       ]!,
     );
   report.candidates
@@ -76,7 +82,6 @@ export async function shortWireRegions(
     .sort(
       (a, b) => Math.max(a.bbox[2], a.bbox[3]) - Math.max(b.bbox[2], b.bbox[3]),
     )
-    .slice(0, 4)
     .forEach((c) =>
       add([c.bbox[0] + c.bbox[2] / 2, c.bbox[1] + c.bbox[3] / 2]),
     );
@@ -87,17 +92,67 @@ export async function shortWireRegions(
         for (let x = c.bbox[0]; x < c.bbox[0] + c.bbox[2]; x += size * 0.75)
           add([x + size / 2, y + size / 2]);
     });
-  const bytes = Buffer.from(image.dataUrl.split(',')[1]!, 'base64'),
-    regions: ShortRegion[] = [];
-  for (const center of centers.slice(0, 12)) {
+  // Decode the original once; dozens of JPEG decodes would dominate this local pass.
+  const { data: original } = await sharp(
+    Buffer.from(image.dataUrl.split(',')[1]!, 'base64'),
+  )
+    .toColourspace('srgb')
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const regions: ShortRegion[] = [];
+  const read = maskEvidenceReader();
+  const masks = snapshot.candidates
+    .filter(
+      (c) =>
+        c.type === 'jumper_wire' &&
+        report.candidates.some(
+          (r) => r.id === c.id && r.candidateCoverage === 1,
+        ),
+    )
+    .map((c) => read(c))
+    .filter((p) => p?.size);
+  const covered = (points: [number, number][]) =>
+    points.filter(([x, y]) =>
+      masks.some((mask) => {
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++)
+            if (mask!.has((y + dy) * 32768 + x + dx)) return true;
+        return false;
+      }),
+    ).length /
+      points.length >=
+    0.8;
+  // Bound CPU/pixel work, but spread scans across the entire board instead of taking a prefix.
+  const count = Math.min(
+    64,
+    centers.length,
+    Math.floor(
+      12_000_000 / (Math.min(size, image.width) * Math.min(size, image.height)),
+    ),
+  );
+  const scan = Array.from(
+    { length: count },
+    (_, i) =>
+      centers[
+        Math.min(
+          centers.length - 1,
+          Math.floor(((i + 0.5) * centers.length) / count),
+        )
+      ]!,
+  );
+  for (const center of scan) {
+    if (regions.length >= 128) break;
     const crop = smallBox(center, size, image),
       [left, top, width, height] = crop;
-    const { data } = await sharp(bytes)
-      .extract({ left, top, width, height })
-      .toColourspace('srgb')
-      .removeAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const data = Buffer.alloc(width * height * 3);
+    for (let row = 0; row < height; row++)
+      original.copy(
+        data,
+        row * width * 3,
+        ((top + row) * image.width + left) * 3,
+        ((top + row) * image.width + left + width) * 3,
+      );
     const traces = classicalTraces(data, width, height, { width, height }, 32, {
       short: true,
     }).candidates.sort(
@@ -121,14 +176,7 @@ export async function shortWireRegions(
         regions.some(
           (r) => Math.hypot(r.bbox[0] - bbox[0], r.bbox[1] - bbox[1]) < pitch,
         ) ||
-        report.candidates.some(
-          (old) =>
-            old.geometryAccepted &&
-            bbox[0] >= old.bbox[0] &&
-            bbox[1] >= old.bbox[1] &&
-            bbox[0] + bbox[2] <= old.bbox[0] + old.bbox[2] &&
-            bbox[1] + bbox[3] <= old.bbox[1] + old.bbox[3],
-        )
+        covered(points)
       )
         continue;
       const seeds = [
@@ -139,7 +187,7 @@ export async function shortWireRegions(
         [left, top],
         [left + width - 1, top + height - 1],
       ];
-      regions.push({
+      const region: ShortRegion = {
         crop,
         bbox,
         positivePoints: seeds,
@@ -149,9 +197,17 @@ export async function shortWireRegions(
         ),
         source: 'automatic',
         evidence: c.color === 'dark' ? 'dark_line' : 'color_line',
-      });
-      if (regions.length >= 16) return regions;
+      };
+      if (
+        !cropWorkAttempted(attempts, crop, {
+          bbox,
+          positivePoints: seeds,
+          negativePoints: region.negativePoints,
+        })
+      )
+        regions.push(region);
+      if (regions.length >= 128) break;
     }
   }
-  return regions;
+  return regions.slice(0, 16);
 }

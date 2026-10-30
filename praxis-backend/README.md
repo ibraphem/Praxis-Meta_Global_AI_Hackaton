@@ -1212,3 +1212,57 @@ electrical contact. Existing `targetsMet` remains the annotation-relative benchm
 gate, not a physical-verification or deployment certificate. Earlier score artifacts
 are unchanged; no higher physical-wire coverage is claimed without an annotated
 retest on real photographs.
+
+### Native-resolution continuation and short-wire recovery
+
+`recover-wires` now schedules wire-centered crop continuations and local short-wire
+spatial prompts before broad tiles, alternating the two targeted queues so one class
+cannot consume every early request slot. Existing cumulative limits remain unchanged.
+A source mask is never extended by drawing synthetic pixels. SAM observes a larger crop
+with positive anchors taken from the original mask, then every returned object is checked
+against its own prompt. Up to three objects in one crop share a request, charged once for
+that request and its crop area. The ledger persists ordered `spatialPrompts`, per-target
+`workKeys`, and continuation `sourceCandidateIds`. Keys bind the crop and prompt rather
+than a mutable checkpoint ID. Identical failed/timed-out work is not silently retried;
+different seeds in the same crop are separate work. Legacy unknown crop records remain
+blocked because their original prompts cannot be reconstructed.
+
+Duplicate filtering permits a reviewable extension only when a geometrically valid mask
+contains at least 95% of the original fragment's native pixels, grows by at least 15%, and
+has at least six pixels / 5% of its observed area beyond the original crop. These checks
+are deliberately conservative, not wire identity verification. Both raw masks remain in
+immutable snapshots, and the new selectable hypothesis cannot overwrite an old stable ID.
+Continuation anchors use raw checkpoint masks even when an audit preview was omitted
+by the path budget. New seed-validated masks receive decode/preview priority within the
+existing quotas; checkpoint order and earlier selectable evidence are preserved.
+The audit records `mask_extension_proposal` with `status: unverified`; overlapping evidence
+invalidates automatic review carry-forward. Complete observed extensions stop further
+requests for the old fragment. Truncated extensions can anchor another bounded recovery
+round. A crossing, a nearby parallel wire or box overlap alone cannot justify an upgrade.
+
+Short-wire scans decode the source once, inspect at most 64 native windows / 12 million
+crop pixels across the board, and retain at most 16 unattempted targets. Actual native
+mask pixels determine whether a trace is already covered; a long wire's bounding box
+cannot hide a separate short jumper. This is a candidate generator, including potential
+clutter, not a measured physical-wire detector.
+
+For a larger **explicitly budgeted** continuation/short-wire experiment, an example is:
+
+```dotenv
+WIRE_RECOVERY_MAX_REQUESTS=12
+WIRE_RECOVERY_REQUESTS_PER_ROUND=3
+WIRE_RECOVERY_MAX_ROUNDS=4
+WIRE_RECOVERY_MAX_PIXELS=16000000
+WIRE_RECOVERY_MAX_CROP_PIXELS=2000000
+```
+
+Restart the backend after configuring limits. This permits more paid requests; it does
+not reset previously charged requests, clear unknown upstream outcomes or imply that all
+requests must be used. Default limits remain four total requests / two per round / two
+rounds / six million crop pixels. Record configured limits in benchmark evidence.
+
+Run the existing focused endpoint experiment only after selecting complete observed
+masks. Keep scene interpretation outside the wire-coverage critical path, compare fixed
+wires/calibration, retain missing/blocked endpoints in the full denominator, and keep
+zero accepted wrong holes as a hard gate. Recovered mask count, independent physical-wire
+coverage, identity precision and electrical connectivity remain separate measures.
