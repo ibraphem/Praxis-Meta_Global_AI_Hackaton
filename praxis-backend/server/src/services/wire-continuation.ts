@@ -1,3 +1,5 @@
+import { uncertainContinuationAnchor } from './continuation-anchor.js';
+import { recoveryEligible } from './wire-evidence-policy.js';
 import { cropFragment } from './wire-fragments.js';
 import { maskEvidenceReader } from './wire-mask-evidence.js';
 import type { BoundingBox, Detection } from '../schemas/vision.js';
@@ -9,7 +11,7 @@ export interface RecoveryTarget {
   bbox: BoundingBox;
   positivePoints: [number, number][];
   negativePoints: [number, number][];
-  mode: 'continuation' | 'short' | 'human';
+  mode: 'continuation' | 'continuation_uncertain' | 'short' | 'human';
   candidateId?: string;
 }
 
@@ -47,23 +49,27 @@ export function continuationRegions(
   snapshot: SamSnapshot,
   report: RecoveryReport,
   maxPixels: number,
+  diagnostics: NonNullable<RecoveryReport['continuationDiagnostics']> = [],
 ): RecoveryTarget[] {
   const read = maskEvidenceReader(),
     targets: RecoveryTarget[] = [];
   for (const observed of report.candidates) {
-    if (
-      !observed.touchesCropBoundary ||
-      observed.metrics.ends !== 2 ||
-      observed.metrics.branches
-    )
-      continue;
+    if (!observed.touchesCropBoundary) continue;
     const source = snapshot.candidates.find((c) => c.id === observed.id);
-    if (
-      !source ||
-      source.type !== 'jumper_wire' ||
-      source.recoveryPromptMatched === false
-    )
+    if (!source || source.type !== 'jumper_wire' || !recoveryEligible(source))
       continue;
+    const supported =
+      observed.metrics.ends === 2 &&
+      observed.metrics.branches === 0 &&
+      observed.metrics.components === 1;
+    const diagnostic: NonNullable<
+      RecoveryReport['continuationDiagnostics']
+    >[number] = {
+      candidateId: source.id,
+      queue: supported ? 'supported' : 'uncertain',
+      reason: 'queued',
+    };
+    diagnostics.push(diagnostic);
     // A completed extension already exists: retain the old fragment, do not spend another request on it.
     if (
       snapshot.candidates.some(
@@ -74,10 +80,15 @@ export function continuationRegions(
           report.candidates.some((r) => r.id === c.id && r.geometryAccepted) &&
           extendsCropFragment(source, c, read),
       )
-    )
+    ) {
+      diagnostic.reason = 'already_extended';
       continue;
+    }
     const pixels = read(source);
-    if (!pixels?.size) continue;
+    if (!pixels?.size) {
+      diagnostic.reason = 'no_safe_anchor';
+      continue;
+    }
     const b = source.bbox,
       margin = Math.max(48, Math.max(b[2], b[3]) * 0.75);
     const make = (pad: number): BoundingBox => {
@@ -111,8 +122,10 @@ export function continuationRegions(
           x < crop[0] + crop[2] - 8 &&
           y < crop[1] + crop[3] - 8,
       )
-    )
+    ) {
+      diagnostic.reason = 'pixel_budget';
       continue;
+    }
     // Anchor inside observed insulation, far from the artificial observation boundary.
     const oldCrop = observed.cropOrigin!;
     const anchors = [...pixels]
@@ -139,13 +152,21 @@ export function continuationRegions(
         positivePoints.push(p);
       if (positivePoints.length === 3) break;
     }
+    if (!supported) {
+      const anchor = uncertainContinuationAnchor(source);
+      if ('reason' in anchor) {
+        diagnostic.reason = anchor.reason;
+        continue;
+      }
+      positivePoints.splice(0, positivePoints.length, anchor.point);
+    }
     if (positivePoints.length)
       targets.push({
         crop,
         bbox: crop,
         positivePoints,
         negativePoints: [],
-        mode: 'continuation',
+        mode: supported ? 'continuation' : 'continuation_uncertain',
         candidateId: source.id,
       });
   }

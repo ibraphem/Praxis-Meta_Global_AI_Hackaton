@@ -1,3 +1,4 @@
+import { recoveryEligible } from './wire-evidence-policy.js';
 import { extendsCropFragment } from './wire-continuation.js';
 import { maskEvidenceReader } from './wire-mask-evidence.js';
 import { decodeMaskToRaster, decodeMaskToSVGPath } from '@meta-sam/parser';
@@ -231,10 +232,7 @@ export class WireGeometry {
   ) {}
 
   resolve(detection: Detection, prompt?: WirePrompt): Resolution {
-    if (
-      (detection as Detection & { recoveryPromptMatched?: boolean })
-        .recoveryPromptMatched === false
-    )
+    if (!recoveryEligible(detection))
       return { ok: false, reason: 'prompt_mismatch' };
     const raw = detection.encodedMask;
     if (!raw) return { ok: false, reason: 'no_mask' };

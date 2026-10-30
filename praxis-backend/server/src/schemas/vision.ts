@@ -178,6 +178,7 @@ export interface Detection {
   recoverySource?: 'sam_crop';
   cropOrigin?: BoundingBox;
   recoveryPromptMatched?: boolean;
+  recoveryQuarantineReason?: 'candidate_capacity';
 }
 
 export interface Candidate extends Detection {

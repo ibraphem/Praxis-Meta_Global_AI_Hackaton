@@ -35,6 +35,12 @@ const environmentSchema = z.object({
   WIRE_RECOVERY_MAX_PIXELS: integer(6000000, 16000000),
   WIRE_RECOVERY_MAX_CROP_PIXELS: integer(2000000, 4000000),
   WIRE_RECOVERY_TIMEOUT_MS: integer(60000, 120000),
+  WIRE_CONTINUATION_UNCERTAIN_MAX_REQUESTS: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(3)
+    .default(1),
   WIRE_VERIFY_MAX_REQUESTS: integer(8, 16),
   SAM_CONCURRENCY: integer(2, 4),
   MAX_WIRE_REFINEMENTS: z.coerce.number().int().min(0).max(16).default(6),

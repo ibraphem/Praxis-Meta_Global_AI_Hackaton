@@ -790,7 +790,7 @@ SAM/Muse call. Calibration and existing endpoint reviews are separate from this 
    evidence and consumes its budget; timeout does not prove upstream work stopped.
    **Crop inspection outcomes** distinguishes successful inspections from failed,
    timed-out, interrupted, and legacy unknown attempts. Previously attempted crop-and-prompt requests
-   remain blocked from redispatch, and budgets are not refunded. Different spatial
+   remain blocked from automatic redispatch, and budgets are not refunded. Different spatial
    targets within the same crop remain eligible; up to three independent objects
    share one SAM request, with per-object seed validation. Legacy visited regions
    with unknown prompts remain blocked conservatively. A `blocked regions`
@@ -992,3 +992,36 @@ Retain every originally correct endpoint when comparing the same wires. A two-re
 concurrency cap alone does not guarantee that latency. Annotate identities independently,
 track duplicates/fragments separately, and repeat on a held-out photograph before claiming
 reliability. No benchmark improvement is inferred from synthetic test passes.
+
+### Reviewing quarantine, uncertain continuations and retries
+
+After restarting the servers, use **Audit wire coverage** on the saved analysis. The
+new audit policy reconciles earlier review context. **Quarantined raw observations**
+shows prompt mismatches and capacity exclusions preserved in checkpoints. They cannot
+count as covered wires, suppress a fresh matching mask, or enter the selectable set.
+Raw retention is independently bounded, and `raw evidence budget` is a stopping reason,
+not a coverage success.
+
+**Continuation planning decisions** distinguishes supported and uncertain topology,
+missing safe anchors, ambiguous boundary components and exhausted allowances. A
+truncated mask can now receive another observation even when its skeleton has extra
+ends or branches. Uncertain recovery uses one anchor from one observed connected
+component and defaults to one normal request per analysis within the existing total
+budgets. Mask acceptance and exact-hole snapping remain unchanged.
+
+In **Crop inspection outcomes**, a failed, timed-out or interrupted request can expose
+**Retry this crop**. Enter a reason. When upstream completion is unknown, explicitly
+check the authorization acknowledging that the original request may still be running.
+The retry creates a separate recorded attempt and consumes another request, pixels and
+round. Original outcomes remain visible; one retry per work item is permitted. A saved
+analysis with exhausted budgets requires explicitly larger backend limits before another
+request. Legacy unknown records without reproducible prompts and successful inspections
+cannot be retried through this control. There is no automatic retry or timer that clears
+upstream uncertainty.
+
+Under an extension proposal, **Ask Muse to verify extension** compares the original
+photograph and both observed masks. It reports continuity, nearby wires, crossings and
+component leads. A favorable result appears as model evidence; the human-verified count
+and electrical connection status stay unchanged. Record human identity decisions
+separately, retain `unknown` for unsupported insertions, and evaluate all ten planned
+endpoints against the frozen benchmark. No new accuracy claim follows from these checks.

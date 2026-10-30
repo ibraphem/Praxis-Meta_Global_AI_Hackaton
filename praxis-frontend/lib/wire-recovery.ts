@@ -79,6 +79,54 @@ export const wireModelReviewSchema = z
     elapsedMs: z.number().nonnegative(),
   })
   .strict();
+export const cropRetryRequestSchema = z
+  .object({
+    attemptId: z.uuid(),
+    authorization: z.enum(["known_outcome", "accept_unknown_upstream"]),
+    reason: z.string().trim().min(3).max(240),
+  })
+  .strict();
+export const cropRetrySchema = cropRetryRequestSchema.extend({
+  authorizedAt: z.number().int().nonnegative(),
+});
+export type CropRetry = z.infer<typeof cropRetrySchema>;
+export const extensionReviewSchema = z
+  .object({
+    sourceCandidateId: z.string().regex(/^jumper_wire_[1-9]\d*$/),
+    candidateId: z.string().regex(/^jumper_wire_[1-9]\d*$/),
+    reportId: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceSnapshotId: z.uuid(),
+    sourceSnapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+    decision: z.enum([
+      "same_physical_wire",
+      "different_wires",
+      "crossing_ambiguous",
+      "component_lead",
+      "insufficient_evidence",
+    ]),
+    continuity: z.enum(["visible", "occluded", "ambiguous"]),
+    adjacentWires: z.enum(["distinguished", "none_visible", "ambiguous"]),
+    crossings: z.enum(["distinguished", "none_visible", "ambiguous"]),
+    componentLeads: z.enum(["excluded", "none_visible", "ambiguous"]),
+    evidenceStatus: z.enum([
+      "supports_same_wire",
+      "conflicting",
+      "insufficient",
+    ]),
+    reviewSource: z.literal("muse"),
+    electricalConnectionStatus: z.literal("unestablished"),
+    elapsedMs: z.number().nonnegative(),
+  })
+  .strict();
+export type ExtensionReview = z.infer<typeof extensionReviewSchema>;
+export const extensionVerificationSchema = z
+  .object({
+    sourceCandidateId: z.string().regex(/^jumper_wire_[1-9]\d*$/),
+    candidateId: z.string().regex(/^jumper_wire_[1-9]\d*$/),
+    reportId: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type ExtensionVerification = z.infer<typeof extensionVerificationSchema>;
 export const cropAttemptSchema = z
   .object({
     attemptId: z.uuid(),
@@ -91,7 +139,17 @@ export const cropAttemptSchema = z
       })
       .strict()
       .optional(),
-    mode: z.enum(["tiles", "short", "human", "continuation"]).optional(),
+    mode: z
+      .enum([
+        "tiles",
+        "short",
+        "human",
+        "continuation",
+        "continuation_uncertain",
+      ])
+      .optional(),
+    retryOf: z.uuid().optional(),
+    retryAuthorization: cropRetrySchema.optional(),
     workKeys: z
       .array(z.string().regex(/^[a-f0-9]{64}$/))
       .min(1)
@@ -203,6 +261,37 @@ export const recoveryReportSchema = z
       .strict(),
     auditScale: z.number().positive().max(1),
     candidates: z.array(recoveryCandidateSchema).max(100),
+    quarantinedCandidates: z
+      .array(
+        z
+          .object({
+            id: z.string().max(64),
+            reason: z.enum(["prompt_mismatch", "candidate_capacity"]),
+          })
+          .strict(),
+      )
+      .max(300)
+      .optional(),
+    continuationDiagnostics: z
+      .array(
+        z
+          .object({
+            candidateId: z.string().max(64),
+            queue: z.enum(["supported", "uncertain"]),
+            reason: z.enum([
+              "queued",
+              "no_safe_anchor",
+              "ambiguous_boundary_components",
+              "uncertain_budget",
+              "pixel_budget",
+              "already_extended",
+            ]),
+          })
+          .strict(),
+      )
+      .max(100)
+      .optional(),
+    extensionReviews: z.array(extensionReviewSchema).max(16).optional(),
     summary: z
       .object({
         rawSamCandidates: z.number().int().nonnegative(),
@@ -227,6 +316,7 @@ export const recoveryReportSchema = z
       "provider_error",
       "candidate_budget",
       "blocked_regions",
+      "raw_evidence_budget",
     ]),
     modelReviews: z.array(wireModelReviewSchema).max(16),
     hypotheses: z

@@ -323,3 +323,115 @@ test("batched continuation provenance and reviewable mask extensions survive the
     ),
   );
 });
+
+test("explicit crop retries and extension verification use fixed proxy actions with preserved provenance", async () => {
+  for (const action of ["retry-wire-crop", "verify-wire-extension"] as const) {
+    const j = job(),
+      report = j.recovery!.report!,
+      source = j.sam.attempts[0]!.attemptId;
+    report.quarantinedCandidates = [
+      { id: "jumper_wire_99", reason: "prompt_mismatch" },
+    ];
+    report.continuationDiagnostics = [
+      {
+        candidateId: "jumper_wire_1",
+        queue: "uncertain",
+        reason: "uncertain_budget",
+      },
+    ];
+    const body =
+      action === "retry-wire-crop"
+        ? {
+            attemptId: source,
+            authorization: "accept_unknown_upstream",
+            reason: "Operator inspected original timeout",
+          }
+        : {
+            sourceCandidateId: "jumper_wire_1",
+            candidateId: "jumper_wire_2",
+            reportId: report.reportId,
+          };
+    j.recovery!.operation =
+      action === "retry-wire-crop" ? "retry_crop" : "verify_extension";
+    if (action === "retry-wire-crop")
+      j.recovery!.cropRetry = {
+        attemptId: source,
+        authorization: "accept_unknown_upstream",
+        reason: "Operator inspected original timeout",
+        authorizedAt: 3,
+      };
+    else
+      report.extensionReviews = [
+        {
+          sourceCandidateId: "jumper_wire_1",
+          candidateId: "jumper_wire_2",
+          reportId: report.reportId,
+          sourceSnapshotId: source,
+          sourceSnapshotHash: "a".repeat(64),
+          decision: "crossing_ambiguous",
+          continuity: "ambiguous",
+          adjacentWires: "ambiguous",
+          crossings: "ambiguous",
+          componentLeads: "none_visible",
+          evidenceStatus: "insufficient",
+          reviewSource: "muse",
+          electricalConnectionStatus: "unestablished",
+          elapsedMs: 30,
+        },
+      ];
+    const proxy = createAnalysisJobProxy({
+      fetcher: async (url, init) => {
+        assert.equal(
+          new URL(String(url)).pathname,
+          `/api/analyses/${j.analysisId}/${action}`,
+        );
+        assert.equal(init!.method, "POST");
+        assert.deepEqual(
+          JSON.parse(new TextDecoder().decode(init!.body as Uint8Array)),
+          body,
+        );
+        return Response.json(j);
+      },
+    });
+    const response = await proxy(
+      new Request("http://localhost/api/analyses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      action,
+      j.analysisId,
+    );
+    assert.equal(response.status, 202);
+    const decoded = analysisJobSchema.parse(await response.json());
+    assert.deepEqual(
+      decoded.recovery!.report!.quarantinedCandidates,
+      report.quarantinedCandidates,
+    );
+    assert.equal(decoded.recovery!.operation, j.recovery!.operation);
+    if (action === "verify-wire-extension")
+      assert.deepEqual(
+        decoded.recovery!.report!.extensionReviews,
+        report.extensionReviews,
+      );
+  }
+});
+
+test("crop retry conflicts explain the recovery request instead of requesting another photograph", async () => {
+  const j = job(),
+    proxy = createAnalysisJobProxy({
+      fetcher: async () => new Response(null, { status: 409 }),
+    });
+  const response = await proxy(
+    new Request("http://localhost/api/analyses", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+    "retry-wire-crop",
+    j.analysisId,
+  );
+  assert.equal(response.status, 409);
+  const body = await response.json();
+  assert.equal(body.error.code, "CROP_RETRY_CONFLICT");
+  assert.match(body.error.message, /unknown upstream outcome/);
+});

@@ -1,3 +1,10 @@
+import { createExtensionVerifier } from './wire-extension-verification.js';
+import { retryCropWork } from './crop-retry.js';
+import {
+  recoveryEligible,
+  eligibleCandidateCount,
+  rawEvidenceFull,
+} from './wire-evidence-policy.js';
 import { continuationRegions } from './wire-continuation.js';
 import { recoveryPlan } from './wire-recovery-plan.js';
 import { supportsSpatialPrompt } from './wire-fragments.js';
@@ -25,6 +32,8 @@ import type {
   RecoveryReport,
   WireIdentity,
   CropAttempt,
+  CropRetry,
+  ExtensionVerification,
 } from '../schemas/wire-recovery.js';
 export interface RecoveryBudget {
   requests: number;
@@ -80,6 +89,7 @@ export function duplicateWire(
   b: Candidate,
   read: (c: Candidate) => Set<number> | undefined = pixelsOf,
 ): boolean {
+  if (!recoveryEligible(a) || !recoveryEligible(b)) return false;
   if (
     a.bbox[0] >= b.bbox[0] + b.bbox[2] ||
     b.bbox[0] >= a.bbox[0] + a.bbox[2] ||
@@ -106,13 +116,21 @@ export function createWireRecovery(
       budget: RecoveryBudget;
       visited: BoundingBox[];
       cropAttempts?: CropAttempt[];
-      operation: 'audit' | 'recover' | 'verify' | 'recover_short';
+      operation:
+        | 'audit'
+        | 'recover'
+        | 'verify'
+        | 'recover_short'
+        | 'retry_crop'
+        | 'verify_extension';
       target?: {
         pitchPx: number;
         gridPoints: [number, number][];
         manualPoint?: [number, number] | undefined;
       };
       candidateId?: string;
+      cropRetry?: CropRetry;
+      extensionVerification?: ExtensionVerification;
       previous?: RecoveryReport;
     },
     signal: AbortSignal,
@@ -131,8 +149,11 @@ export function createWireRecovery(
       config.WIRE_AUDIT_MAX_DIMENSION,
       input.previous,
     );
-    if (input.previous?.reportId === report.reportId)
+    if (input.previous?.reportId === report.reportId) {
       report.modelReviews = input.previous.modelReviews;
+      if (input.previous.extensionReviews)
+        report.extensionReviews = input.previous.extensionReviews;
+    }
     const emit = (changed = false) => {
       signal.throwIfAborted();
       const state = {
@@ -147,6 +168,38 @@ export function createWireRecovery(
       return state;
     };
     if (input.operation === 'audit') return emit();
+    if (input.operation === 'verify_extension') {
+      if (!input.extensionVerification)
+        throw new AppError(
+          400,
+          'INVALID_EXTENSION',
+          'Choose an extension proposal.',
+        );
+      if (budget.verificationRequests >= config.WIRE_VERIFY_MAX_REQUESTS)
+        throw new AppError(
+          409,
+          'VERIFICATION_BUDGET',
+          'The cumulative verification budget is exhausted.',
+        );
+      budget.verificationRequests++;
+      emit();
+      const review = await createExtensionVerifier(config, client)(
+        snapshot,
+        report,
+        input.extensionVerification,
+        signal,
+        trace,
+      );
+      report.extensionReviews = [
+        ...(report.extensionReviews ?? []).filter(
+          (r) =>
+            r.candidateId !== review.candidateId ||
+            r.sourceCandidateId !== review.sourceCandidateId,
+        ),
+        review,
+      ];
+      return emit();
+    }
     if (input.operation === 'verify') {
       if (budget.verificationRequests >= config.WIRE_VERIFY_MAX_REQUESTS)
         throw new AppError(
@@ -216,26 +269,68 @@ export function createWireRecovery(
       emit();
     }
     const targeted = report.shortRegions ?? [];
-    const regions = recoveryPlan(
+    report.continuationDiagnostics = [];
+    const uncertainUsed = cropAttempts.filter(
+      (a) => a.mode === 'continuation_uncertain' && !a.retryOf,
+    ).length;
+    const continuations =
       input.operation === 'recover'
         ? continuationRegions(
             snapshot,
             report,
             config.WIRE_RECOVERY_MAX_CROP_PIXELS,
+            report.continuationDiagnostics,
           )
-        : [],
-      targeted.map((t) => ({
-        ...t,
-        mode: t.source === 'human' ? ('human' as const) : ('short' as const),
-      })),
-      input.operation === 'recover' ? report.cropRegions : [],
-      cropAttempts,
-    );
+        : [];
+    if (input.operation === 'retry_crop' && !input.cropRetry)
+      throw new AppError(
+        400,
+        'INVALID_CROP_RETRY',
+        'Choose an original crop attempt.',
+      );
+    if (uncertainUsed >= config.WIRE_CONTINUATION_UNCERTAIN_MAX_REQUESTS)
+      for (const d of report.continuationDiagnostics)
+        if (d.queue === 'uncertain' && d.reason === 'queued')
+          d.reason = 'uncertain_budget';
+    const regions =
+      input.operation === 'retry_crop'
+        ? [retryCropWork(cropAttempts, input.cropRetry!)]
+        : recoveryPlan(
+            continuations.filter(
+              (t) =>
+                t.mode !== 'continuation_uncertain' ||
+                uncertainUsed < config.WIRE_CONTINUATION_UNCERTAIN_MAX_REQUESTS,
+            ),
+            targeted.map((t) => ({
+              ...t,
+              mode:
+                t.source === 'human' ? ('human' as const) : ('short' as const),
+            })),
+            input.operation === 'recover' ? report.cropRegions : [],
+            cropAttempts,
+            budget.rounds > 1,
+          );
     for (const work of regions) {
       const { crop, targets } = work;
-      if (snapshot.candidates.length >= 100) {
+      if (eligibleCandidateCount(snapshot.candidates) >= 100) {
         report.stopReason = 'candidate_budget';
         break;
+      }
+      if (rawEvidenceFull(snapshot.candidates)) {
+        report.stopReason = 'raw_evidence_budget';
+        break;
+      }
+      if (
+        input.operation !== 'retry_crop' &&
+        work.mode === 'continuation_uncertain' &&
+        cropAttempts.filter(
+          (a) => a.mode === 'continuation_uncertain' && !a.retryOf,
+        ).length >= config.WIRE_CONTINUATION_UNCERTAIN_MAX_REQUESTS
+      ) {
+        for (const d of report.continuationDiagnostics ?? [])
+          if (work.targets.some((t) => t.candidateId === d.candidateId))
+            d.reason = 'uncertain_budget';
+        continue;
       }
       if (requests >= config.WIRE_RECOVERY_REQUESTS_PER_ROUND) break;
       signal.throwIfAborted();
@@ -275,6 +370,12 @@ export function createWireRecovery(
           t.candidateId ? [t.candidateId] : [],
         ),
         mode: work.mode,
+        ...(input.cropRetry
+          ? {
+              retryOf: input.cropRetry.attemptId,
+              retryAuthorization: input.cropRetry,
+            }
+          : {}),
         status: 'running',
         upstreamOutcome: 'not_sent',
         startedAt: Date.now(),
@@ -390,11 +491,16 @@ export function createWireRecovery(
           first,
         );
         for (const candidate of global) {
-          if (snapshot.candidates.length >= 100) break;
+          if (
+            recoveryEligible(candidate) &&
+            eligibleCandidateCount(snapshot.candidates) >= 100
+          )
+            candidate.recoveryQuarantineReason = 'candidate_capacity';
           if (
             !snapshot.candidates.some(
               (old) =>
                 old.type === 'jumper_wire' &&
+                recoveryEligible(old) &&
                 duplicateWire(candidate, old, readPixels),
             )
           ) {
@@ -422,6 +528,8 @@ export function createWireRecovery(
         attempt.status = 'succeeded';
         attempt.finishedAt = Date.now();
         emit();
+        const continuationDiagnostics: RecoveryReport['continuationDiagnostics'] =
+          report.continuationDiagnostics;
         report = await auditWireCoverage(
           snapshot,
           currentRef,
@@ -429,6 +537,8 @@ export function createWireRecovery(
           config.WIRE_AUDIT_MAX_DIMENSION,
           report,
         );
+        if (continuationDiagnostics)
+          report.continuationDiagnostics = continuationDiagnostics;
         if (targeted.length) report.shortRegions = targeted;
         report.stopReason = 'round_complete';
         changed = false;
@@ -455,9 +565,13 @@ export function createWireRecovery(
       }
     }
     if (!regions.length)
-      report.stopReason = cropAttempts.some((a) => a.status !== 'succeeded')
-        ? 'blocked_regions'
-        : 'no_actionable_regions';
+      report.stopReason =
+        continuations.some((t) => t.mode === 'continuation_uncertain') &&
+        uncertainUsed >= config.WIRE_CONTINUATION_UNCERTAIN_MAX_REQUESTS
+          ? 'request_budget'
+          : cropAttempts.some((a) => a.status !== 'succeeded')
+            ? 'blocked_regions'
+            : 'no_actionable_regions';
     else if (report.stopReason === 'audit_only')
       report.stopReason = 'round_complete';
     return emit(changed);

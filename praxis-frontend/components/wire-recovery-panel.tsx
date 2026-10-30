@@ -11,6 +11,8 @@ export type RecoveryAction =
   | "recover-wires"
   | "recover-short-wires"
   | "verify-wire"
+  | "retry-wire-crop"
+  | "verify-wire-extension"
   | "wire-identities"
   | "interpret-recovery";
 export function WireRecoveryPanel({
@@ -31,7 +33,11 @@ export function WireRecoveryPanel({
     [uncovered, setUncovered] = useState(true),
     [markPoint, setMarkPoint] = useState(false),
     [seed, setSeed] = useState<[number, number] | null>(null),
-    [pitch, setPitch] = useState("");
+    [pitch, setPitch] = useState(""),
+    [retryReasons, setRetryReasons] = useState<Record<string, string>>({}),
+    [retryAcknowledgments, setRetryAcknowledgments] = useState<
+      Record<string, boolean>
+    >({});
   const report = job.recovery?.report,
     disabled = busy || jobIsActive(job) || !!job.experiment,
     current = report
@@ -220,6 +226,73 @@ export function WireRecoveryPanel({
                   : ""}
                 {a.errorCode ? ` (${a.errorCode})` : ""} · Upstream:{" "}
                 {a.upstreamOutcome.replaceAll("_", " ")}
+                {a.retryOf && (
+                  <p>
+                    Explicit retry of {a.retryOf} ·{" "}
+                    {a.retryAuthorization?.reason}. Original attempt preserved.
+                  </p>
+                )}
+                {!a.retryOf &&
+                  ["failed", "timed_out", "interrupted"].includes(a.status) &&
+                  !cropAttempts.some((r) => r.retryOf === a.attemptId) && (
+                    <div>
+                      <label>
+                        Retry reason for crop {a.attemptId}
+                        <input
+                          maxLength={240}
+                          value={retryReasons[a.attemptId] ?? ""}
+                          onChange={(e) =>
+                            setRetryReasons((r) => ({
+                              ...r,
+                              [a.attemptId]: e.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                      {a.upstreamOutcome === "unknown" && (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={!!retryAcknowledgments[a.attemptId]}
+                            onChange={(e) =>
+                              setRetryAcknowledgments((r) => ({
+                                ...r,
+                                [a.attemptId]: e.target.checked,
+                              }))
+                            }
+                          />
+                          I authorize another attempt for crop {a.attemptId};
+                          the earlier request may still be running upstream.
+                        </label>
+                      )}
+                      <button
+                        className="button button-secondary"
+                        disabled={
+                          disabled ||
+                          (retryReasons[a.attemptId] ?? "").trim().length < 3 ||
+                          (a.upstreamOutcome === "unknown" &&
+                            !retryAcknowledgments[a.attemptId])
+                        }
+                        onClick={() =>
+                          onAction("retry-wire-crop", {
+                            attemptId: a.attemptId,
+                            reason: retryReasons[a.attemptId]!.trim(),
+                            authorization:
+                              a.upstreamOutcome === "unknown"
+                                ? "accept_unknown_upstream"
+                                : "known_outcome",
+                          })
+                        }
+                      >
+                        Retry this crop
+                      </button>
+                      <p>
+                        One explicit retry per work item. This consumes another
+                        request and crop-pixel budget; it does not cancel or
+                        resolve the earlier request.
+                      </p>
+                    </div>
+                  )}
               </li>
             ))}
           </ul>
@@ -500,11 +573,86 @@ export function WireRecoveryPanel({
                         >
                           Compare both masks for review
                         </button>
+                        <button
+                          className="button button-secondary"
+                          disabled={
+                            disabled ||
+                            !!report.candidates.find(
+                              (c) => c.id === h.candidateIds[1],
+                            )?.touchesCropBoundary
+                          }
+                          onClick={() =>
+                            onAction("verify-wire-extension", {
+                              sourceCandidateId: h.candidateIds[0],
+                              candidateId: h.candidateIds[1],
+                              reportId: report.reportId,
+                            })
+                          }
+                        >
+                          Ask Muse to verify extension
+                        </button>
                       </>
                     )}
                   </li>
                 ))}
               </ul>
+            </details>
+          )}
+          {!!report.extensionReviews?.length && (
+            <div role="status">
+              <p>
+                Extension checks are model evidence. Human verification and
+                electrical connection status remain separate.
+              </p>
+              <ul>
+                {report.extensionReviews.map((r) => (
+                  <li key={`${r.sourceCandidateId}:${r.candidateId}`}>
+                    {r.sourceCandidateId} → {r.candidateId}:{" "}
+                    {r.decision.replaceAll("_", " ")} ·{" "}
+                    {r.evidenceStatus.replaceAll("_", " ")} · Continuity:{" "}
+                    {r.continuity} · Adjacent wires: {r.adjacentWires} ·
+                    Crossings: {r.crossings} · Component leads:{" "}
+                    {r.componentLeads} · Electrical connection unestablished
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!!report.quarantinedCandidates?.length && (
+            <details>
+              <summary>
+                Quarantined raw observations (
+                {report.quarantinedCandidates.length})
+              </summary>
+              <p>
+                Preserved in raw checkpoints. These observations cannot explain
+                coverage, occupy selectable candidate slots, suppress new masks
+                as duplicates, or establish an identity.
+              </p>
+              <ul>
+                {report.quarantinedCandidates.map((c) => (
+                  <li key={c.id}>
+                    {c.id}: {c.reason.replaceAll("_", " ")}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {!!report.continuationDiagnostics?.length && (
+            <details>
+              <summary>Continuation planning decisions</summary>
+              <ul>
+                {report.continuationDiagnostics.map((d) => (
+                  <li key={d.candidateId}>
+                    {d.candidateId} · {d.queue} topology queue ·{" "}
+                    {d.reason.replaceAll("_", " ")}
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Uncertain topology permits a bounded recovery observation, not
+                acceptance of a wire or an insertion hole.
+              </p>
             </details>
           )}
           {!!report.shortRegions?.length && (

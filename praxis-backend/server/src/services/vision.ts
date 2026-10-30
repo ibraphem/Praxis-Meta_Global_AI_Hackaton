@@ -1,3 +1,4 @@
+import { recoveryEligible } from './wire-evidence-policy.js';
 import { RUNTIME } from '../lib/runtime.js';
 import type { Config } from '../config.js';
 import type { AnalysisTrace } from '../lib/diagnostics.js';
@@ -105,7 +106,7 @@ export function createVisionService(
     let breadboardAudit: Analysis['breadboardAudit'];
     if (config.VISION_MODE === 'combined') {
       const candidates =
-        snapshot?.candidates ??
+        snapshot?.candidates.filter(recoveryEligible) ??
         withIds(
           deduplicate(
             (await segment(image, signal, trace)).map((detection) => ({

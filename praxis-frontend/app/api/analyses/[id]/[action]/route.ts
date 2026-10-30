@@ -21,6 +21,8 @@ export async function POST(
       "recover-wires",
       "recover-short-wires",
       "verify-wire",
+      "retry-wire-crop",
+      "verify-wire-extension",
       "wire-identities",
       "interpret-recovery",
     ].includes(action)
@@ -35,6 +37,8 @@ export async function POST(
       | "recover-wires"
       | "recover-short-wires"
       | "verify-wire"
+      | "retry-wire-crop"
+      | "verify-wire-extension"
       | "wire-identities"
       | "interpret-recovery",
     id,

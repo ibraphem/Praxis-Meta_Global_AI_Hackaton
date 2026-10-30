@@ -431,8 +431,8 @@ test('a batched SAM response uses each returned object ID and its own spatial se
     );
     if (mismatch)
       assert.ok(
-        result.report.candidates.some((c) =>
-          c.rejectionReasons.includes('prompt_mismatch'),
+        result.report.quarantinedCandidates?.some(
+          (c) => c.reason === 'prompt_mismatch',
         ),
       );
   }

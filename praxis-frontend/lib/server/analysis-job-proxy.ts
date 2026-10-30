@@ -14,6 +14,8 @@ type Action =
   | "recover-wires"
   | "recover-short-wires"
   | "verify-wire"
+  | "retry-wire-crop"
+  | "verify-wire-extension"
   | "wire-identities"
   | "interpret-recovery";
 /** Only fixed job operations and validated IDs cross this private backend boundary. */
@@ -136,6 +138,8 @@ export function createAnalysisJobProxy(
       phase = "backend.connect";
       if (
         action === "verify-wire" ||
+        action === "retry-wire-crop" ||
+        action === "verify-wire-extension" ||
         action === "wire-identities" ||
         action === "recover-short-wires"
       ) {
@@ -188,6 +192,26 @@ export function createAnalysisJobProxy(
             "The backend is busy or saved analysis capacity is full. Try again shortly.",
           ],
         };
+        if (action === "retry-wire-crop") {
+          errors[400] = [
+            "INVALID_CROP_RETRY",
+            "Choose the original crop attempt, a retry reason and the required authorization.",
+          ];
+          errors[409] = [
+            "CROP_RETRY_CONFLICT",
+            "Crop retry is blocked by active work, an unknown upstream outcome, an earlier retry, or the remaining budget. Refresh the saved status.",
+          ];
+        }
+        if (action === "verify-wire-extension") {
+          errors[400] = [
+            "INVALID_EXTENSION",
+            "Select an extension proposal from the current recovery report.",
+          ];
+          errors[409] = [
+            "EXTENSION_CONFLICT",
+            "The extension evidence changed, remains truncated, another attempt is active, or the verification budget is exhausted. Refresh the saved status.",
+          ];
+        }
         const [code, message] = errors[upstream.status] ?? [
           "ANALYSIS_UNAVAILABLE",
           "The saved analysis is unavailable. Check the backend connection.",

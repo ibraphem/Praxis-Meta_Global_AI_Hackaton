@@ -271,10 +271,11 @@ test('a spatial response that misses the selected seed is retained as rejected e
     (value) => (value.changed ? ref(value.snapshot) : undefined),
   );
   assert.equal(result.snapshot.candidates.length, 1);
-  assert.ok(
-    result.report.candidates[0]!.rejectionReasons.includes('prompt_mismatch'),
+  assert.equal(result.report.candidates.length, 0);
+  assert.equal(
+    result.report.quarantinedCandidates![0]!.reason,
+    'prompt_mismatch',
   );
-  assert.equal(result.report.candidates[0]!.geometryAccepted, false);
   assert.deepEqual(result.cropAttempts[0]!.spatialPrompt!.positivePoints, [
     [150, 121],
   ]);

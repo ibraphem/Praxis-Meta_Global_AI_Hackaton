@@ -1,3 +1,4 @@
+import { retryCropWork } from '../services/crop-retry.js';
 import { RUNTIME } from '../lib/runtime.js';
 import {
   normalizeCropAttempts,
@@ -10,6 +11,10 @@ import {
   effectiveIdentityReviews,
   type CropAttempt,
   recoveryTargetSchema,
+  cropRetryRequestSchema,
+  type CropRetry,
+  extensionVerificationSchema,
+  type ExtensionVerification,
 } from '../schemas/wire-recovery.js';
 import type { RecoveryBudget } from '../services/wire-recovery.js';
 import { ExperimentRegistry } from './experiments.js';
@@ -93,13 +98,21 @@ export interface Job {
   recovery: {
     status: AttemptStatus | 'not_started';
     attempts: Attempt[];
-    operation: 'audit' | 'recover' | 'verify' | 'recover_short';
+    operation:
+      | 'audit'
+      | 'recover'
+      | 'verify'
+      | 'recover_short'
+      | 'retry_crop'
+      | 'verify_extension';
     target?: {
       pitchPx: number;
       gridPoints: [number, number][];
       manualPoint?: [number, number] | undefined;
     };
     candidateId?: string;
+    cropRetry?: CropRetry;
+    extensionVerification?: ExtensionVerification;
     snapshotRef?: SnapshotRef;
     report?: RecoveryReport;
     budget: RecoveryBudget;
@@ -507,7 +520,13 @@ export class JobStore {
   }
   requestRecovery(
     id: string,
-    operation: 'audit' | 'recover' | 'verify' | 'recover_short',
+    operation:
+      | 'audit'
+      | 'recover'
+      | 'verify'
+      | 'recover_short'
+      | 'retry_crop'
+      | 'verify_extension',
     candidateId?: string,
     target?: unknown,
   ): Job {
@@ -549,7 +568,7 @@ export class JobStore {
           'Select a candidate with an observed mask.',
         );
       if (
-        operation === 'verify' &&
+        (operation === 'verify' || operation === 'verify_extension') &&
         job.recovery.budget.verificationRequests >=
           this.config.WIRE_VERIFY_MAX_REQUESTS
       )
@@ -559,7 +578,9 @@ export class JobStore {
           'The cumulative Muse verification budget is exhausted.',
         );
       if (
-        (operation === 'recover' || operation === 'recover_short') &&
+        (operation === 'recover' ||
+          operation === 'recover_short' ||
+          operation === 'retry_crop') &&
         (job.recovery.budget.requests >=
           this.config.WIRE_RECOVERY_MAX_REQUESTS ||
           job.recovery.budget.rounds >= this.config.WIRE_RECOVERY_MAX_ROUNDS)
@@ -569,6 +590,72 @@ export class JobStore {
           'RECOVERY_BUDGET',
           'The cumulative recovery budget is exhausted.',
         );
+      let cropRetry: CropRetry | undefined;
+      if (operation === 'retry_crop') {
+        const parsed = cropRetryRequestSchema.safeParse(target);
+        if (!parsed.success)
+          throw new AppError(
+            400,
+            'INVALID_CROP_RETRY',
+            'Choose the original attempt, authorization and a retry reason.',
+          );
+        cropRetry = { ...parsed.data, authorizedAt: Date.now() };
+        const work = retryCropWork(job.recovery.cropAttempts, cropRetry);
+        if (
+          job.recovery.budget.pixels + work.crop[2] * work.crop[3] >
+            this.config.WIRE_RECOVERY_MAX_PIXELS ||
+          work.crop[2] * work.crop[3] >
+            this.config.WIRE_RECOVERY_MAX_CROP_PIXELS
+        )
+          throw new AppError(
+            409,
+            'RECOVERY_BUDGET',
+            'The retry would exceed the crop pixel budget.',
+          );
+        const original = job.recovery.cropAttempts.find(
+          (a) => a.attemptId === cropRetry!.attemptId,
+        )!;
+        if (
+          original.sourceSnapshotId &&
+          this.getSnapshot(original.sourceSnapshotId).ref.imageHash !==
+            job.imageHash
+        )
+          throw new AppError(
+            409,
+            'STALE_CROP_RETRY',
+            'The crop belongs to a different source photograph.',
+          );
+      }
+      let extensionVerification: ExtensionVerification | undefined;
+      if (operation === 'verify_extension') {
+        const parsed = extensionVerificationSchema.safeParse(target);
+        const report = job.recovery.report;
+        if (
+          !parsed.success ||
+          parsed.data.reportId !== report?.reportId ||
+          !report.hypotheses.some(
+            (h) =>
+              h.kind === 'mask_extension_proposal' &&
+              h.candidateIds[0] === parsed.data.sourceCandidateId &&
+              h.candidateIds[1] === parsed.data.candidateId,
+          )
+        )
+          throw new AppError(
+            409,
+            'STALE_EXTENSION',
+            'Choose an extension proposal from the current report.',
+          );
+        extensionVerification = parsed.data;
+        if (
+          report.candidates.find((c) => c.id === parsed.data.candidateId)
+            ?.touchesCropBoundary
+        )
+          throw new AppError(
+            409,
+            'CROP_FRAGMENT',
+            'Recover the remainder before full-wire identity verification.',
+          );
+      }
       const ref = job.recovery.snapshotRef ?? job.sam.snapshotRef,
         attempt = newAttempt();
       attempt.samSnapshotId = ref.samSnapshotId;
@@ -577,6 +664,11 @@ export class JobStore {
       job.recovery.status = 'queued';
       job.recovery.operation = operation;
       delete job.recovery.target;
+      delete job.recovery.cropRetry;
+      delete job.recovery.extensionVerification;
+      if (cropRetry) job.recovery.cropRetry = cropRetry;
+      if (extensionVerification)
+        job.recovery.extensionVerification = extensionVerification;
       if (operation === 'recover_short') {
         const parsed = recoveryTargetSchema.safeParse({
           pitchPx: Math.max(

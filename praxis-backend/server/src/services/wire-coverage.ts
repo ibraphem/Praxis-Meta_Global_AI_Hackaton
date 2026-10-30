@@ -1,3 +1,4 @@
+import { recoveryEligible, quarantineReason } from './wire-evidence-policy.js';
 import { extendsCropFragment } from './wire-continuation.js';
 import {
   maskEvidenceReader,
@@ -398,7 +399,9 @@ export async function auditWireCoverage(
     .update(snapshot.image.dataUrl)
     .digest('hex');
   const raw = prioritizeWireEvidence(
-      snapshot.candidates.filter((c) => c.type === 'jumper_wire'),
+      snapshot.candidates.filter(
+        (c) => c.type === 'jumper_wire' && recoveryEligible(c),
+      ),
     ),
     geometry = new WireGeometry(image),
     candidates: RecoveryCandidate[] = [],
@@ -408,7 +411,9 @@ export async function auditWireCoverage(
     paths = 0,
     truncated = false;
   const reportId = createHash('sha256')
-    .update('wire-coverage-v1:' + ref.samSnapshotHash + ':' + maxDimension)
+    .update(
+      'wire-coverage-policy-v2:' + ref.samSnapshotHash + ':' + maxDimension,
+    )
     .digest('hex');
   for (const c of raw) {
     const accepted = geometry.resolve(c),
@@ -657,8 +662,13 @@ export async function auditWireCoverage(
     image,
     auditScale: info.width / image.width,
     candidates,
+    quarantinedCandidates: snapshot.candidates
+      .filter((c) => quarantineReason(c))
+      .map((c) => ({ id: c.id, reason: quarantineReason(c)! })),
     summary: {
-      rawSamCandidates: raw.length,
+      rawSamCandidates: snapshot.candidates.filter(
+        (c) => c.type === 'jumper_wire',
+      ).length,
       geometryAccepted: candidates.filter(
         (c) => c.source !== 'cv_trace' && c.geometryAccepted,
       ).length,
@@ -677,8 +687,11 @@ export async function auditWireCoverage(
   report.reviewReconciliation = previous
     ? reconcileWireReviews(previous, report, reviews)
     : [];
-  if (previous?.reportId === report.reportId)
+  if (previous?.reportId === report.reportId) {
     report.modelReviews = previous.modelReviews;
+    if (previous.extensionReviews)
+      report.extensionReviews = previous.extensionReviews;
+  }
   const verifiedIds = new Set(
     effectiveIdentityReviews(reviews, report)
       .filter((r) => r.state === 'verified')

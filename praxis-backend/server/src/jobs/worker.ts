@@ -160,6 +160,15 @@ export class AnalysisWorker {
                   visited: job.recovery.visited,
                   cropAttempts: job.recovery.cropAttempts,
                   operation: job.recovery.operation,
+                  ...(job.recovery.cropRetry
+                    ? { cropRetry: job.recovery.cropRetry }
+                    : {}),
+                  ...(job.recovery.extensionVerification
+                    ? {
+                        extensionVerification:
+                          job.recovery.extensionVerification,
+                      }
+                    : {}),
                   ...(job.recovery.target
                     ? { target: job.recovery.target }
                     : {}),

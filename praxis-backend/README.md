@@ -1266,3 +1266,64 @@ masks. Keep scene interpretation outside the wire-coverage critical path, compar
 wires/calibration, retain missing/blocked endpoints in the full denominator, and keep
 zero accepted wrong holes as a hard gate. Recovered mask count, independent physical-wire
 coverage, identity precision and electrical connectivity remain separate measures.
+
+### Recovery quarantine, uncertain topology, and explicit retries
+
+Prompt-mismatched masks remain in immutable raw checkpoints with
+`recoveryPromptMatched: false`. They are excluded before interpretation, local
+publication and coverage auditing. They cannot consume eligible candidate slots,
+suppress a later valid observation as a duplicate, seed recovery, or inherit verified
+coverage. The report lists their IDs and reasons under `quarantinedCandidates`; it
+retains the full raw SAM count separately. Valid observations beyond the eligible
+100-candidate limit are also retained but quarantined as `candidate_capacity`.
+
+Raw retention has its own guard: dispatch stops once a checkpoint has at least 200 raw
+observations or 8 MiB of encoded mask payload, reserving room for the next bounded
+100-mask response. This avoids silently truncating a provider response. A
+`raw_evidence_budget` stop means preserved raw evidence needs inspection, not that
+physical wire coverage is complete. Old snapshots are unchanged. The audit identity
+now includes policy v2 so prior review context is explicitly reconciled rather than
+silently reused across the eligibility change.
+
+Continuation planning has topology-supported and topology-uncertain queues. The
+uncertain queue can observe a disconnected or branched crop fragment without relaxing
+returned-mask acceptance. Its positive anchor must lie on one observed boundary-touching
+connected component. Equally plausible boundary components, missing anchors and pixel
+limits produce explicit planning diagnostics. `WIRE_CONTINUATION_UNCERTAIN_MAX_REQUESTS`
+defaults to one normal request per analysis (zero disables it; maximum three), charged
+inside the existing cumulative SAM request, pixel and round budgets. A later recovery
+round reserves its first available slot for this queue so it cannot be indefinitely
+starved by supported continuations. Failed requests consume the allowance. Explicit
+operator retries remain separately authorized and still consume the total budgets.
+
+`POST /api/analyses/:id/retry-wire-crop` accepts:
+
+```json
+{
+  "attemptId": "ORIGINAL_CROP_ATTEMPT_UUID",
+  "authorization": "accept_unknown_upstream",
+  "reason": "Operator inspected the saved timeout and authorizes another attempt"
+}
+```
+
+Use `known_outcome` only when the recorded upstream outcome is `not_sent` or
+`response_received`. A timeout or interrupted attempt with unknown upstream status
+requires the explicit `accept_unknown_upstream` acknowledgment; this does **not** mark
+the earlier provider request finished or cancelled. The server rebuilds the exact
+original crop and prompts, records a new attempt with `retryOf`, authorization, reason
+and timestamp, preserves the old work keys/outcome, and charges another request, pixels
+and round. Only one explicit retry per work item is allowed. Successful crops, retry
+chains, exhausted budgets, concurrent work, stale photographs and legacy records without
+a reproducible request cannot be retried. Worker leases still fence late results.
+No retry occurs just because time has passed.
+
+`POST /api/analyses/:id/verify-wire-extension` accepts the current `reportId`,
+`sourceCandidateId`, and extended `candidateId` from a `mask_extension_proposal`.
+It compares an untouched focused photograph, original-fragment overlay,
+proposed-extension overlay and untouched full-scene context. The concise model result
+records continuity, adjacent-wire, crossing and component-lead evidence. A
+`same_physical_wire` response is rejected if any relevant observation remains ambiguous
+or continuity is occluded. Crop-truncated extensions stay blocked. Results are bound
+to the report/checkpoint under `extensionReviews` and consume the existing Muse
+verification budget. They never create human reviews, assign holes or establish
+connections; new checkpoints require a fresh extension check.

@@ -241,7 +241,8 @@ test("wire identity verification and timed-out crop recovery preserve review and
   };
   let verifyCalls = 0,
     recoverCalls = 0,
-    identityCalls = 0;
+    identityCalls = 0,
+    cropRetries = 0;
   await page.route("**/api/analyses", (route) =>
     route.fulfill({ status: 202, json: job }),
   );
@@ -315,6 +316,29 @@ test("wire identity verification and timed-out crop recovery preserve review and
     ];
     return route.fulfill({ status: 202, json: job });
   });
+  await page.route(`**/api/analyses/${id}/retry-wire-crop`, (route) => {
+    cropRetries++;
+    const original = job.recovery!.cropAttempts![0]!,
+      body = route.request().postDataJSON();
+    expect(body).toEqual({
+      attemptId: original.attemptId,
+      authorization: "accept_unknown_upstream",
+      reason: "I inspected the saved timeout",
+    });
+    job.recovery!.cropRetry = { ...body, authorizedAt: 3 };
+    job.recovery!.operation = "retry_crop";
+    job.recovery!.status = "succeeded";
+    job.recovery!.budget.requests++;
+    job.recovery!.cropAttempts!.push({
+      ...original,
+      attemptId: id,
+      retryOf: original.attemptId,
+      retryAuthorization: { ...body, authorizedAt: 3 },
+      status: "succeeded",
+      upstreamOutcome: "response_received",
+    });
+    return route.fulfill({ status: 202, json: job });
+  });
   await page.goto("/");
   await page
     .getByLabel("Upload a workspace photograph")
@@ -365,6 +389,25 @@ test("wire identity verification and timed-out crop recovery preserve review and
     panel.getByText(/Electrical connections: unestablished/),
   ).toBeVisible();
   expect(recoverCalls).toBe(1);
+  const retry = panel.getByRole("button", { name: "Retry this crop" });
+  await expect(retry).toBeDisabled();
+  await panel
+    .getByLabel(/Retry reason for crop/)
+    .fill("I inspected the saved timeout");
+  await expect(retry).toBeDisabled();
+  await panel
+    .getByRole("checkbox", { name: /I authorize another attempt for crop/ })
+    .check();
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect(panel.getByText(/Explicit retry of/)).toBeVisible();
+  expect(cropRetries).toBe(1);
+  expect(job.recovery!.cropAttempts![0]!.status).toBe("timed_out");
+  expect(job.recovery!.cropAttempts![0]!.upstreamOutcome).toBe("unknown");
+  expect(verifyCalls).toBe(1);
+  await expect(
+    panel.getByText(/Electrical connections: unestablished/),
+  ).toBeVisible();
 });
 
 test("reconciled reviews disclose provenance and pending re-review without promoting changed evidence", async ({
@@ -542,7 +585,8 @@ test("recovered geometry becomes selectable while scene interpretation remains t
     visited: [],
     report: recoveryReport(job.sam.attempts[0]!.attemptId),
   };
-  let sceneCalls = 0;
+  let sceneCalls = 0,
+    extensionCalls = 0;
   await page.route("**/api/analyses", (route) =>
     route.fulfill({ status: 202, json: job }),
   );
@@ -632,6 +676,35 @@ test("recovered geometry becomes selectable while scene interpretation remains t
     ];
     return route.fulfill({ status: 202, json: job });
   });
+  await page.route(`**/api/analyses/${id}/verify-wire-extension`, (route) => {
+    extensionCalls++;
+    const body = route.request().postDataJSON(),
+      report = job.recovery!.report!;
+    expect(body).toEqual({
+      sourceCandidateId: "jumper_wire_1",
+      candidateId: "jumper_wire_2",
+      reportId: report.reportId,
+    });
+    job.recovery!.operation = "verify_extension";
+    job.recovery!.budget.verificationRequests++;
+    report.extensionReviews = [
+      {
+        ...body,
+        sourceSnapshotId: report.sourceSnapshotId,
+        sourceSnapshotHash: report.sourceSnapshotHash,
+        decision: "same_physical_wire",
+        continuity: "visible",
+        adjacentWires: "distinguished",
+        crossings: "none_visible",
+        componentLeads: "excluded",
+        evidenceStatus: "supports_same_wire",
+        reviewSource: "muse",
+        electricalConnectionStatus: "unestablished",
+        elapsedMs: 200,
+      },
+    ];
+    return route.fulfill({ status: 202, json: job });
+  });
   await page.goto("/");
   await page
     .getByLabel("Upload a workspace photograph")
@@ -681,5 +754,13 @@ test("recovered geometry becomes selectable while scene interpretation remains t
     panel.getByRole("button", { name: "Verify one physical wire" }),
   ).toBeEnabled();
   await expect(panel.getByText(/Original fragment retained/)).toBeVisible();
+  await panel
+    .getByRole("button", { name: "Ask Muse to verify extension" })
+    .click();
+  await expect(
+    panel.getByText(/same physical wire · supports same wire/),
+  ).toBeVisible();
+  await expect(panel.getByText(/0 human-verified groups/)).toBeVisible();
+  expect(extensionCalls).toBe(1);
   expect(sceneCalls).toBe(0);
 });

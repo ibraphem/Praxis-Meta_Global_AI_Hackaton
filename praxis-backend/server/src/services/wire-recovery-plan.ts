@@ -14,6 +14,7 @@ export function recoveryPlan(
   short: RecoveryTarget[],
   tiles: BoundingBox[],
   attempts: CropAttempt[],
+  reserveUncertain = false,
 ): CropWork[] {
   const groups = (targets: RecoveryTarget[]) => {
     const out: CropWork[] = [];
@@ -48,14 +49,22 @@ export function recoveryPlan(
     }
     return out;
   };
-  const continuationWork = groups(continuations),
+  const uncertainWork = groups(
+      continuations.filter((t) => t.mode === 'continuation_uncertain'),
+    ),
+    continuationWork = groups(
+      continuations.filter((t) => t.mode !== 'continuation_uncertain'),
+    ),
     shortWork = groups(short),
     out: CropWork[] = [];
+  if (reserveUncertain && uncertainWork.length)
+    out.push(uncertainWork.shift()!);
   // Reserve early request slots for both observed blockers; broad tiles consume only remaining slots.
   while (continuationWork.length || shortWork.length) {
     if (continuationWork.length) out.push(continuationWork.shift()!);
     if (shortWork.length) out.push(shortWork.shift()!);
   }
+  out.push(...uncertainWork);
   for (const crop of tiles)
     if (
       !cropWorkAttempted(attempts, crop) &&
