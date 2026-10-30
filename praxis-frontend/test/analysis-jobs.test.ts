@@ -423,3 +423,29 @@ test("snapshot provenance and experiment reservations survive job validation and
   assert.equal(jobIsActive(job), false);
   assert.match(jobMessage(job), /Release its reservation explicitly/);
 });
+
+test("saved local candidate layers and running-backend fingerprints survive validation without presenting timeout as completed interpretation", () => {
+  const j = completedJob(result),
+    source = j.sam.attempts[0]!.attemptId;
+  j.muse.status = "timed_out";
+  j.runtime = {
+    buildId: "a".repeat(64),
+    representation: "compiled",
+    algorithms: {
+      candidateLayer: "sam-candidate-layer-v1",
+      wireSelection: "preserve-wire-evidence-v1",
+      interpretation: "incremental-experiments-v2",
+    },
+  };
+  j.result!.provenance.candidateLayer = {
+    version: "sam-candidate-layer-v1",
+    publication: "local_geometry",
+    snapshotId: source,
+    snapshotHash: "b".repeat(64),
+    sourceAttemptId: source,
+  };
+  const parsed = analysisJobSchema.parse(j);
+  assert.equal(parsed.runtime!.buildId, j.runtime.buildId);
+  assert.match(jobMessage(parsed), /Muse interpretation timed out/);
+  assert.match(jobMessage(parsed), /Saved candidates remain available/);
+});

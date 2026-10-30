@@ -901,3 +901,40 @@ hole snapping and unknown results are unchanged.
 See [candidate-preservation replay and limits](../praxis-backend/README.md#preserve-selectable-wire-evidence-across-interpretation)
 for the supplied Phase 3 regression fixture and its distinction between selectable
 hypotheses and physical-wire coverage.
+
+Recovery checkpoints now update the main selectable-mask view locally, without
+waiting for full-scene Muse interpretation. On an existing saved job, click **Audit
+wire coverage** to publish geometry from the latest saved recovery checkpoint without
+another SAM/Muse call or additional crop budget. New masks remain SAM candidates and can
+be used for calibration and manual endpoint review. If Muse is running, **Continue
+with SAM candidates** also works for a mixed view containing earlier interpretation
+and newer unverified geometry. The status distinguishes geometry availability from
+successful interpretation. A timeout retains the latest candidate view.
+
+`provenance.candidateLayer` binds the view to its source snapshot/hash and attempt.
+New checkpoint revisions stale earlier endpoint reviews while preserving mask IDs.
+Geometry acceptance, wire identity, insertion evidence and electrical contact remain
+separate. Publication budget failures are shown explicitly; raw checkpoint evidence
+is still saved. Original scene results and predictions are not replaced by local
+observations.
+
+**Benchmark build provenance** shows the frontend and current backend fingerprints
+and the producer of the saved result. Exported bundles include those identities,
+algorithm versions and per-endpoint producer fingerprints. Older records without a
+producer fingerprint remain explicitly unversioned. Frontend development fingerprints
+identify code at server start: restart development servers after edits before a
+controlled benchmark so HMR does not leave a stale session fingerprint.
+
+The backend [focused interpretation experiment](../praxis-backend/README.md#focused-interpretation-experiments-and-diagnostics)
+compares scene variants and opt-in identity-only crops on one pinned checkpoint.
+It saves each focused check independently, enforces a total budget across the
+checks, and stops after an unknown upstream outcome. Model request success is not
+physical-wire accuracy. For endpoints, keep the existing full/focused/two-stage
+comparison separate, using the same photograph, frozen calibration and blinded
+truth; run `benchmark:grounding` on the resulting evidence. No default grounding mode
+or snap threshold changed.
+
+Endpoint review now labels unsupported evidence as **Original Muse evidence** and
+shows a corrected/confirmed result separately. Endpoint sources are recorded per
+endpoint rather than labeling every position as user-selected. Close-up diagnostics
+accept all input frames, including the seven-image two-endpoint/grid case.

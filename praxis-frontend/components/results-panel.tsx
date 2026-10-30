@@ -202,6 +202,13 @@ export function ResultsPanel({
           onSelect={onSelect}
         />
       )}
+      {result?.provenance.candidateLayer?.publication === "local_geometry" && (
+        <p role="status">
+          Recovered SAM geometry is available now. Muse interpretation has not
+          confirmed this checkpoint. Review masks independently; geometry does
+          not verify wire identity or insertion.
+        </p>
+      )}
       {result?.provenance.wireSelection && (
         <section aria-label="Wire candidate preservation">
           <p>
@@ -286,9 +293,11 @@ export function ResultsPanel({
         <div className="run-info">
           <span className="status-dot" />
           <span>
-            {result.provenance.mode === "sam-only"
-              ? "Segmentation only · unverified"
-              : "Analysis complete"}
+            {result.provenance.candidateLayer?.publication === "local_geometry"
+              ? "Recovered geometry · unverified"
+              : result.provenance.mode === "sam-only"
+                ? "Segmentation only · unverified"
+                : "Analysis complete"}
           </span>
           {elapsed !== null && (
             <span className="mono">{elapsed.toFixed(1)}s</span>

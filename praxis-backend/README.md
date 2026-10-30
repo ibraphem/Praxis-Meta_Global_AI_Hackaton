@@ -159,11 +159,11 @@ npm run experiment:muse -- --release INTERRUPTED_EXPERIMENT_UUID
 
 Release is a manual acknowledgement of uncertainty; it does not cancel or prove the
 termination of upstream execution. There is no automatic experiment retry. A variant
-that reaches a local deadline records `upstreamOutcome: unknown`; it may confound
-later variants even when application-level admission is exclusive. Reports preserve
-that limitation and each attempted variant, including failures.
+that reaches a local deadline records `upstreamOutcome: unknown`; the experiment
+now stops before dispatching another variant. Its reservation remains interrupted
+until explicitly released. Reports preserve every attempted variant and prior success.
 
-This explicitly makes **three provider requests**, sequentially, without automatic
+The default plans **up to three provider requests**, sequentially, without automatic
 retries: original/current prompt, 1280/current prompt, 1280/minimal prompt. It reuses
 the same saved SAM snapshot and model; it preserves the source job and every
 prediction. The report records the image/snapshot hashes, settings, success or
@@ -1006,3 +1006,107 @@ wire's ID. No live inference or saved job was changed by these replay tests. The
 new selection behavior takes effect on the next successful interpretation; it does
 not rewrite previously exported benchmark results. Continuation recovery and
 short-wire detection still need separate measured improvements.
+
+### Recovered candidates without scene interpretation
+
+Every saved recovery checkpoint now publishes a local `candidateResult` under the
+same worker lease, before waiting for Muse. The public `result` prefers this view,
+so new geometry-passing masks are selectable for calibration and endpoint review
+even if every scene interpretation times out. For an existing saved job, **Audit wire
+coverage** also refreshes the candidate view from its latest already-saved recovery
+checkpoint, including when the crop budget is exhausted. Audit performs no provider
+requests and does not consume the crop budget. Repeating an audit of an already
+published checkpoint does not change its view revision. The source image frame is unchanged.
+`sam.result`, immutable raw checkpoints, original interpretation attempt results,
+and the last successful `muse.result` remain separate. A timeout preserves the
+latest candidate view. Successful Muse interpretation reconciles against that view
+instead of removing locally recovered masks.
+
+`provenance.candidateLayer` records version, publication (`local_geometry` or
+`muse_reconciled`), source snapshot/hash and source attempt. Each checkpoint changes
+the analysis revision; earlier endpoint reviews become stale. Human identity
+reviews remain independently snapshot-bound. A local observation preserves prior
+color/category evidence for exact mask matches; it does not fabricate a new Muse
+confirmation or disagreement. New masks stay uncertain and identity-unverified.
+Truncated masks retain their insertion-point gate. Overlapping hypotheses remain
+separate; counts do not establish physical-wire coverage or electrical connections.
+
+The output budget still prioritizes earlier selectable evidence. If a combined
+candidate view cannot fit, the raw recovery checkpoint remains saved, the earlier
+view stays visible, and `candidatePublicationError=WIRE_SELECTION_BUDGET` explicitly
+identifies the publication limit. Raw checkpoint retention does not depend on Muse.
+
+### Focused interpretation experiments and diagnostics
+
+The scene defaults are unchanged. Run one controlled variant on an inactive saved
+job; no SAM rerun or original-prediction replacement occurs:
+
+```sh
+npm run experiment:muse -- ANALYSIS_ID --variants 1280-minimal \
+  --snapshot SAM_SNAPSHOT_ID --output NEW_SCENE_REPORT.json
+
+npm run experiment:muse -- ANALYSIS_ID --variants focused-candidates \
+  --snapshot SAM_SNAPSHOT_ID --candidate-ids jumper_wire_31,jumper_wire_43 \
+  --budget-ms 45000 --output NEW_FOCUSED_REPORT.json
+```
+
+These are **live provider calls**, not offline replay. IDs are native candidates in
+the selected immutable checkpoint, not display IDs assigned to the reconciled
+selection. Omitting `--snapshot` now chooses the latest saved recovery checkpoint,
+falling back to the original SAM checkpoint. Default variants remain
+`original-current,1280-current,1280-minimal`; `--variants` selects/reorders distinct
+variants. Focused verification is opt-in. Omit `--candidate-ids` to select up to
+three geometry-passing candidates, prioritizing crop evidence, or explicitly select
+up to four. An invalid selection is rejected before provider dispatch.
+
+Each focused request receives an untouched crop and aligned mask reference, with
+maximum dimension 1280. Its smaller response schema asks only for identity:
+`one_visible_wire`, `multiple_wires`, `fragment_only`, `not_wire`, or `uncertain`.
+It does not request endpoint coordinates, hole IDs, connections, or an exhaustive
+scene inventory. Crop-truncated candidates are recorded as skipped with no provider
+request. The identity decision remains a model proposal; it does not create a human
+identity review, accepted endpoint or electrical connection.
+
+Reports use schema version 2 and save each successful focused check independently,
+including candidate ID, evidence fingerprint, snapshot, decision, diagnostics and
+backend runtime fingerprint. The per-variant budget defaults to the smaller of the
+provider and stage limits; `--budget-ms` may lower it. It covers audit, preparation,
+admission and **all** focused checks together. Phase wall time is saved separately
+from each check. Comparing several variants can exceed one phase budget overall.
+
+Any unknown upstream outcome stops remaining candidates and variants and preserves
+the interrupted reservation. Inspect the partial report and explicitly release it
+before further model work; release does not prove upstream execution stopped.
+`--output` must be new. No automatic retries, parallel verification or timeout
+increases were introduced.
+
+Diagnostics distinguish `muse.prepare`, `muse.admission`, provider request/body time,
+`muse.validate` (JSON/schema and semantic checks), and `wire.selection`. They retain
+image dimensions/count, encoded bytes, total payload bytes, prompt characters,
+output schema bytes, optional configured token budget, header latency, request ID
+and timeout type. Missing header latency means no headers were recorded before the
+deadline; it cannot distinguish network/upload delay, provider queueing and inference.
+Request success and model counts are not quality scores: review the same frozen
+candidates against independent physical-wire annotations and compare false wire
+acceptances, abstentions, retained masks and total phase time, including failures.
+Use the existing `wire:score` workflow for independently annotated physical-wire
+coverage/identity and the frontend `benchmark:grounding` for exact-hole comparisons.
+
+### Build and algorithm provenance
+
+New analysis/candidate views and endpoint proposals carry `runtime` with a SHA-256
+fingerprint of backend application code plus the dependency lockfile, its
+source/compiled representation and pipeline algorithm versions. Public job reads
+also return the **currently running** backend fingerprint separately from the
+producer recorded by a saved result. Old saved results retain their original
+provenance, including an explicit absence of runtime data when it was not recorded.
+
+Frontend evaluation bundles record the frontend build fingerprint, current backend
+fingerprint observed during polling, and the saved result producer. Per-endpoint
+proposals record their own backend producer. The frontend fingerprint hashes app,
+components, library code, configuration and lockfile at production build or dev-session
+startup. Development HMR can change code within a session: restart both development
+servers after code edits before a controlled benchmark. Production fingerprints bind
+the built client source snapshot and running backend artifacts. No environment
+values, credentials, source files, or photograph bytes are included in fingerprints.
+Inspect **Benchmark build provenance** beside the evaluation export control.

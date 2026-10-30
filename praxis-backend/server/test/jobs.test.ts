@@ -346,10 +346,19 @@ test('initial Muse deadline has one provider call, with safe payload and header 
     clearInterval(keepAlive);
   }
   assert.equal(calls, 1);
-  const timing = trace.snapshot().timings[0]!;
+  const timing = trace.snapshot().timings.find((t) => t.kind === 'request')!;
   assert.equal(timing.timeoutType, 'local_deadline');
   assert.ok(timing.payloadBytes! > timing.encodedImageBytes!);
   assert.ok(timing.promptChars! > 0);
+  assert.equal(timing.imageCount, 1);
+  assert.ok(timing.outputSchemaBytes! > 0);
+  assert.ok(
+    trace
+      .snapshot()
+      .timings.some(
+        (t) => t.stage === 'muse.prepare' && t.status === 'completed',
+      ),
+  );
   assert.equal(timing.headersMs, undefined);
   assert.deepEqual(timing.imageDimensions, [{ width: 100, height: 80 }]);
   const successTrace = new AnalysisTrace(randomUUID(), () => undefined);
@@ -364,8 +373,13 @@ test('initial Muse deadline has one provider call, with safe payload and header 
     maxRetries: 0,
   });
   assert.equal(
-    successTrace.snapshot().timings[0]!.providerRequestId,
+    successTrace.snapshot().timings.find((t) => t.kind === 'request')!
+      .providerRequestId,
     'provider-123',
   );
-  assert.equal(typeof successTrace.snapshot().timings[0]!.headersMs, 'number');
+  assert.equal(
+    typeof successTrace.snapshot().timings.find((t) => t.kind === 'request')!
+      .headersMs,
+    'number',
+  );
 });

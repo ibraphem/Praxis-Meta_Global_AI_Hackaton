@@ -2,6 +2,8 @@
 /* Blob photographs must be rendered directly, without an image optimizer. */
 /* eslint-disable @next/next/no-img-element */
 
+import type { RuntimeFingerprint } from "@/lib/runtime-schema";
+import { FRONTEND_RUNTIME } from "@/lib/runtime";
 import {
   useEffect,
   useCallback,
@@ -116,6 +118,7 @@ export function BreadboardWorkspace({
   onSelectWire,
   overlaysVisible = true,
   imageFile,
+  backendRuntime,
   onRecoveryContext,
 }: {
   image: ImageSize;
@@ -127,6 +130,7 @@ export function BreadboardWorkspace({
   onSelectWire?: (id: string) => void;
   overlaysVisible?: boolean;
   imageFile?: File;
+  backendRuntime?: RuntimeFingerprint | null;
   onRecoveryContext?: (context: {
     pitchPx: number;
     gridPoints: [number, number][];
@@ -1001,6 +1005,12 @@ export function BreadboardWorkspace({
       ).join("");
       const bundle = {
         schemaVersion: "praxis-evaluation-v1",
+        runtime: {
+          frontend: FRONTEND_RUNTIME,
+          backendProducer:
+            assignmentContext.analysis?.provenance.runtime ?? null,
+          backendRunning: backendRuntime ?? null,
+        },
         resolverPolicy: HOLE_RESOLVER_POLICY,
         refinementPolicy: REFINEMENT_POLICY,
         image: {
@@ -1258,6 +1268,22 @@ export function BreadboardWorkspace({
           >
             Export evaluation bundle
           </button>
+          <details>
+            <summary>Benchmark build provenance</summary>
+            <p>
+              Frontend: {FRONTEND_RUNTIME.buildId ?? "unavailable"} (
+              {FRONTEND_RUNTIME.mode}). Backend running:{" "}
+              {backendRuntime?.buildId ?? "unavailable"}. Result producer:{" "}
+              {assignmentContext?.analysis?.provenance.runtime?.buildId ??
+                "not recorded by this saved result"}
+              .
+            </p>
+            <p>
+              Development fingerprints identify the server-start source
+              snapshot. Restart development servers after code changes before a
+              controlled benchmark.
+            </p>
+          </details>
           {onRecoveryContext && (
             <button
               type="button"

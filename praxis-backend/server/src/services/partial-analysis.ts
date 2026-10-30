@@ -1,3 +1,4 @@
+import { RUNTIME } from '../lib/runtime.js';
 import { cropFragment } from './wire-fragments.js';
 import type { Config } from '../config.js';
 import {
@@ -60,6 +61,7 @@ export function partialAnalysis(
     objects,
     proposals,
     provenance: {
+      runtime: RUNTIME,
       mode: 'sam-only',
       segmentationModel: config.META_SAM_MODEL,
       reasoningModel: config.META_REASONING_MODEL,

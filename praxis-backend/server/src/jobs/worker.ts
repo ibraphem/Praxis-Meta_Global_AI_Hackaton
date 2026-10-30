@@ -1,3 +1,5 @@
+import { RUNTIME } from '../lib/runtime.js';
+import { publishRecoveredCandidates } from './candidates.js';
 import { admittedClient } from './model-admission.js';
 import { finishRunningCrops } from '../services/crop-attempts.js';
 import {
@@ -190,6 +192,15 @@ export class AnalysisWorker {
                           j.recovery.snapshotRef ?? bound!.ref,
                         );
                         j.recovery.snapshotRef = saved;
+                        publishRecoveredCandidates(
+                          this.store,
+                          j,
+                          value.snapshot,
+                          saved,
+                          attemptId,
+                          settings,
+                          trace,
+                        );
                       } else j.recovery.report = value.report;
                     },
                   );
@@ -231,6 +242,8 @@ export class AnalysisWorker {
               snapshotProcessingVersion: j.sam.snapshotRef!.processingVersion,
             };
             j.sam.result = partial;
+            j.candidateResult = partial;
+            delete j.candidatePublicationError;
           }
           if (settings.VISION_MODE === 'combined') {
             delete j.recovery.snapshotRef;
@@ -257,49 +270,92 @@ export class AnalysisWorker {
           const output = j.recovery.snapshotRef ?? bound!.ref;
           a.outputSnapshotId = output.samSnapshotId;
           a.outputSnapshotHash = output.samSnapshotHash;
+          // Auditing an older saved checkpoint can refresh the candidate view without another provider call.
+          if (
+            !j.candidateResult ||
+            j.candidateResult.provenance.samSnapshotHash !==
+              output.samSnapshotHash
+          ) {
+            publishRecoveredCandidates(
+              this.store,
+              j,
+              this.store.getSnapshot(output.samSnapshotId).snapshot,
+              output,
+              attemptId,
+              settings,
+              trace,
+            );
+          }
+          a.diagnostics = trace.snapshot();
           j.status = j.muse.result ? 'completed' : 'partial';
         } else if ('objects' in result) {
           result.provenance = {
             ...result.provenance,
+            runtime: RUNTIME,
             jobAnalysisId: j.analysisId,
             samSnapshotId: bound!.ref.samSnapshotId,
             samSnapshotHash: bound!.ref.samSnapshotHash,
             snapshotProcessingVersion: bound!.ref.processingVersion,
           };
           completedInterpretation = result;
-          const previous = j.muse.result;
+          const previous = j.candidateResult ?? j.muse.result;
+          const previousAttemptId =
+            previous?.provenance.candidateLayer?.sourceAttemptId ??
+            j.muse.resultAttemptId ??
+            j.sam.snapshotRef?.sourceAttemptId;
           const refs = new Map([[bound!.ref.samSnapshotId, bound!.ref]]);
           const getRef = (id: string) => {
             if (!refs.has(id)) refs.set(id, this.store.getSnapshot(id).ref);
             return refs.get(id)!;
           };
-          const selected =
-            previous?.provenance.samSnapshotId && j.muse.resultAttemptId
-              ? reconcileWireSelection(previous, result, {
-                  previousAttemptId: j.muse.resultAttemptId,
-                  currentAttemptId: attemptId,
-                  previousRef: getRef(previous.provenance.samSnapshotId),
-                  currentRef: bound!.ref,
-                  getRef,
-                  historical: j.muse.attempts
-                    .filter(
-                      (prior) =>
-                        prior.status === 'succeeded' &&
-                        prior.result &&
-                        prior.samSnapshotId &&
-                        prior.attemptId !== j.muse.resultAttemptId,
-                    )
-                    .reverse()
-                    .map((prior) => ({
-                      analysis: prior.result!,
-                      attemptId: prior.attemptId,
-                      ref: getRef(prior.samSnapshotId!),
-                    })),
-                })
-              : result;
+          const selected = (() => {
+            const finishSelection = trace.begin('wire.selection');
+            try {
+              const selection = structuredClone(
+                previous?.provenance.samSnapshotId && previousAttemptId
+                  ? reconcileWireSelection(previous, result, {
+                      previousAttemptId,
+                      currentAttemptId: attemptId,
+                      previousRef: getRef(previous.provenance.samSnapshotId),
+                      currentRef: bound!.ref,
+                      getRef,
+                      historical: j.muse.attempts
+                        .filter(
+                          (prior) =>
+                            prior.status === 'succeeded' &&
+                            prior.result &&
+                            prior.samSnapshotId &&
+                            prior.attemptId !== j.muse.resultAttemptId,
+                        )
+                        .reverse()
+                        .map((prior) => ({
+                          analysis: prior.result!,
+                          attemptId: prior.attemptId,
+                          ref: getRef(prior.samSnapshotId!),
+                        })),
+                    })
+                  : result,
+              );
+              finishSelection('completed');
+              return selection;
+            } catch (error) {
+              finishSelection('failed');
+              throw error;
+            }
+          })();
+          a.diagnostics = trace.snapshot();
           a.result = result; // Original model-filtered prediction, before selectable-evidence reconciliation.
           j.muse.resultAttemptId = attemptId;
+          selected.provenance.candidateLayer = {
+            version: 'sam-candidate-layer-v1',
+            publication: 'muse_reconciled',
+            snapshotId: bound!.ref.samSnapshotId,
+            snapshotHash: bound!.ref.samSnapshotHash,
+            sourceAttemptId: attemptId,
+          };
           j.muse.result = selected;
+          j.candidateResult = selected;
+          delete j.candidatePublicationError;
           j.revision = attemptId;
           j.status = 'completed';
         }

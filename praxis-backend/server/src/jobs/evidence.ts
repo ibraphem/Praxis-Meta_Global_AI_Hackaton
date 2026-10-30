@@ -47,6 +47,7 @@ export function exportJobEvidence(
         evidence.job.analysisId,
         evidence.job.revision,
         ...evidence.job.muse.attempts.map((a) => a.attemptId),
+        ...evidence.snapshots.map((s) => s.ref.samSnapshotId),
       ].includes(parsed.analysisRunId as string)
     )
       throw new AppError(

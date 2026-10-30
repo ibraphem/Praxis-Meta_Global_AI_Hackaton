@@ -128,15 +128,18 @@ export function createReasoningService(config: Config, client: MetaClient) {
         ...(trace ? { trace } : {}),
       },
     );
-    const envelope = completionSchema.safeParse(raw);
-    if (!envelope.success) throw invalidProviderOutput();
+    const finish = trace?.begin('muse.validate');
     try {
+      const envelope = completionSchema.safeParse(raw);
+      if (!envelope.success) throw invalidProviderOutput();
       const parsed = schema.safeParse(
         JSON.parse(envelope.data.choices[0]!.message.content),
       );
       if (!parsed.success) throw invalidProviderOutput();
+      finish?.('completed');
       return parsed.data;
     } catch {
+      finish?.('failed');
       throw invalidProviderOutput();
     }
   }
@@ -148,11 +151,17 @@ export function createReasoningService(config: Config, client: MetaClient) {
       signal: AbortSignal,
       trace?: AnalysisTrace,
     ) {
+      const finishPrepare = trace?.begin('muse.prepare', {
+        candidateCount: candidates.length,
+      });
       const input = await museInput(
         image,
         candidates,
         config.MUSE_MAX_DIMENSION,
-      );
+      ).catch((error) => {
+        finishPrepare?.('failed');
+        throw error;
+      });
       const originalCandidates = candidates;
       image = input.image;
       candidates = input.candidates;
@@ -163,6 +172,7 @@ export function createReasoningService(config: Config, client: MetaClient) {
       const minimal =
         prompt.split(' Then independently inspect')[0] +
         ` Return missingWires=[]. Do not search for additional wires or infer insertion points. Candidates: ${candidateList}`;
+      finishPrepare?.('completed');
       const result = await complete(
         image,
         config.MUSE_MINIMAL_PROMPT ? minimal : prompt,
@@ -171,26 +181,40 @@ export function createReasoningService(config: Config, client: MetaClient) {
         'muse.interpret',
         trace,
       );
-      if (config.MUSE_MINIMAL_PROMPT && result.missingWires.length)
-        throw invalidProviderOutput();
-      const expected = new Set(
-        originalCandidates.map((candidate) => candidate.id),
-      );
-      const seen = new Set<string>();
-      for (const object of result.objects) {
-        if (!expected.has(object.id) || seen.has(object.id))
+      const finishReview = trace?.begin('muse.validate');
+      try {
+        if (config.MUSE_MINIMAL_PROMPT && result.missingWires.length)
           throw invalidProviderOutput();
-        seen.add(object.id);
+        const expected = new Set(
+          originalCandidates.map((candidate) => candidate.id),
+        );
+        const seen = new Set<string>();
+        for (const object of result.objects) {
+          if (!expected.has(object.id) || seen.has(object.id))
+            throw invalidProviderOutput();
+          seen.add(object.id);
+        }
+        if (seen.size !== expected.size) throw invalidProviderOutput();
+        finishReview?.('completed');
+        return result;
+      } catch (error) {
+        finishReview?.('failed');
+        throw error;
       }
-      if (seen.size !== expected.size) throw invalidProviderOutput();
-      return result;
     },
     async detect(
       image: PreparedImage,
       signal: AbortSignal,
       trace?: AnalysisTrace,
     ) {
-      const input = await museInput(image, [], config.MUSE_MAX_DIMENSION);
+      const finishPrepare = trace?.begin('muse.prepare', { candidateCount: 0 });
+      const input = await museInput(image, [], config.MUSE_MAX_DIMENSION).catch(
+        (error) => {
+          finishPrepare?.('failed');
+          throw error;
+        },
+      );
+      finishPrepare?.('completed');
       const result = await complete(
         input.image,
         'Locate the supported components. Return box as [left,top,right,bottom] on a normalized 0–1000 grid, top-left origin, right>left and bottom>top. Describe each physical component once. Exclude unsupported objects. Return an empty array if none are visible.',

@@ -243,7 +243,14 @@ test('successful analyses expose the same request ID and safe per-stage timings'
   assert.equal(diagnostics.requestId, response.headers['x-request-id']);
   assert.deepEqual(
     diagnostics.timings.map((timing: { stage: string }) => timing.stage),
-    ['upload', 'image.prepare', 'response.validate'],
+    [
+      'upload',
+      'image.prepare',
+      'muse.prepare',
+      'muse.validate',
+      'muse.validate',
+      'response.validate',
+    ],
   );
   // A custom injected client owns its own instrumentation; production uses createMetaClient.
   assert.ok(

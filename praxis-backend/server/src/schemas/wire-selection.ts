@@ -17,9 +17,10 @@ export const selectionEvidenceSchema = z
           'not_selected_by_latest_interpretation',
           'changed_interpretation',
           'overlapping_hypothesis',
+          'not_present_in_current_geometry',
         ]),
       )
-      .max(3),
+      .max(4),
   })
   .strict();
 export const wireSelectionSchema = z
@@ -37,5 +38,15 @@ export const wireSelectionSchema = z
     deferredObjectIds: z
       .array(z.string().regex(/^jumper_wire_[1-9]\d*$/))
       .max(100),
+  })
+  .strict();
+
+export const candidateLayerSchema = z
+  .object({
+    version: z.literal('sam-candidate-layer-v1'),
+    publication: z.enum(['local_geometry', 'muse_reconciled']),
+    snapshotId: z.uuid(),
+    snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+    sourceAttemptId: z.uuid(),
   })
   .strict();

@@ -528,3 +528,90 @@ test("targeted recovery separates automatic scans from an original-image reviewe
   );
   expect(job.recovery.budget.requests).toBe(2);
 });
+
+test("recovered geometry becomes selectable while scene interpretation remains timed out", async ({
+  page,
+}) => {
+  const job = partial(),
+    id = job.analysisId;
+  job.recovery = {
+    status: "succeeded",
+    attempts: [],
+    operation: "audit",
+    budget: { requests: 0, pixels: 0, verificationRequests: 0, rounds: 0 },
+    visited: [],
+    report: recoveryReport(job.sam.attempts[0]!.attemptId),
+  };
+  let sceneCalls = 0;
+  await page.route("**/api/analyses", (route) =>
+    route.fulfill({ status: 202, json: job }),
+  );
+  await page.route(`**/api/analyses/${id}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${id}/interpret-recovery`, (route) => {
+    sceneCalls++;
+    return route.fulfill({ status: 503, json: {} });
+  });
+  await page.route(`**/api/analyses/${id}/recover-wires`, (route) => {
+    const source = job.sam.attempts[0]!.attemptId;
+    job.revision = source;
+    job.result = {
+      ...result,
+      objects: [
+        result.objects[0],
+        {
+          id: "jumper_wire_2",
+          type: "jumper_wire",
+          bbox: [250, 250, 300, 100],
+          interpretation: "uncertain",
+          reviewStatus: "sam_unverified",
+          localizationSource: "sam",
+          geometryStatus: "segmented",
+          guidanceEligible: false,
+          identityStatus: "unverified",
+          mask: {
+            format: "svg_path",
+            width: 300,
+            height: 100,
+            path: "M0 40L300 40L300 44L0 44Z",
+          },
+        },
+      ],
+      provenance: {
+        ...result.provenance,
+        candidateLayer: {
+          version: "sam-candidate-layer-v1",
+          publication: "local_geometry",
+          snapshotId: source,
+          snapshotHash: "a".repeat(64),
+          sourceAttemptId: source,
+        },
+      },
+    } as typeof job.result;
+    return route.fulfill({ status: 202, json: job });
+  });
+  await page.goto("/");
+  await page
+    .getByLabel("Upload a workspace photograph")
+    .setInputFiles(photograph);
+  await page
+    .getByRole("button", { name: "Analyze image", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Recover prioritized regions", exact: true })
+    .click();
+  await expect(
+    page.getByText("Recovered SAM geometry is available now.", {
+      exact: false,
+    }),
+  ).toBeVisible();
+  const mask = page.getByRole("button", {
+    name: /Jumper wire 2.*Segmented mask/,
+  });
+  await expect(mask).toBeEnabled();
+  await mask.click();
+  await expect(mask).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText(/Muse interpretation timed out/)).toBeVisible();
+  expect(sceneCalls).toBe(0);
+});

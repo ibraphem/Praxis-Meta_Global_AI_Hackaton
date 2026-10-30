@@ -1,3 +1,4 @@
+import { RUNTIME } from '../lib/runtime.js';
 import type { Config } from '../config.js';
 import type { AnalysisTrace } from '../lib/diagnostics.js';
 import { abortError, invalidProviderOutput } from '../lib/errors.js';
@@ -224,6 +225,7 @@ export function createVisionService(
       proposals,
       ...(breadboardAudit ? { breadboardAudit } : {}),
       provenance: {
+        runtime: RUNTIME,
         mode: config.VISION_MODE,
         reasoningModel: config.META_REASONING_MODEL,
         ...(wireAudit ? { wireAudit } : {}),

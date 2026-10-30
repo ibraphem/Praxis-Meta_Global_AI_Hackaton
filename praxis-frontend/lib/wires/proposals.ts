@@ -1,3 +1,4 @@
+import { runtimeSchema } from "../runtime-schema";
 import { z } from "zod";
 import { diagnosticsSchema } from "../diagnostics";
 import {
@@ -71,6 +72,7 @@ export const endpointResponseSchema = z
     wireCandidateId: z.string().regex(/^jumper_wire_[1-9]\d*$/),
     model: z.string().min(1).max(100),
     endpoints: z.tuple([endpointSuggestionSchema, endpointSuggestionSchema]),
+    runtime: runtimeSchema.optional(),
     diagnostics: diagnosticsSchema.optional(),
     inputVariant: z
       .enum(["full", "candidate_crop", "endpoint_crops"])
@@ -208,6 +210,7 @@ export interface WireEndpointProposal {
   wireCandidateId: string;
   calibrationRevisions: Record<string, number>;
   model: string;
+  runtime?: EndpointResponse["runtime"];
   inputVariant?: EndpointResponse["inputVariant"];
   inputFrame?: EndpointResponse["inputFrame"];
   localization?: EndpointResponse["localization"];
@@ -367,6 +370,7 @@ export function createProposal(
     wireCandidateId: data.wireCandidateId,
     calibrationRevisions: calibrationRevisions(boards),
     model: data.model,
+    ...(data.runtime ? { runtime: data.runtime } : {}),
     ...(data.inputVariant ? { inputVariant: data.inputVariant } : {}),
     ...(data.inputFrame ? { inputFrame: data.inputFrame } : {}),
     ...(data.localization ? { localization: data.localization } : {}),

@@ -212,3 +212,41 @@ test("the UI renders actionable timeout details and a request ID instead of drop
   ])
     assert.ok(html.includes(expected));
 });
+
+test("close-up diagnostics accept all seven input frames with explicit image count and validation timings", async () => {
+  const { diagnosticsSchema } = await import("../lib/diagnostics");
+  const result = diagnosticsSchema.parse({
+    requestId: "00000000-0000-4000-8000-000000000001",
+    elapsedMs: 30,
+    timings: [
+      {
+        stage: "muse.insertion_closeups",
+        kind: "request",
+        status: "completed",
+        startedAtMs: 0,
+        durationMs: 28,
+        imageCount: 7,
+        imageDimensions: Array.from({ length: 7 }, () => ({
+          width: 300,
+          height: 200,
+        })),
+        outputSchemaBytes: 700,
+      },
+      {
+        stage: "muse.validate",
+        kind: "work",
+        status: "completed",
+        startedAtMs: 28,
+        durationMs: 1,
+      },
+      {
+        stage: "wire.selection",
+        kind: "work",
+        status: "completed",
+        startedAtMs: 29,
+        durationMs: 1,
+      },
+    ],
+  });
+  assert.equal(result.timings[0].imageDimensions!.length, 7);
+});

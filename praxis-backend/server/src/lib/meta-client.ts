@@ -34,19 +34,29 @@ export function createMetaClient(
 ): MetaClient {
   return {
     async post(path, body, signal, operation) {
+      const finishPreparation =
+        path === 'chat/completions'
+          ? operation?.trace?.begin('muse.prepare')
+          : undefined;
       const payload = JSON.stringify(body);
-      const inputStats = { encodedImageBytes: 0, promptChars: 0 };
+      const inputStats = {
+        encodedImageBytes: 0,
+        promptChars: 0,
+        imageCount: 0,
+      };
       const inspect = (value: unknown, key = '') => {
         if (typeof value === 'string') {
-          if (value.startsWith('data:image/'))
+          if (value.startsWith('data:image/')) {
             inputStats.encodedImageBytes += Buffer.byteLength(value);
-          else if (key === 'text' || key === 'content')
+            inputStats.imageCount++;
+          } else if (key === 'text' || key === 'content')
             inputStats.promptChars += value.length;
         } else if (Array.isArray(value)) value.forEach((v) => inspect(v));
         else if (value && typeof value === 'object')
           Object.entries(value).forEach(([k, v]) => inspect(v, k));
       };
       inspect(body);
+      finishPreparation?.('completed');
       const maxRetries = operation?.maxRetries ?? config.PROVIDER_MAX_RETRIES;
       const timeoutMs = Math.min(
         operation?.timeoutMs ?? config.PROVIDER_TIMEOUT_MS,
@@ -81,6 +91,13 @@ export function createMetaClient(
         const finish = operation?.trace?.begin(operation.stage, {
           kind: 'request',
           payloadBytes: Buffer.byteLength(payload),
+          ...(body.response_format
+            ? {
+                outputSchemaBytes: Buffer.byteLength(
+                  JSON.stringify(body.response_format),
+                ),
+              }
+            : {}),
           ...inputStats,
           outputTokenBudget:
             typeof body.max_completion_tokens === 'number'

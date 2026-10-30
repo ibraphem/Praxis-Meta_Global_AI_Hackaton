@@ -17,6 +17,9 @@ export const stages = [
   'muse.endpoints',
   'muse.insertion_closeups',
   'muse.admission',
+  'muse.prepare',
+  'muse.validate',
+  'wire.selection',
   'response.validate',
 ] as const;
 export type Stage = (typeof stages)[number];
@@ -34,6 +37,9 @@ export interface StageTiming {
   code?: string;
   upstreamStatus?: number;
   payloadBytes?: number;
+  imageCount?: number;
+  candidateCount?: number;
+  outputSchemaBytes?: number;
   encodedImageBytes?: number;
   promptChars?: number;
   outputTokenBudget?: number | null;

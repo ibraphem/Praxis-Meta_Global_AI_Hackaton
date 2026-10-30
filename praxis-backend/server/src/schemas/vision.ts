@@ -1,7 +1,9 @@
+import { runtimeSchema } from './runtime.js';
 import { z } from 'zod';
 import {
   selectionEvidenceSchema,
   wireSelectionSchema,
+  candidateLayerSchema,
 } from './wire-selection.js';
 import { maskSchema, regionSchema, type EncodedMask } from './geometry.js';
 import {
@@ -74,6 +76,8 @@ export const analysisSchema = z
           .optional(),
         snapshotProcessingVersion: z.string().min(1).max(100).optional(),
         wireSelection: wireSelectionSchema.optional(),
+        candidateLayer: candidateLayerSchema.optional(),
+        runtime: runtimeSchema.optional(),
         wireAudit: z
           .object({
             samCandidates: z.number().int().nonnegative(),

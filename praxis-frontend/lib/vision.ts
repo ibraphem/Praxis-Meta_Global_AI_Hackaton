@@ -1,5 +1,10 @@
+import { runtimeSchema } from "./runtime-schema";
 import { z } from "zod";
-import { selectionEvidenceSchema, wireSelectionSchema } from "./wire-selection";
+import {
+  selectionEvidenceSchema,
+  wireSelectionSchema,
+  candidateLayerSchema,
+} from "./wire-selection";
 import { diagnosticsSchema } from "./diagnostics";
 import { maskSchema, regionSchema } from "./geometry";
 import {
@@ -94,6 +99,8 @@ export const analysisSchema = z
           .optional(),
         snapshotProcessingVersion: z.string().min(1).max(100).optional(),
         wireSelection: wireSelectionSchema.optional(),
+        candidateLayer: candidateLayerSchema.optional(),
+        runtime: runtimeSchema.optional(),
         wireAudit: z
           .object({
             samCandidates: z.number().int().min(0).max(100),

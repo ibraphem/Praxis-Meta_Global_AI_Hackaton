@@ -1,3 +1,4 @@
+import type { RuntimeFingerprint } from "@/lib/runtime-schema";
 import type { CSSProperties } from "react";
 import { categories, componentLabel, type Analysis } from "@/lib/vision";
 import { Icon } from "./icons";
@@ -22,6 +23,7 @@ interface Props {
   showOverlays: boolean;
   selectedId: string | null;
   analysisRunId: string | null;
+  backendRuntime?: RuntimeFingerprint | null;
   onSelect: (id: string) => void;
   onChoose: () => void;
   onRecoveryContext?: (context: {
@@ -39,6 +41,7 @@ export function ImagePreview({
   showOverlays,
   selectedId,
   analysisRunId,
+  backendRuntime,
   onSelect,
   onChoose,
   onRecoveryContext,
@@ -101,6 +104,7 @@ export function ImagePreview({
         imageUrl={photograph.url}
         imageFile={photograph.file}
         onRecoveryContext={onRecoveryContext}
+        backendRuntime={backendRuntime}
         disabled={loading || selecting}
         assignmentContext={{
           photoId: photograph.id,

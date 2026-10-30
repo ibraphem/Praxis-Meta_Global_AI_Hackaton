@@ -1,3 +1,4 @@
+import { RUNTIME } from '../src/lib/runtime.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildApp } from '../src/app.js';
@@ -62,6 +63,7 @@ test('Muse proposes original image pixels and evidence only, with selection prov
     imageId: 'photo-1',
     wireCandidateId: 'jumper_wire_1',
     model: 'muse-spark-1.3',
+    runtime: RUNTIME,
     endpoints,
   });
   assert.equal(calls.length, 1);

@@ -1,3 +1,4 @@
+import { runtimeSchema } from "./runtime-schema";
 import {
   recoveryReportSchema,
   wireIdentitySchema,
@@ -70,6 +71,7 @@ const snapshotRefSchema = z
   .strict();
 export const analysisJobSchema = z
   .object({
+    runtime: runtimeSchema.optional(),
     analysisId: z.uuid(),
     imageHash: z.string().regex(/^[a-f0-9]{64}$/),
     image: z
@@ -130,6 +132,7 @@ export const analysisJobSchema = z
       })
       .optional(),
     wireIdentities: z.array(wireIdentitySchema).max(100).optional(),
+    candidatePublicationError: z.literal("WIRE_SELECTION_BUDGET").optional(),
     result: analysisSchema.optional(),
   })
   .strict();
@@ -161,6 +164,20 @@ export function jobMessage(job: AnalysisJob) {
     return job.experiment.status === "running"
       ? "A controlled Muse experiment is running. Live analysis is paused; saved results remain available."
       : "A controlled Muse experiment was interrupted. Release its reservation explicitly before starting more model work; its upstream outcome is unknown.";
+  if (job.candidatePublicationError)
+    return "New geometry is saved, but the selection budget is full. Earlier masks remain available; inspect recovery evidence for deferred candidates.";
+  if (
+    job.result &&
+    ["failed", "timed_out", "interrupted"].includes(job.muse.status)
+  ) {
+    const state =
+      job.muse.status === "timed_out"
+        ? "timed out"
+        : job.muse.status === "interrupted"
+          ? "was interrupted"
+          : "failed";
+    return `Muse interpretation ${state}. Saved candidates remain available for calibration and review; wire identity stays unverified.${job.muse.attempts.at(-1)?.upstreamOutcome === "unknown" ? " The provider may still have processed the previous request." : ""}`;
+  }
   if (job.status === "completed")
     return "Analysis complete. Interpretation is saved.";
   if (job.sam.status === "queued")

@@ -446,6 +446,9 @@ test('a recovery worker that loses its lease cannot checkpoint late masks after 
   fresh.start();
   await until(() => b.get(job.analysisId).recovery.status === 'succeeded');
   const protectedReport = b.get(job.analysisId).recovery.report!;
+  const protectedCandidates = JSON.stringify(
+    b.get(job.analysisId).candidateResult,
+  );
   release(
     samEnvelope(
       samWireRecord().replace(
@@ -456,6 +459,10 @@ test('a recovery worker that loses its lease cannot checkpoint late masks after 
   );
   await delay(75);
   assert.deepEqual(b.get(job.analysisId).recovery.report, protectedReport);
+  assert.equal(
+    JSON.stringify(b.get(job.analysisId).candidateResult),
+    protectedCandidates,
+  );
   assert.equal(b.snapshots(job.analysisId).length, 1);
   assert.equal(b.get(job.analysisId).recovery.budget.requests, 1);
   assert.equal(
@@ -525,7 +532,16 @@ test('worker preserves original SAM and Muse results; interpretation of recovere
   assert.equal(cropCalls, 1);
   assert.equal(interpretations, 1);
   assert.equal(recovered.sam.snapshotRef!.samSnapshotId, originalId);
-  assert.equal(recovered.revision, revision);
+  assert.notEqual(recovered.revision, revision);
+  assert.equal(
+    recovered.candidateResult!.provenance.candidateLayer!.snapshotId,
+    recovered.recovery.snapshotRef!.samSnapshotId,
+  );
+  assert.equal(
+    recovered.candidateResult!.objects.filter((c) => c.type === 'jumper_wire')
+      .length,
+    1,
+  );
   assert.deepEqual(recovered.muse.result, original.muse.result);
   assert.equal(store.getSnapshot(originalId).snapshot.candidates.length, 1);
   assert.ok(
@@ -551,7 +567,7 @@ test('worker preserves original SAM and Muse results; interpretation of recovere
     reviewed.wireIdentities[0]!.electricalConnectionStatus,
     'unestablished',
   );
-  assert.equal(reviewed.revision, revision);
+  assert.equal(reviewed.revision, recovered.revision);
   assert.throws(
     () => store.reviewWireIdentity(id, { ...review, reportId: '0'.repeat(64) }),
     /evidence changed/,
@@ -559,7 +575,8 @@ test('worker preserves original SAM and Muse results; interpretation of recovere
   store.interpretRecovery(id);
   worker.tick();
   await until(() => store.get(id).muse.status === 'timed_out');
-  assert.equal(store.get(id).revision, revision);
+  assert.equal(store.get(id).revision, recovered.revision);
+  assert.deepEqual(store.get(id).candidateResult, recovered.candidateResult);
   store.retry(id, 'muse');
   worker.tick();
   await until(() => store.get(id).muse.status === 'succeeded');

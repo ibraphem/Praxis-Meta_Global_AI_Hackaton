@@ -17,6 +17,9 @@ const stageSchema = z.enum([
   "muse.endpoints",
   "muse.insertion_closeups",
   "muse.admission",
+  "muse.prepare",
+  "muse.validate",
+  "wire.selection",
   "response.validate",
   "proxy.upload",
   "backend.wait",
@@ -42,7 +45,10 @@ export const timingSchema = z
     timeoutMs: milliseconds.optional(),
     code: code.optional(),
     upstreamStatus: z.number().int().min(100).max(599).optional(),
+    candidateCount: z.number().int().nonnegative().max(100).optional(),
+    outputSchemaBytes: z.number().int().nonnegative().optional(),
     payloadBytes: z.number().int().nonnegative().optional(),
+    imageCount: z.number().int().nonnegative().max(16).optional(),
     encodedImageBytes: z.number().int().nonnegative().optional(),
     promptChars: z.number().int().nonnegative().optional(),
     outputTokenBudget: z.number().int().nonnegative().nullable().optional(),
@@ -55,7 +61,7 @@ export const timingSchema = z
           })
           .strict(),
       )
-      .max(4)
+      .max(16)
       .optional(),
     headersMs: milliseconds.optional(),
     providerRequestId: z

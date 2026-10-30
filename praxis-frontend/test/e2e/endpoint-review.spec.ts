@@ -750,6 +750,12 @@ test("experimental refinement and ranking diagnostics never change original prop
   const { readFile } = await import("node:fs/promises");
   const bundle = JSON.parse(await readFile(file!, "utf8"));
   expect(bundle.schemaVersion).toBe("praxis-evaluation-v1");
+  expect(bundle.runtime.frontend.buildId).toMatch(/^[a-f0-9]{64}$/);
+  expect(bundle.runtime.frontend.algorithms.candidateLayer).toBe(
+    "sam-candidate-layer-v1",
+  );
+  expect(bundle.runtime).toHaveProperty("backendProducer");
+  expect(bundle.runtime).toHaveProperty("backendRunning");
   expect(bundle.image.sha256).toMatch(/^[0-9a-f]{64}$/);
   expect(bundle.analysis.objects[0].mask.path).toBeDefined();
   expect(bundle.reviews[0].proposal.endpoints[0].proposedImagePosition).toEqual(

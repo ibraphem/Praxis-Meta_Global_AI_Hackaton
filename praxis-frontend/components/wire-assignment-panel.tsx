@@ -359,13 +359,15 @@ export function WireAssignmentPanel(props: Props) {
                   )}
                   {original.evidence !== "visible_insertion" && (
                     <p className="endpoint-limits">
+                      Original Muse evidence:{" "}
                       {["occluded_insertion", "occluded"].includes(
                         original.evidence,
                       )
                         ? "Insertion point is occluded — hole unknown."
                         : "A physical insertion point has not been established — hole unknown."}{" "}
-                      Correct it only if you can independently establish the
-                      hole, or mark this endpoint unknown.
+                      {endpoint.reviewStatus === "proposed"
+                        ? "Correct it only if you can independently establish the hole, or mark this endpoint unknown."
+                        : "This describes the original proposal; the reviewed result is shown below."}
                     </p>
                   )}
                   {endpoint.reviewStatus !== "proposed" && (
@@ -469,7 +471,7 @@ export function WireAssignmentPanel(props: Props) {
         </div>
       )}
       <p className="endpoint-limits">
-        Wire identity: unverified · Endpoint locations: user selected ·
+        Wire identity: unverified · Endpoint sources are recorded per endpoint ·
         Electrical contact: unknown. Selecting two positions does not verify one
         physical wire or seated connectors.
       </p>

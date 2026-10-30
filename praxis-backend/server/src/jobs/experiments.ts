@@ -90,7 +90,7 @@ export class ExperimentRegistry {
         ? this.store
             .snapshots(analysisId)
             .find((r) => r.ref.samSnapshotId === snapshotId)?.ref
-        : job.sam.snapshotRef;
+        : (job.recovery.snapshotRef ?? job.sam.snapshotRef);
       if (!requested)
         throw new AppError(
           409,

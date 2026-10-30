@@ -187,10 +187,11 @@ export function VisionWorkspace() {
             current.revision === "sam" ? current.analysisId : current.revision,
           );
           setResult(current.result);
-          setSelectedId(
-            current.result.objects[0]?.id ??
-              current.result.proposals?.[0]?.id ??
-              null,
+          const next = current.result;
+          setSelectedId((previous) =>
+            previous && next.objects.some((o) => o.id === previous)
+              ? previous
+              : (next.objects[0]?.id ?? next.proposals?.[0]?.id ?? null),
           );
         }
       }
@@ -397,14 +398,17 @@ export function VisionWorkspace() {
               when updates are paused.
             </p>
             <div className="analysis-job-actions">
-              {job.result?.provenance.mode === "sam-only" && !usingPartial && (
-                <button
-                  className="button button-secondary"
-                  onClick={() => setUsingPartial(true)}
-                >
-                  Continue with SAM candidates
-                </button>
-              )}
+              {(job.result?.provenance.mode === "sam-only" ||
+                job.result?.provenance.candidateLayer?.publication ===
+                  "local_geometry") &&
+                !usingPartial && (
+                  <button
+                    className="button button-secondary"
+                    onClick={() => setUsingPartial(true)}
+                  >
+                    Continue with SAM candidates
+                  </button>
+                )}
               {!loading && (
                 <button
                   className="button button-secondary"
@@ -517,6 +521,7 @@ export function VisionWorkspace() {
                 showOverlays={showOverlays}
                 selectedId={selectedId}
                 analysisRunId={analysisRunId}
+                backendRuntime={job?.runtime ?? null}
                 onSelect={setSelectedId}
                 onChoose={() => inputRef.current?.click()}
                 onRecoveryContext={(context) => {

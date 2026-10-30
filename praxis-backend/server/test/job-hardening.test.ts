@@ -413,8 +413,6 @@ test('three-variant runner persists isolated results against one snapshot withou
           minimal: settings.MUSE_MINIMAL_PROMPT,
           hash: snapshotHash(snapshot, job.sam.snapshotRef!),
         });
-        if (seen.length === 2)
-          throw new AppError(504, 'PROVIDER_TIMEOUT', 'One measured timeout');
         return fullResult(snapshot.image);
       },
     }),
@@ -432,9 +430,9 @@ test('three-variant runner persists isolated results against one snapshot withou
   );
   assert.deepEqual(
     report.measurements.map((m) => m.status),
-    ['succeeded', 'timed_out', 'succeeded'],
+    ['succeeded', 'succeeded', 'succeeded'],
   );
-  assert.equal(report.measurements[1]!.upstreamOutcome, 'unknown');
+  assert.equal(report.measurements[1]!.upstreamOutcome, 'response_received');
   assert.equal(report.status, 'completed');
   assert.equal(store.experiments.active(), undefined);
   assert.deepEqual(store.experiments.get(report.experimentId).report, report);
@@ -654,4 +652,39 @@ test('a late experiment response cannot publish or continue variants after its r
     ),
     true,
   );
+});
+
+test('an unknown experiment outcome stops later variants and retains prior successful evidence and its reservation', async (t) => {
+  const store = new JobStore(testConfig(), ':memory:');
+  t.after(() => store.close());
+  const job = await checkpointed(store);
+  let calls = 0;
+  await assert.rejects(
+    () =>
+      runMuseExperiment(store, job.analysisId, store.config, {
+        stagesFactory: () => ({
+          async segment() {
+            assert.fail('No SAM');
+          },
+          async interpret(snapshot) {
+            calls++;
+            if (calls === 2)
+              throw new AppError(504, 'PROVIDER_TIMEOUT', 'Timeout');
+            return fullResult(snapshot.image);
+          },
+        }),
+      }),
+    /interrupted/,
+  );
+  assert.equal(calls, 2);
+  const reservation = store.experiments.active()!;
+  assert.equal(reservation.status, 'interrupted');
+  const report = reservation.report as {
+    measurements: { status: string; result?: unknown }[];
+  };
+  assert.deepEqual(
+    report.measurements.map((m) => m.status),
+    ['succeeded', 'timed_out'],
+  );
+  assert.ok(report.measurements[0]!.result);
 });

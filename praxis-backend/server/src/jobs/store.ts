@@ -1,3 +1,4 @@
+import { RUNTIME } from '../lib/runtime.js';
 import {
   normalizeCropAttempts,
   finishRunningCrops,
@@ -66,6 +67,9 @@ export interface Job {
   updatedAt: number;
   expiresAt: number;
   revision: string;
+  /** Published selection, independent of whether Muse has interpreted this checkpoint. */
+  candidateResult?: Analysis;
+  candidatePublicationError?: 'WIRE_SELECTION_BUDGET';
   settings: {
     maxDimension: number;
     minimalPrompt: boolean;
@@ -859,6 +863,7 @@ export class JobStore {
 }
 export function publicJob(job: Job) {
   return {
+    runtime: RUNTIME,
     analysisId: job.analysisId,
     imageHash: job.imageHash,
     image: job.image,
@@ -886,11 +891,16 @@ export function publicJob(job: Job) {
     },
     wireIdentities: job.wireIdentities,
     ...(job.experiment ? { experiment: job.experiment } : {}),
-    ...(job.muse.result
-      ? { result: job.muse.result }
-      : job.sam.result
-        ? { result: job.sam.result }
-        : {}),
+    ...(job.candidatePublicationError
+      ? { candidatePublicationError: job.candidatePublicationError }
+      : {}),
+    ...(job.candidateResult
+      ? { result: job.candidateResult }
+      : job.muse.result
+        ? { result: job.muse.result }
+        : job.sam.result
+          ? { result: job.sam.result }
+          : {}),
   };
 }
 

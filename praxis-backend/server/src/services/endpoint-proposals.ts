@@ -1,3 +1,4 @@
+import { RUNTIME } from '../lib/runtime.js';
 import {
   localizeInsertions,
   type EndpointResult,
@@ -197,6 +198,7 @@ export function createEndpointProposalService(
         imageId: input.imageId,
         wireCandidateId: input.wire.id,
         model: config.META_REASONING_MODEL,
+        runtime: RUNTIME,
         endpoints,
         localization: {
           status: 'crop_fragment',
@@ -411,6 +413,7 @@ export function createEndpointProposalService(
       imageId: input.imageId,
       wireCandidateId: input.wire.id,
       model: config.META_REASONING_MODEL,
+      runtime: RUNTIME,
       ...(input.coordinateSpace === 'normalized_1000'
         ? { coordinateSpace: input.coordinateSpace }
         : {}),

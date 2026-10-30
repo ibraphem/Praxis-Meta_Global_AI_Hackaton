@@ -61,6 +61,7 @@ export function reconcileWireSelection(
   previous: Analysis,
   raw: Analysis,
   context: {
+    observationOnly?: boolean;
     previousAttemptId: string;
     currentAttemptId: string;
     previousRef: SnapshotRef;
@@ -133,20 +134,30 @@ export function reconcileWireSelection(
   const kept: Component[] = before.map((old) => {
     const match = nextByHash.get(hash(old));
     const reasons = new Set(old.selectionEvidence?.reasons ?? []);
-    if (!match) reasons.add('not_selected_by_latest_interpretation');
+    if (!match)
+      reasons.add(
+        context.observationOnly
+          ? 'not_present_in_current_geometry'
+          : 'not_selected_by_latest_interpretation',
+      );
     else if (
-      match.interpretation !== old.interpretation ||
-      (match.color &&
-        old.color &&
-        match.color.toLowerCase() !== old.color.toLowerCase())
+      !context.observationOnly &&
+      (match.interpretation !== old.interpretation ||
+        (match.color &&
+          old.color &&
+          match.color.toLowerCase() !== old.color.toLowerCase()))
     )
       reasons.add('changed_interpretation');
     const origin = old.selectionEvidence;
     return {
-      ...structuredClone(match ?? old),
+      ...structuredClone(context.observationOnly ? old : (match ?? old)),
       id: old.id,
       // These are selectable hypotheses, including when a fresh interpretation disagrees.
-      interpretation: reasons.size ? 'uncertain' : match!.interpretation,
+      interpretation: reasons.size
+        ? 'uncertain'
+        : context.observationOnly
+          ? old.interpretation
+          : match!.interpretation,
       guidanceEligible: false,
       identityStatus: 'unverified',
       selectionEvidence: {

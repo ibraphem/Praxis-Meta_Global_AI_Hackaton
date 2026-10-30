@@ -1,3 +1,4 @@
+import type { RUNTIME } from '../lib/runtime.js';
 import { z } from 'zod';
 import { smallBox } from './short-wire-recovery.js';
 import { extractFrame, frameToOriginal, gridReference } from './wire-focus.js';
@@ -43,6 +44,7 @@ export interface EndpointResult {
   imageId: string;
   wireCandidateId: string;
   model: string;
+  runtime?: typeof RUNTIME;
   endpoints: [Insertion, Insertion];
   inputVariant?: 'candidate_crop' | 'endpoint_crops';
   coordinateSpace?: 'pixels' | 'normalized_1000';
