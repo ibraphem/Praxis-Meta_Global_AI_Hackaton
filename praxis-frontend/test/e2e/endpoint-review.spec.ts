@@ -871,3 +871,70 @@ test("failed close-ups show coarse predictions separately and preserve their fai
     ),
   ).toBe(true);
 });
+
+test("retained masks stay selectable and disclose conflicts before endpoint review", async ({
+  page,
+}) => {
+  const source = randomUUID();
+  const retained = {
+    ...analysis,
+    objects: analysis.objects.map((c, i) =>
+      i
+        ? c
+        : {
+            ...c,
+            interpretation: "uncertain",
+            selectionEvidence: {
+              evidenceHash: "a".repeat(64),
+              sourceSnapshotId: source,
+              sourceAttemptId: source,
+              state: "retained",
+              requiresReview: true,
+              reasons: ["not_selected_by_latest_interpretation"],
+            },
+          },
+    ),
+    provenance: {
+      ...analysis.provenance,
+      wireSelection: {
+        version: "preserve-wire-evidence-v1",
+        previousSnapshotId: source,
+        previousAttemptId: source,
+        restoredHistorical: 1,
+        priorSelectable: 2,
+        rawSelectable: 1,
+        matched: 1,
+        retained: 1,
+        added: 0,
+        reviewRequired: 1,
+        deferredObjectIds: [],
+      },
+    },
+  };
+  await page.route("**/api/analyses", (route) =>
+    route.fulfill({ status: 202, json: completedJob(retained) }),
+  );
+  await page.goto("/");
+  await page
+    .getByLabel("Upload a workspace photograph")
+    .setInputFiles(photograph);
+  await page
+    .getByRole("button", { name: "Analyze image", exact: true })
+    .click();
+  const summary = page.getByRole("region", {
+    name: "Wire candidate preservation",
+  });
+  await expect(summary).toContainText("1 retained earlier masks");
+  await expect(summary).toContainText(
+    "1 masks restored from earlier saved attempts",
+  );
+  const candidate = page.getByRole("button", {
+    name: /Jumper wire 1.*Retained earlier mask/,
+  });
+  await expect(candidate).toBeEnabled();
+  await candidate.click();
+  await expect(candidate).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.getByText("Review conflicting evidence", { exact: false }),
+  ).toBeVisible();
+});

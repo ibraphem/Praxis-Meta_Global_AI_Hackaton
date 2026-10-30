@@ -99,9 +99,9 @@ test("the results separate search regions from individual wire candidates and di
     "Unresolved regions",
     "Wire region A",
     "not counted as individual components",
-    "Numbers reset with each analysis",
+    "Wire IDs persist across related recovery",
   ])
-    assert.ok(html.includes(text));
+    assert.ok(html.includes(text), `Missing identity limitation: ${text}`);
   assert.ok(!html.includes("Jumper wire 2"));
 });
 

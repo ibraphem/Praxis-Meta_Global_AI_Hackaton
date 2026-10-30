@@ -204,3 +204,62 @@ test("saved crop outcomes including interrupted and legacy unknown records pass 
   const decoded = analysisJobSchema.parse(await response.json());
   assert.deepEqual(decoded.recovery!.cropAttempts, j.recovery!.cropAttempts);
 });
+
+test("selectable-evidence reconciliation metadata survives the saved-analysis schema without claiming identity or contact", () => {
+  const source = "00000000-0000-4000-8000-000000000001";
+  const selected = {
+    ...result,
+    objects: [
+      {
+        id: "jumper_wire_7",
+        type: "jumper_wire",
+        bbox: [10, 10, 80, 20],
+        mask: {
+          format: "svg_path",
+          width: 80,
+          height: 20,
+          path: "M0 8L80 8L80 10L0 10Z",
+        },
+        interpretation: "uncertain",
+        geometryStatus: "segmented",
+        localizationSource: "sam",
+        identityStatus: "unverified",
+        guidanceEligible: false,
+        selectionEvidence: {
+          evidenceHash: "a".repeat(64),
+          sourceSnapshotId: source,
+          sourceAttemptId: source,
+          state: "retained",
+          requiresReview: true,
+          reasons: ["not_selected_by_latest_interpretation"],
+        },
+      },
+    ],
+    provenance: {
+      ...result.provenance,
+      wireSelection: {
+        version: "preserve-wire-evidence-v1",
+        previousSnapshotId: source,
+        previousAttemptId: source,
+        restoredHistorical: 1,
+        priorSelectable: 1,
+        rawSelectable: 0,
+        matched: 0,
+        retained: 1,
+        added: 0,
+        reviewRequired: 1,
+        deferredObjectIds: [],
+      },
+    },
+  };
+  const parsed = analysisJobSchema.parse(completedJob(selected));
+  assert.deepEqual(
+    parsed.result!.objects[0].selectionEvidence,
+    selected.objects[0].selectionEvidence,
+  );
+  assert.equal(parsed.result!.objects[0].identityStatus, "unverified");
+  assert.equal(parsed.result!.provenance.wireSelection!.restoredHistorical, 1);
+  const unsafe = structuredClone(selected);
+  unsafe.objects[0].guidanceEligible = true;
+  assert.throws(() => completedJob(unsafe));
+});

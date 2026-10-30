@@ -144,6 +144,12 @@ export function ResultsPanel({
                         {object.type === "jumper_wire"
                           ? "Segmented mask"
                           : `${object.bbox[2]} × ${object.bbox[3]} px`}
+                        {object.selectionEvidence?.state === "retained"
+                          ? " · Retained earlier mask"
+                          : ""}
+                        {object.selectionEvidence?.requiresReview
+                          ? " · Review conflicting evidence"
+                          : ""}
                         {object.detectionSource === "muse"
                           ? " · Recovered candidate"
                           : ""}
@@ -196,6 +202,35 @@ export function ResultsPanel({
           onSelect={onSelect}
         />
       )}
+      {result?.provenance.wireSelection && (
+        <section aria-label="Wire candidate preservation">
+          <p>
+            Recovery interpretation: {result.provenance.wireSelection.matched}{" "}
+            matched masks, {result.provenance.wireSelection.retained} retained
+            earlier masks, {result.provenance.wireSelection.added} new masks.{" "}
+            {result.provenance.wireSelection.reviewRequired} require evidence
+            review.
+          </p>
+          {!!result.provenance.wireSelection.restoredHistorical && (
+            <p>
+              {result.provenance.wireSelection.restoredHistorical} masks
+              restored from earlier saved attempts. Existing selectable IDs are
+              preserved.
+            </p>
+          )}
+          <p>
+            Mask counts are hypotheses, not distinct physical-wire coverage or
+            verified connections.
+          </p>
+          {!!result.provenance.wireSelection.deferredObjectIds.length && (
+            <p>
+              New masks deferred by the output budget:{" "}
+              {result.provenance.wireSelection.deferredObjectIds.join(", ")}.
+              Earlier masks were preserved.
+            </p>
+          )}
+        </section>
+      )}
       {!!result?.proposals?.length && (
         <section
           className="wire-regions-panel"
@@ -242,7 +277,9 @@ export function ResultsPanel({
         <Icon name="info" width="16" height="16" />
         <p>
           Candidate geometry only. Wire identity, connectors, and electrical
-          function aren’t verified. Numbers reset with each analysis.
+          function aren’t verified. Wire IDs persist across related recovery
+          interpretations; endpoint reviews remain specific to each analysis
+          revision.
         </p>
       </div>
       {result && (

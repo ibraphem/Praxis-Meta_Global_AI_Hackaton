@@ -10,6 +10,8 @@ import type { Config } from '../config.js';
 import { AppError } from '../lib/errors.js';
 import { AnalysisTrace, type TraceLogger } from '../lib/diagnostics.js';
 import { createVisionStages } from '../services/vision.js';
+import { reconcileWireSelection } from '../services/wire-selection.js';
+import type { Analysis } from '../schemas/vision.js';
 import { partialAnalysis } from '../services/partial-analysis.js';
 import { JobStore, newAttempt, lastAttempt } from './store.js';
 
@@ -112,6 +114,7 @@ export class AnalysisWorker {
       this.config.ANALYSIS_TIMEOUT_MS,
     );
     let abort: (() => void) | undefined;
+    let completedInterpretation: Analysis | undefined;
     try {
       // Race even a misbehaving adapter that ignores AbortSignal. Late responses have no write path.
       const aborted = new Promise<never>((_, reject) => {
@@ -263,9 +266,40 @@ export class AnalysisWorker {
             samSnapshotHash: bound!.ref.samSnapshotHash,
             snapshotProcessingVersion: bound!.ref.processingVersion,
           };
-          a.result = result;
+          completedInterpretation = result;
+          const previous = j.muse.result;
+          const refs = new Map([[bound!.ref.samSnapshotId, bound!.ref]]);
+          const getRef = (id: string) => {
+            if (!refs.has(id)) refs.set(id, this.store.getSnapshot(id).ref);
+            return refs.get(id)!;
+          };
+          const selected =
+            previous?.provenance.samSnapshotId && j.muse.resultAttemptId
+              ? reconcileWireSelection(previous, result, {
+                  previousAttemptId: j.muse.resultAttemptId,
+                  currentAttemptId: attemptId,
+                  previousRef: getRef(previous.provenance.samSnapshotId),
+                  currentRef: bound!.ref,
+                  getRef,
+                  historical: j.muse.attempts
+                    .filter(
+                      (prior) =>
+                        prior.status === 'succeeded' &&
+                        prior.result &&
+                        prior.samSnapshotId &&
+                        prior.attemptId !== j.muse.resultAttemptId,
+                    )
+                    .reverse()
+                    .map((prior) => ({
+                      analysis: prior.result!,
+                      attemptId: prior.attemptId,
+                      ref: getRef(prior.samSnapshotId!),
+                    })),
+                })
+              : result;
+          a.result = result; // Original model-filtered prediction, before selectable-evidence reconciliation.
           j.muse.resultAttemptId = attemptId;
-          j.muse.result = result;
+          j.muse.result = selected;
           j.revision = attemptId;
           j.status = 'completed';
         }
@@ -300,6 +334,8 @@ export class AnalysisWorker {
         ].includes(e.code)
           ? 'not_retryable'
           : 'manual_only';
+        if (stage === 'muse' && completedInterpretation)
+          a.result = completedInterpretation;
         a.errorCode = e.code;
         a.finishedAt = Date.now();
         a.diagnostics = trace.snapshot();

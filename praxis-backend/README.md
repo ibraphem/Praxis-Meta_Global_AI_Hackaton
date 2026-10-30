@@ -953,3 +953,56 @@ crop and strict snap rejection remain distinct. Coarse predictions from a failed
 close-up are still scored; final operational results remain unresolved. Paired
 coarse-to-final pixel errors report their sample count. No prediction is overwritten
 and no snap policy, acceptance requirement, timeout or retry policy is relaxed.
+
+### Preserve selectable wire evidence across interpretation
+
+A successful Muse interpretation no longer replaces the selectable mask list for
+its checkpoint lineage. The worker reconciles the fresh result with the last
+published selection and earlier successful attempts from the same photograph and
+ancestor SAM checkpoints. It does this locally, without another model request.
+
+Exact mask geometry, original-image bounds, image hash, and crop-boundary metadata
+identify unchanged evidence. Existing selectable IDs stay stable even when Muse
+renumbers its result. Previously selectable masks omitted by the latest
+interpretation remain inspectable, labeled retained and uncertain. Historical masks
+already lost before this change can be restored under new IDs without reusing an
+existing wire's identity. Changed interpretations and overlapping new hypotheses
+are flagged for review; spatial overlap never merges them. A later model confirmation
+does not silently clear that warning. Physical wire review remains a separate,
+snapshot-bound record, and electrical connection status is unchanged.
+
+Each published wire can include `selectionEvidence`: its geometry fingerprint,
+source snapshot/attempt, latest raw object ID when present, retained/current state,
+and review reasons. `provenance.wireSelection` summarizes matched, retained, added,
+historically restored, and deferred masks. Those are candidate counts, not distinct
+physical-wire recall. Raw model-filtered outputs stay unchanged in each attempt's
+`result`, separate from the reconciled `muse.result`; private evidence export
+preserves both. New SAM roots or a different photograph start a new selection.
+
+The existing 100-object and 120,000-path-character limits remain enforced. Earlier
+selectable masks take priority; new candidates that do not fit are listed under
+`deferredObjectIds` and remain in the raw attempt evidence. If even the preserved
+selection plus fresh non-wire objects cannot fit, publication fails with
+`WIRE_SELECTION_BUDGET`, retaining the previous published result and the new raw
+response. Timeout, interruption, and stale-worker ownership guards are unchanged.
+No endpoint review, assignment, calibration, hole snap policy, crop-boundary gate,
+or identity verification is automatically carried into a new analysis revision.
+
+The regression fixture `test/fixtures/phase3-wire-selection.json` uses the supplied
+Phase 3 before/after rendered states and read-only checkpoint metadata. It preserves
+the qualification that these states were not a byte-verified browser export. Run:
+
+```sh
+node --import tsx --test test/wire-selection.test.ts
+```
+
+Offline replay retains 14 earlier mask hypotheses, matches seven of the ten latest
+masks, and adds three, yielding 17 selectable hypotheses. It also verifies that the
+white diagonal and lower-yellow masks survive and the new green/blue masks remain
+crop-truncated. This is **not 17/17 physical-wire recall**: historical clutter and
+partial traces remain candidates requiring visual review. Replaying an already
+regressed state restores seven older masks while preserving the latest orange
+wire's ID. No live inference or saved job was changed by these replay tests. The
+new selection behavior takes effect on the next successful interpretation; it does
+not rewrite previously exported benchmark results. Continuation recovery and
+short-wire detection still need separate measured improvements.

@@ -879,3 +879,25 @@ the interim acceptance gate requires both regression checks. Paired pixel errors
 points only where both exist, reporting that pair count. Transport request outcomes
 remain separate from validated localization and ground-truth correctness. Older
 reports without transport diagnostics report that evidence as unavailable.
+
+Recovery interpretation now preserves earlier selectable mask evidence within the
+same photograph and SAM checkpoint lineage. The results panel reports matched,
+retained, new, and historically restored masks. Retained masks stay selectable and
+show **Retained earlier mask** and **Review conflicting evidence**. Unchanged masks
+keep their selectable IDs; a different geometry is a separate hypothesis. Mask
+counts must still be audited against physical-wire ground truth.
+
+Exports retain `selectionEvidence` per wire and a `provenance.wireSelection`
+summary, including source snapshot/attempt references and budget-deferred raw
+object IDs. Earlier successful saved attempts can restore already-lost masks on the
+next successful interpretation, with new IDs for restored hypotheses and stable IDs
+for currently selectable wires. Original model outputs remain in backend attempt
+evidence. This does not add model calls or modify older exported bundles. Review
+warnings persist as historical conflict evidence; current human identity reviews
+remain separate. New interpretation revisions still make earlier endpoint reviews
+stale. Truncated masks still cannot supply physical insertion points, and strict
+hole snapping and unknown results are unchanged.
+
+See [candidate-preservation replay and limits](../praxis-backend/README.md#preserve-selectable-wire-evidence-across-interpretation)
+for the supplied Phase 3 regression fixture and its distinction between selectable
+hypotheses and physical-wire coverage.

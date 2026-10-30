@@ -473,6 +473,15 @@ export function WireAssignmentPanel(props: Props) {
         Electrical contact: unknown. Selecting two positions does not verify one
         physical wire or seated connectors.
       </p>
+      {candidate?.selectionEvidence?.requiresReview && (
+        <p role="status">
+          {candidate.selectionEvidence.state === "retained"
+            ? "This earlier mask is retained for inspection."
+            : "This mask has conflicting interpretation evidence."}{" "}
+          Review the highlighted pixels and wire identity before confirming
+          endpoint assignments.
+        </p>
+      )}
       <div className="endpoint-actions">
         <strong>
           {candidate

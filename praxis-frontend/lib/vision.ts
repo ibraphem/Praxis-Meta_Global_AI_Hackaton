@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { selectionEvidenceSchema, wireSelectionSchema } from "./wire-selection";
 import { diagnosticsSchema } from "./diagnostics";
 import { maskSchema, regionSchema } from "./geometry";
 import {
@@ -64,6 +65,7 @@ const componentSchema = z
       .optional(),
     guidanceEligible: z.literal(false).optional(),
     identityStatus: z.literal("unverified").optional(),
+    selectionEvidence: selectionEvidenceSchema.optional(),
   })
   .strict();
 
@@ -91,6 +93,7 @@ export const analysisSchema = z
           .regex(/^[a-f0-9]{64}$/)
           .optional(),
         snapshotProcessingVersion: z.string().min(1).max(100).optional(),
+        wireSelection: wireSelectionSchema.optional(),
         wireAudit: z
           .object({
             samCandidates: z.number().int().min(0).max(100),
