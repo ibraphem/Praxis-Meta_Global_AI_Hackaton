@@ -1,5 +1,11 @@
 import { retryCropWork } from '../services/crop-retry.js';
 import { RUNTIME } from '../lib/runtime.js';
+import { checkpointScene, getSceneSnapshot } from './scene-snapshots.js';
+import type {
+  SceneGraph,
+  SceneSnapshotRef,
+  SceneWork,
+} from '../schemas/scene.js';
 import {
   normalizeCropAttempts,
   finishRunningCrops,
@@ -34,7 +40,7 @@ import type { Diagnostics } from '../lib/diagnostics.js';
 import type { Analysis, PreparedImage } from '../schemas/vision.js';
 import type { SamSnapshot } from '../services/vision.js';
 
-export type JobStage = 'sam' | 'muse' | 'recovery';
+export type JobStage = 'sam' | 'muse' | 'recovery' | 'scene';
 export type AttemptStatus =
   'queued' | 'running' | 'succeeded' | 'timed_out' | 'interrupted' | 'failed';
 export interface Attempt {
@@ -56,6 +62,9 @@ export interface Attempt {
   recoveryReport?: RecoveryReport;
   outputSnapshotId?: string;
   outputSnapshotHash?: string;
+  sceneOperation?: 'inventory' | 'guided';
+  sceneSnapshotId?: string;
+  sceneSnapshotHash?: string;
 }
 export interface Job {
   analysisId: string;
@@ -81,6 +90,11 @@ export interface Job {
     mode: Config['VISION_MODE'];
     samModel: string;
     museModel: string;
+    dynamicScene?: boolean;
+    sceneTimeoutMs?: number;
+    sceneMaxRequests?: number;
+    sceneMaxPixels?: number;
+    sceneMaxCropPixels?: number;
   };
   sam: {
     status: AttemptStatus | 'not_started';
@@ -120,6 +134,14 @@ export interface Job {
     cropAttempts: CropAttempt[];
   };
   wireIdentities: WireIdentity[];
+  scene?: {
+    status: AttemptStatus | 'not_started';
+    attempts: Attempt[];
+    snapshotRef?: SceneSnapshotRef;
+    graph?: SceneGraph;
+    budget: { requests: number; pixels: number };
+    work: SceneWork[];
+  };
   experiment?: {
     experimentId: string;
     analysisId: string;
@@ -137,7 +159,7 @@ export const newAttempt = (): Attempt => ({
   createdAt: Date.now(),
 });
 export const lastAttempt = (job: Job, stage: JobStage) =>
-  job[stage].attempts.at(-1);
+  job[stage]?.attempts.at(-1);
 
 /** SQLite transactions serialize claims/retries across workers; image and state commit together. */
 export class JobStore {
@@ -180,6 +202,9 @@ export class JobStore {
     );
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS model_requests (id TEXT PRIMARY KEY, lease_until INTEGER NOT NULL)',
+    );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS scene_snapshots (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, metadata TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_snapshots_analysis ON scene_snapshots(analysis_id); CREATE TRIGGER IF NOT EXISTS immutable_scene_snapshots BEFORE UPDATE ON scene_snapshots BEGIN SELECT RAISE(ABORT,'Scene snapshots are immutable'); END",
     );
     this.experiments = new ExperimentRegistry(this);
     this.transaction(() => {
@@ -230,6 +255,11 @@ export class JobStore {
       job.sam.snapshot = this.getSnapshot(
         job.sam.snapshotRef.samSnapshotId,
       ).snapshot;
+    if (job.scene?.snapshotRef)
+      job.scene.graph = getSceneSnapshot(
+        this,
+        job.scene.snapshotRef.snapshotId,
+      ).graph;
     const reservation = this.experiments.active();
     if (reservation)
       job.experiment = {
@@ -363,6 +393,11 @@ export class JobStore {
     }
     if (!preserveTimestamp) job.updatedAt = Date.now();
     const { experiment: _reservation, ...durable } = job;
+    if (durable.scene) {
+      const { graph: _graph, ...scene } = durable.scene;
+      void _graph;
+      durable.scene = scene;
+    }
     void _reservation;
     this.db
       .prepare(
@@ -383,7 +418,9 @@ export class JobStore {
             ? 'recovery'
             : job.muse.status === 'queued'
               ? 'muse'
-              : null,
+              : job.scene?.status === 'queued'
+                ? 'scene'
+                : null,
         job.analysisId,
       );
   }
@@ -404,7 +441,7 @@ export class JobStore {
       )
       .run(now);
     this.db.exec(
-      'DELETE FROM sam_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM experiments WHERE analysis_id NOT IN(SELECT id FROM jobs)',
+      'DELETE FROM sam_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM scene_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM experiments WHERE analysis_id NOT IN(SELECT id FROM jobs)',
     );
   }
   create(bytes: Buffer, image: PreparedImage): Job {
@@ -436,6 +473,11 @@ export class JobStore {
           mode: this.config.VISION_MODE,
           samModel: this.config.META_SAM_MODEL,
           museModel: this.config.META_REASONING_MODEL,
+          dynamicScene: this.config.DYNAMIC_SCENE_ENABLED,
+          sceneTimeoutMs: this.config.SCENE_STAGE_TIMEOUT_MS,
+          sceneMaxRequests: this.config.SCENE_MAX_GUIDED_REQUESTS,
+          sceneMaxPixels: this.config.SCENE_MAX_GUIDED_PIXELS,
+          sceneMaxCropPixels: this.config.SCENE_MAX_CROP_PIXELS,
         },
         sam: {
           status: 'queued',
@@ -445,6 +487,18 @@ export class JobStore {
         muse: { status: 'not_started', attempts: [] },
         recovery: emptyRecovery(),
         wireIdentities: [],
+        ...(this.config.DYNAMIC_SCENE_ENABLED
+          ? {
+              scene: {
+                status: 'queued' as const,
+                attempts: [
+                  { ...newAttempt(), sceneOperation: 'inventory' as const },
+                ],
+                budget: { requests: 0, pixels: 0 },
+                work: [],
+              },
+            }
+          : {}),
       };
       this.db
         .prepare(
@@ -454,7 +508,7 @@ export class JobStore {
       return job;
     });
   }
-  retry(id: string, stage: 'sam' | 'muse'): Job {
+  retry(id: string, stage: 'sam' | 'muse' | 'scene'): Job {
     return this.transaction(() => {
       const job = this.get(id);
       if (this.experiments.active())
@@ -467,7 +521,8 @@ export class JobStore {
         job.owner ||
         ['queued', 'running'].includes(job.sam.status) ||
         ['queued', 'running'].includes(job.muse.status) ||
-        ['queued', 'running'].includes(job.recovery.status)
+        ['queued', 'running'].includes(job.recovery.status) ||
+        ['queued', 'running'].includes(job.scene?.status ?? '')
       )
         throw new AppError(
           409,
@@ -488,7 +543,7 @@ export class JobStore {
           'This stage is not eligible for retry.',
         );
       if (
-        job[stage].attempts.length >= 20 ||
+        job[stage]!.attempts.length >= 20 ||
         (stage === 'sam' &&
           (job.muse.attempts.length >= 20 ||
             (job.settings.mode === 'combined' &&
@@ -500,6 +555,15 @@ export class JobStore {
           'This analysis has reached its manual attempt limit.',
         );
       const retry = newAttempt();
+      if (stage === 'scene') {
+        retry.sceneOperation = previous.sceneOperation ?? 'inventory';
+        if (retry.sceneOperation === 'guided')
+          throw new AppError(
+            409,
+            'SCENE_RETRY_BLOCKED',
+            'Guided requests are not automatically repeated. Their evidence and charged budget remain saved.',
+          );
+      }
       if (
         stage === 'muse' &&
         previous.samSnapshotId &&
@@ -511,8 +575,8 @@ export class JobStore {
           samSnapshotHash: previous.samSnapshotHash,
           snapshotBinding: 'recorded',
         });
-      job[stage].attempts.push(retry);
-      job[stage].status = 'queued';
+      job[stage]!.attempts.push(retry);
+      job[stage]!.status = 'queued';
       job.status = stage === 'muse' ? 'partial' : 'queued';
       this.save(job);
       return job;
@@ -535,9 +599,12 @@ export class JobStore {
       if (
         this.experiments.active() ||
         job.owner ||
-        [job.sam.status, job.muse.status, job.recovery.status].some(
-          (s) => s === 'queued' || s === 'running',
-        )
+        [
+          job.sam.status,
+          job.muse.status,
+          job.recovery.status,
+          job.scene?.status,
+        ].some((s) => s === 'queued' || s === 'running')
       )
         throw new AppError(
           409,
@@ -706,9 +773,12 @@ export class JobStore {
       if (
         this.experiments.active() ||
         job.owner ||
-        [job.sam.status, job.muse.status, job.recovery.status].some(
-          (s) => s === 'queued' || s === 'running',
-        )
+        [
+          job.sam.status,
+          job.muse.status,
+          job.recovery.status,
+          job.scene?.status,
+        ].some((s) => s === 'queued' || s === 'running')
       )
         throw new AppError(
           409,
@@ -822,7 +892,7 @@ export class JobStore {
       .prepare('SELECT id FROM jobs WHERE owner IS NOT NULL AND lease_until<=?')
       .all(now)) {
       const job = this.get(row.id as string);
-      for (const stage of ['sam', 'muse', 'recovery'] as const) {
+      for (const stage of ['sam', 'muse', 'recovery', 'scene'] as const) {
         const a = lastAttempt(job, stage);
         if (a?.status === 'running') {
           a.status = 'interrupted';
@@ -830,7 +900,33 @@ export class JobStore {
           a.retryPolicy = 'manual_only';
           a.errorCode = 'WORKER_INTERRUPTED';
           a.finishedAt = now;
-          job[stage].status = 'interrupted';
+          job[stage]!.status = 'interrupted';
+          if (stage === 'scene')
+            for (const work of job.scene!.work)
+              if (work.status === 'running') {
+                work.status = 'interrupted';
+                work.upstreamOutcome = 'unknown';
+                work.errorCode = 'WORKER_INTERRUPTED';
+                work.finishedAt = now;
+                const evidence =
+                  job.scene!.snapshotRef &&
+                  getSceneSnapshot(this, job.scene!.snapshotRef.snapshotId);
+                if (evidence) {
+                  const object = evidence.graph.objects.find(
+                    (o) => o.id === work.objectId,
+                  );
+                  if (object) object.segmentationStatus = 'unresolved';
+                  checkpointScene(
+                    this,
+                    job,
+                    evidence.graph,
+                    evidence.native,
+                    a.attemptId,
+                  );
+                }
+              }
+          if (stage === 'scene' && a.sceneOperation === 'guided')
+            a.retryPolicy = 'not_retryable';
           if (stage === 'recovery')
             finishRunningCrops(
               job.recovery.cropAttempts,
@@ -881,7 +977,12 @@ export class JobStore {
         a.startedAt = Date.now();
         a.upstreamOutcome = 'unknown';
         a.retryPolicy = 'blocked';
-        job[stage].status = 'running';
+        job[stage]!.status = 'running';
+        if (stage === 'scene' && !a.samSnapshotId && job.sam.snapshotRef) {
+          a.samSnapshotId = job.sam.snapshotRef.samSnapshotId;
+          a.samSnapshotHash = job.sam.snapshotRef.samSnapshotHash;
+          a.snapshotBinding = 'recorded';
+        }
         job.status =
           stage === 'sam'
             ? 'segmenting'
@@ -946,6 +1047,9 @@ export class JobStore {
         );
       this.db.prepare('DELETE FROM jobs WHERE id=?').run(id);
       this.db.prepare('DELETE FROM sam_snapshots WHERE analysis_id=?').run(id);
+      this.db
+        .prepare('DELETE FROM scene_snapshots WHERE analysis_id=?')
+        .run(id);
       this.db.prepare('DELETE FROM experiments WHERE analysis_id=?').run(id);
     });
   }
@@ -965,6 +1069,14 @@ export function publicJob(job: Job) {
     updatedAt: job.updatedAt,
     expiresAt: job.expiresAt,
     settings: job.settings,
+    ...(job.scene
+      ? {
+          scene: {
+            ...job.scene,
+            attempts: job.scene.attempts.map(publicAttempt),
+          },
+        }
+      : {}),
     sam: {
       status: job.sam.status,
       attempts: job.sam.attempts.map(publicAttempt),

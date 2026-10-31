@@ -27,6 +27,14 @@ const environmentSchema = z.object({
   MAX_IMAGE_PIXELS: integer(16_000_000, 25_000_000),
   MAX_CONCURRENT_ANALYSES: integer(2, 8),
   MUSE_CONCURRENCY: integer(2, 2),
+  DYNAMIC_SCENE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  SCENE_STAGE_TIMEOUT_MS: integer(45000, 90000),
+  SCENE_MAX_GUIDED_REQUESTS: z.coerce.number().int().min(0).max(8).default(3),
+  SCENE_MAX_GUIDED_PIXELS: integer(6000000, 16000000),
+  SCENE_MAX_CROP_PIXELS: integer(2000000, 4000000),
   JOB_WORKER_CONCURRENCY: integer(1, 8),
   WIRE_AUDIT_MAX_DIMENSION: integer(1280, 2048),
   WIRE_RECOVERY_MAX_REQUESTS: z.coerce.number().int().min(0).max(12).default(4),

@@ -8,6 +8,8 @@ import {
 import { Icon } from "./icons";
 import { regionLabel, regionExplanations } from "@/lib/geometry";
 import { BreadboardRegions } from "./breadboard-regions";
+import type { AnalysisJob } from "@/lib/analysis-jobs";
+import { SceneInventory } from "./scene-inventory";
 
 interface Props {
   result: Analysis | null;
@@ -15,6 +17,9 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   elapsed: number | null;
+  scene?: AnalysisJob["scene"];
+  onRetryScene?: () => void;
+  busy?: boolean;
 }
 
 /** Results and overlays share IDs, so inspection never relies on array order. */
@@ -24,6 +29,9 @@ export function ResultsPanel({
   selectedId,
   onSelect,
   elapsed,
+  scene,
+  onRetryScene,
+  busy = false,
 }: Props) {
   return (
     <aside
@@ -33,8 +41,10 @@ export function ResultsPanel({
     >
       <div className="panel-heading">
         <div>
-          <span className="eyebrow">SCENE UNDERSTANDING</span>
-          <h2>What Praxis sees</h2>
+          <span className="eyebrow">
+            {scene ? "BASELINE CANDIDATES" : "SCENE UNDERSTANDING"}
+          </span>
+          <h2>{scene ? "Component candidates" : "What Praxis sees"}</h2>
         </div>
         <span className="object-count">
           {result ? result.objects.length.toString().padStart(2, "0") : "—"}
@@ -62,6 +72,15 @@ export function ResultsPanel({
           </div>
         ))}
       </div>
+      {scene && (
+        <SceneInventory
+          scene={scene}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onRetry={onRetryScene ?? (() => {})}
+          busy={busy}
+        />
+      )}
       <div className="detection-area">
         {loading ? (
           <div className="results-empty">
@@ -89,15 +108,18 @@ export function ResultsPanel({
               <Icon name="eye" width="27" height="27" />
             </div>
             <h3>
-              {result.breadboardAudit?.unresolvedCandidateIds.length
-                ? "Board regions need a closer look"
-                : result.proposals?.length
-                  ? "Wire regions need a closer look"
-                  : "No components identified"}
+              {scene?.graph?.objects.length
+                ? "Scene hypotheses are available above"
+                : result.breadboardAudit?.unresolvedCandidateIds.length
+                  ? "Board regions need a closer look"
+                  : result.proposals?.length
+                    ? "Wire regions need a closer look"
+                    : "No components identified"}
             </h3>
             <p>
-              Try a closer, well-lit photo with the components unobstructed. An
-              empty result does not prove they are absent.
+              {scene?.graph?.objects.length
+                ? "Baseline detection did not publish additional component candidates."
+                : "Try a closer, well-lit photo with the components unobstructed. An empty result does not prove they are absent."}
             </p>
           </div>
         ) : (

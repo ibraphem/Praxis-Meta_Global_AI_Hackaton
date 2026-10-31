@@ -213,7 +213,12 @@ export function VisionWorkspace() {
 
   async function runJob(
     action:
-      "create" | "reconnect" | "retry-sam" | "retry-muse" | RecoveryAction,
+      | "create"
+      | "reconnect"
+      | "retry-sam"
+      | "retry-muse"
+      | "retry-scene"
+      | RecoveryAction,
     savedId?: string,
     payload?: unknown,
   ) {
@@ -375,7 +380,7 @@ export function VisionWorkspace() {
             <div>
               One photograph.
               <br />
-              <strong>Four kinds of possibility.</strong>
+              <strong>Explore the circuit scene.</strong>
             </div>
           </div>
         </div>
@@ -515,7 +520,8 @@ export function VisionWorkspace() {
               <ImagePreview
                 photograph={photograph}
                 result={result}
-                loading={loading && !usingPartial}
+                sceneGraph={job?.scene?.graph}
+                loading={loading && !usingPartial && !(result && job?.scene)}
                 selecting={selecting}
                 dragging={dragging}
                 showOverlays={showOverlays}
@@ -613,7 +619,10 @@ export function VisionWorkspace() {
           </section>
           <ResultsPanel
             result={result}
-            loading={loading && !usingPartial}
+            loading={loading && !usingPartial && !(result && job?.scene)}
+            scene={job?.scene}
+            busy={loading || (!!job && jobIsActive(job))}
+            onRetryScene={() => void runJob("retry-scene")}
             selectedId={selectedId}
             onSelect={setSelectedId}
             elapsed={elapsed}

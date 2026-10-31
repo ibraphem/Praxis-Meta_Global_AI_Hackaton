@@ -1,4 +1,6 @@
 import { RUNTIME } from '../lib/runtime.js';
+import { runSceneStage } from './scene-worker.js';
+import { checkpointScene, getSceneSnapshot } from './scene-snapshots.js';
 import { publishRecoveredCandidates } from './candidates.js';
 import { admittedClient } from './model-admission.js';
 import { finishRunningCrops } from '../services/crop-attempts.js';
@@ -10,6 +12,7 @@ import type { SnapshotRef } from './snapshots.js';
 import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.js';
 import { AppError } from '../lib/errors.js';
+import type { MetaClient } from '../lib/meta-client.js';
 import { AnalysisTrace, type TraceLogger } from '../lib/diagnostics.js';
 import { createVisionStages } from '../services/vision.js';
 import { reconcileWireSelection } from '../services/wire-selection.js';
@@ -35,6 +38,7 @@ export class AnalysisWorker {
     readonly recoveryFactory?: (
       settings: Config,
     ) => ReturnType<typeof createWireRecovery>,
+    readonly sceneClient?: MetaClient,
   ) {}
   start() {
     this.timer = setInterval(() => this.tick(), 250);
@@ -83,8 +87,19 @@ export class AnalysisWorker {
       META_REASONING_MODEL: job.settings.museModel,
       MUSE_MAX_DIMENSION: job.settings.maxDimension,
       MUSE_MINIMAL_PROMPT: job.settings.minimalPrompt,
+      SCENE_STAGE_TIMEOUT_MS:
+        job.settings.sceneTimeoutMs ?? this.config.SCENE_STAGE_TIMEOUT_MS,
+      SCENE_MAX_GUIDED_REQUESTS:
+        job.settings.sceneMaxRequests ?? this.config.SCENE_MAX_GUIDED_REQUESTS,
+      SCENE_MAX_GUIDED_PIXELS:
+        job.settings.sceneMaxPixels ?? this.config.SCENE_MAX_GUIDED_PIXELS,
+      SCENE_MAX_CROP_PIXELS:
+        job.settings.sceneMaxCropPixels ?? this.config.SCENE_MAX_CROP_PIXELS,
     };
-    const client = admittedClient(this.store);
+    const client =
+      this.sceneClient && stage === 'scene'
+        ? admittedClient(this.store, undefined, this.sceneClient)
+        : admittedClient(this.store);
     const stages = this.stages ?? createVisionStages(settings, client);
     const heartbeat = setInterval(() => {
       try {
@@ -113,7 +128,9 @@ export class AnalysisWorker {
         controller.abort(
           new AppError(504, 'ANALYSIS_TIMEOUT', 'The stage deadline expired.'),
         ),
-      this.config.ANALYSIS_TIMEOUT_MS,
+      stage === 'scene'
+        ? settings.SCENE_STAGE_TIMEOUT_MS
+        : this.config.ANALYSIS_TIMEOUT_MS,
     );
     let abort: (() => void) | undefined;
     let completedInterpretation: Analysis | undefined;
@@ -123,6 +140,22 @@ export class AnalysisWorker {
         abort = () => reject(controller.signal.reason);
         controller.signal.addEventListener('abort', abort, { once: true });
       });
+      if (stage === 'scene') {
+        await Promise.race([
+          runSceneStage(
+            this.store,
+            job,
+            this.owner,
+            attemptId,
+            settings,
+            client,
+            controller.signal,
+            trace,
+          ),
+          aborted,
+        ]);
+        return;
+      }
       const binding = lastAttempt(
         job,
         stage === 'recovery' ? 'recovery' : 'muse',
@@ -399,12 +432,45 @@ export class AnalysisWorker {
         ].includes(e.code)
           ? 'not_retryable'
           : 'manual_only';
+        if (stage === 'scene' && a.sceneOperation === 'guided')
+          a.retryPolicy = 'not_retryable';
         if (stage === 'muse' && completedInterpretation)
           a.result = completedInterpretation;
         a.errorCode = e.code;
         a.finishedAt = Date.now();
         a.diagnostics = trace.snapshot();
-        j[stage].status = a.status;
+        j[stage]!.status = a.status;
+        if (stage === 'scene')
+          for (const work of j.scene!.work)
+            if (work.status === 'running') {
+              work.status =
+                a.status === 'interrupted'
+                  ? 'interrupted'
+                  : a.status === 'timed_out'
+                    ? 'timed_out'
+                    : 'failed';
+              work.upstreamOutcome = 'unknown';
+              work.errorCode = e.code;
+              work.finishedAt = Date.now();
+              const evidence =
+                j.scene!.snapshotRef &&
+                getSceneSnapshot(this.store, j.scene!.snapshotRef.snapshotId);
+              if (evidence) {
+                const object = evidence.graph.objects.find(
+                  (o) => o.id === work.objectId,
+                );
+                if (object) object.segmentationStatus = 'unresolved';
+                const ref = checkpointScene(
+                  this.store,
+                  j,
+                  evidence.graph,
+                  evidence.native,
+                  attemptId,
+                );
+                a.outputSnapshotId = ref.snapshotId;
+                a.outputSnapshotHash = ref.snapshotHash;
+              }
+            }
         if (stage === 'recovery')
           finishRunningCrops(
             j.recovery.cropAttempts,

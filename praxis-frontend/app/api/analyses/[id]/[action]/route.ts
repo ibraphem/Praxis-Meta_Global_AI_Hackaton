@@ -16,6 +16,7 @@ export async function POST(
   if (
     ![
       "retry-muse",
+      "retry-scene",
       "retry-sam",
       "audit-wires",
       "recover-wires",
@@ -32,6 +33,7 @@ export async function POST(
     request,
     action as
       | "retry-muse"
+      | "retry-scene"
       | "retry-sam"
       | "audit-wires"
       | "recover-wires"

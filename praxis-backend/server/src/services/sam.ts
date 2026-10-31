@@ -36,17 +36,17 @@ const concepts: ReadonlyArray<readonly [ComponentType, string]> = [
  * Retain native masks in private checkpoints. Only wire geometry is published; other categories remain box-only.
  * https://dev.meta.ai/docs/sam/reading-segmentation
  */
-export function parseSamOutput(
+export function parseSamOutput<T extends string>(
   text: string,
-  type: ComponentType,
+  type: T,
   image: Pick<PreparedImage, 'width' | 'height'>,
   retainMasks = false,
-): Detection[] {
+): Array<Omit<Detection, 'type'> & { type: T }> {
   const source = text.trim();
   if (source === '') return [];
   if (!source.startsWith('<0f>')) throw invalidProviderOutput();
   let cursor = 4;
-  const detections: Detection[] = [];
+  const detections: Array<Omit<Detection, 'type'> & { type: T }> = [];
   const seen = new Set<number>();
   while (cursor < source.length) {
     const header = /^(\d+)<\|box;/.exec(source.slice(cursor));
@@ -156,12 +156,12 @@ export function parseSamOutput(
   return detections;
 }
 
-export function decodeSamResponse(
+export function decodeSamResponse<T extends string>(
   raw: unknown,
-  type: ComponentType,
+  type: T,
   image: Pick<PreparedImage, 'width' | 'height'>,
   retainMasks = false,
-): Detection[] {
+): Array<Omit<Detection, 'type'> & { type: T }> {
   const response = responseSchema.safeParse(raw);
   if (!response.success) throw invalidProviderOutput();
   const text = response.data.output

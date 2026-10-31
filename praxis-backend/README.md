@@ -1,7 +1,7 @@
 # Praxis backend
 
-Praxis's first milestone is still-image perception: upload a photograph and receive
-a structured list of visible **breadboards, LEDs, resistors, and jumper wires**.
+Praxis's baseline still-image perception returns visible **breadboards, LEDs,
+resistors, and jumper wires**. The opt-in [dynamic scene inventory](#dynamic-scene-inventory-release-1-opt-in) adds open-vocabulary object hypotheses and guided segmentation.
 This is not yet a circuit verifier. It does not identify breadboard holes, determine
 electrical connectivity, track objects between photographs, or establish that a
 circuit works.
@@ -53,6 +53,80 @@ npm start
 of Meta credentials or model access.
 
 ## Recoverable analysis jobs
+
+### Dynamic scene inventory (Release 1, opt-in)
+
+Set `DYNAMIC_SCENE_ENABLED=true` in `server/.env` and restart the backend to enable
+open-vocabulary scene discovery for **new persisted analyses**. It is off by default
+pending annotated real-photo evaluation. Existing saved analyses and the legacy
+synchronous `/api/vision/analyze` contract do not acquire new stages or model calls.
+
+The existing broad SAM pass, local coverage audit and interpretation publish first.
+Inventory and guided segmentation then run as separate attempts under the same
+per-analysis worker lease. They are serialized with baseline work, not executed in
+parallel within one job. This preserves existing model admission and makes baseline
+results available before the optional stages. Inventory can run after a broad-pass
+failure, and inventory failure never removes a published baseline result.
+
+Muse independently inventories the whole photograph using dynamic descriptions and
+broad organizational categories. It is not given the four baseline component labels.
+Unknown devices, power sources, connectors and visible external conductors can remain
+box-only hypotheses. Eligible SAM observations absent from the inventory become
+unclassified hypotheses. Quarantined recovery masks remain excluded.
+
+`scene.graph` separates physical-object hypotheses, immutable visual observations,
+and proposed associations. Multiple observations can support one hypothesis, and
+one observation can support competing hypotheses. Category/overlap matching and a
+guided prompt do not establish physical identity. The graph is separate from legacy
+component counts, wire selection, calibrated holes and endpoint reviews. All new
+recognition/association claims remain proposed or unknown; electrical connections
+remain unestablished. Terminal inference and relationship verification are later
+releases.
+
+Guided segmentation prioritizes missing connectors, conductors, power sources and
+unknown devices before other components. Existing mask candidates suppress redundant
+requests for their associated hypotheses. Boards are kept box-only in this stage.
+Each request uses a short phrase on an expanded original-resolution object crop;
+all results are projected back to original-image `[x,y,width,height]` coordinates.
+This release uses phrase-plus-crop prompting; point/box prompt comparisons remain
+experimental. Returned masks are candidate associations, not prompt verification.
+
+Defaults are **three guided requests**, **six million cumulative crop pixels**, and
+**two million pixels per crop**. `SCENE_MAX_GUIDED_REQUESTS=0` enables inventory only.
+`SCENE_STAGE_TIMEOUT_MS=45000` bounds each inventory/guided stage. Settings are frozen
+when uploading. Oversized crops and work beyond the budget remain not attempted;
+empty responses, failed requests and interrupted work have distinct recorded states.
+Requests and crop pixels are charged before dispatch. Unknown upstream outcomes stop
+further guided dispatch, with no automatic retries. Guided requests do not consume or
+reset the existing wire-recovery budget.
+
+Each new stage and guided request has persisted attempt/binding/timing evidence.
+Scene checkpoints are immutable and hash checked, retaining original native masks
+privately and bounded safe SVG previews publicly. IDs are UUIDs independent of labels
+and array order. Exact persisted SAM evidence retains observation identity; a new
+Muse inventory attempt creates fresh object hypotheses rather than silently reusing
+semantic identity. Scene updates do not change the legacy analysis revision or
+invalidate its endpoint assignments.
+
+`POST /api/analyses/:id/retry-scene` explicitly retries a failed inventory attempt.
+Prior attempts/checkpoints remain saved. Guided request retries are not exposed in
+this release, and `retry-muse` still makes zero SAM/inventory requests. Restarted
+workers mark interrupted scene work unknown rather than redispatching it.
+`evidence:export` includes scene checkpoints and private native masks. The workspace
+shows hypothesis labels, selected boxes/masks, competing associations, unresolved
+states, incremental stage times and guided request/pixel usage. No monetary estimate
+is fabricated without billing evidence.
+
+Before enabling by default, freeze an independently annotated battery/connector/lead
+photo set and compare the baseline and dynamic modes using the same model settings
+and configured budgets. Measure object recall, unknown-object discovery, incorrect
+splits/merges and association precision separately from distinct physical-wire
+coverage, complete masks and endpoint accuracy. Include unresolved cases in the
+denominators and report incremental requests, crop pixels and stage latency. Release
+1 does not claim improved terminal coverage or electrical connectivity. Synthetic
+contract/browser tests verify behavior, not real-photo recognition accuracy.
+
+### Persisted baseline jobs
 
 The frontend uses a persisted job API. Run on Node.js **22.13 or later** for built-in
 [`node:sqlite`](https://nodejs.org/download/release/v22.13.0/docs/api/cli.html#--no-experimental-sqlite).

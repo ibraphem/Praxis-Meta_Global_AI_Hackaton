@@ -1,3 +1,8 @@
+import {
+  sceneGraphSchema,
+  sceneSnapshotRefSchema,
+  sceneWorkSchema,
+} from "./scene";
 import { runtimeSchema } from "./runtime-schema";
 import {
   recoveryReportSchema,
@@ -46,6 +51,12 @@ export const attemptSchema = z
       .optional(),
     samSnapshotId: z.uuid().optional(),
     samSnapshotHash: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    sceneOperation: z.enum(["inventory", "guided"]).optional(),
+    sceneSnapshotId: z.uuid().optional(),
+    sceneSnapshotHash: z
       .string()
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
@@ -101,8 +112,26 @@ export const analysisJobSchema = z
         mode: z.enum(["combined", "reasoning-only"]),
         samModel: z.string().min(1).max(100),
         museModel: z.string().min(1).max(100),
+        dynamicScene: z.boolean().optional(),
+        sceneTimeoutMs: z.number().int().positive().max(90000).optional(),
+        sceneMaxRequests: z.number().int().min(0).max(8).optional(),
+        sceneMaxPixels: z.number().int().positive().max(16000000).optional(),
+        sceneMaxCropPixels: z.number().int().positive().max(4000000).optional(),
       })
       .strict(),
+    scene: stageSchema
+      .extend({
+        snapshotRef: sceneSnapshotRefSchema.optional(),
+        graph: sceneGraphSchema.optional(),
+        budget: z
+          .object({
+            requests: z.number().int().nonnegative(),
+            pixels: z.number().int().nonnegative(),
+          })
+          .strict(),
+        work: z.array(sceneWorkSchema).max(8),
+      })
+      .optional(),
     sam: stageSchema.extend({ snapshotRef: snapshotRefSchema.optional() }),
     muse: stageSchema.extend({ resultAttemptId: z.uuid().optional() }),
     experiment: z
@@ -146,14 +175,38 @@ export const analysisJobSchema = z
     candidatePublicationError: z.literal("WIRE_SELECTION_BUDGET").optional(),
     result: analysisSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((job, ctx) => {
+    const graph = job.scene?.graph;
+    if (
+      graph &&
+      (graph.imageHash !== job.imageHash ||
+        graph.image.width !== job.image.width ||
+        graph.image.height !== job.image.height)
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Scene evidence belongs to a different photograph.",
+      });
+    if (
+      job.scene?.snapshotRef &&
+      job.scene.snapshotRef.imageHash !== job.imageHash
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Scene checkpoint image does not match the analysis.",
+      });
+  });
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export function jobIsActive(job: AnalysisJob) {
   return (
     job.experiment?.status === "running" ||
-    [job.sam.status, job.muse.status, job.recovery?.status].some(
-      (s) => s === "queued" || s === "running",
-    )
+    [
+      job.sam.status,
+      job.muse.status,
+      job.recovery?.status,
+      job.scene?.status,
+    ].some((s) => s === "queued" || s === "running")
   );
 }
 export function retryStage(job: AnalysisJob): "sam" | "muse" | null {
@@ -164,6 +217,17 @@ export function retryStage(job: AnalysisJob): "sam" | "muse" | null {
     : null;
 }
 export function jobMessage(job: AnalysisJob) {
+  if (job.scene?.status === "running")
+    return job.scene.attempts.at(-1)?.sceneOperation === "guided"
+      ? "Inspecting selected scene objects. Existing candidates remain available."
+      : "Discovering circuit objects. Existing candidates remain available.";
+  if (
+    job.scene?.status === "queued" &&
+    ![job.sam.status, job.muse.status, job.recovery?.status].some(
+      (s) => s === "queued" || s === "running",
+    )
+  )
+    return "Scene discovery is queued. Existing results are saved.";
   if (job.recovery?.status === "running" || job.recovery?.status === "queued")
     return job.recovery.operation === "audit"
       ? "Auditing wire coverage. Existing results are saved."

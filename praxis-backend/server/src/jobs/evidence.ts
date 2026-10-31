@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { AppError } from '../lib/errors.js';
 import type { JobStore } from './store.js';
+import { sceneSnapshots } from './scene-snapshots.js';
 
 /** Offline evidence archive, distinct from the browser's calibration/review evaluation bundle. */
 export function exportJobEvidence(
@@ -15,6 +16,7 @@ export function exportJobEvidence(
     job: store.get(analysisId),
     image: store.image(analysisId),
     snapshots: store.snapshots(analysisId),
+    sceneSnapshots: sceneSnapshots(store, analysisId),
     experiments: store.experiments.forAnalysis(analysisId),
   }));
   const extras: {
@@ -94,6 +96,10 @@ export function exportJobEvidence(
   mkdirSync(join(outputDirectory, 'snapshots'), { mode: 0o700 });
   evidence.snapshots.forEach((record, i) =>
     write(`snapshots/${i + 1}.json`, json(record)),
+  );
+  mkdirSync(join(outputDirectory, 'scene-snapshots'), { mode: 0o700 });
+  evidence.sceneSnapshots.forEach((record, i) =>
+    write(`scene-snapshots/${i + 1}.json`, json(record)),
   );
   mkdirSync(join(outputDirectory, 'experiments'), { mode: 0o700 });
   evidence.experiments.forEach((record, i) =>

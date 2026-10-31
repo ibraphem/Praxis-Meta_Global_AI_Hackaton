@@ -6,6 +6,8 @@ import { WireOverlays } from "./wire-overlays";
 import { BreadboardWorkspace } from "./breadboard-workspace";
 import styles from "./breadboard-workspace.module.css";
 import { BreadboardRegionOverlays } from "./breadboard-regions";
+import { SceneOverlays } from "./scene-inventory";
+import type { SceneGraph } from "@/lib/scene";
 
 export interface Photograph {
   id: string;
@@ -17,6 +19,7 @@ export interface Photograph {
 interface Props {
   photograph: Photograph | null;
   result: Analysis | null;
+  sceneGraph?: SceneGraph;
   loading: boolean;
   selecting: boolean;
   dragging: boolean;
@@ -35,6 +38,7 @@ interface Props {
 export function ImagePreview({
   photograph,
   result,
+  sceneGraph,
   loading,
   selecting,
   dragging,
@@ -115,6 +119,12 @@ export function ImagePreview({
         onSelectWire={onSelect}
         overlaysVisible={showOverlays}
       >
+        {sceneGraph &&
+          sceneGraph.image.width === photograph.width &&
+          sceneGraph.image.height === photograph.height &&
+          showOverlays && (
+            <SceneOverlays graph={sceneGraph} selectedId={selectedId} />
+          )}
         {result && dimensionsMatch && showOverlays && (
           <div className="detection-overlays" aria-label="Component locations">
             {/* Keep smaller components above their enclosing breadboard. */}

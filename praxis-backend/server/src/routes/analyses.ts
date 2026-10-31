@@ -86,7 +86,7 @@ export function registerAnalysisRoutes(
           : 'image/png';
     return reply.type(type).send(bytes);
   });
-  for (const stage of ['sam', 'muse'] as const)
+  for (const stage of ['sam', 'muse', 'scene'] as const)
     app.post(`/api/analyses/:id/retry-${stage}`, async (request, reply) => {
       const job = store.retry(id(request.params), stage);
       setImmediate(kick);
