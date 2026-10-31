@@ -223,10 +223,10 @@ test('unmatched SAM evidence survives inventory omission; competing associations
   assert.equal(observation.id, baseline.observations[0]!.id);
   assert.equal(
     graph.associations.filter((a) => a.observationId === observation.id).length,
-    2,
+    3, // original alternative plus the two new inventory hypotheses
   );
   assert.equal(
-    graph.objects.find((o) => o.category === 'unknown')!.id,
+    graph.objects.find((o) => o.id === baseline.objects[1]!.id)!.id,
     baseline.objects[1]!.id,
   );
   assert.ok(graph.associations.every((a) => a.status === 'proposed'));
@@ -804,4 +804,215 @@ test('explicit discovery freezes its own settings on a legacy analysis without r
     next.scene!.attempts[0]!.samSnapshotHash,
     next.sam.snapshotRef!.samSnapshotHash,
   );
+});
+
+test('explicit three-target guided budget and inventory refresh preserve IDs, native masks, reviews and baseline results', async (t) => {
+  const config = testConfig();
+  const store = new JobStore(config, ':memory:');
+  const image = await prepareImage(await imageBytes(1000, 800), config);
+  const job = store.create(await imageBytes(1000, 800), image);
+  job.sam.status = 'succeeded';
+  lastAttempt(job, 'sam')!.status = 'succeeded';
+  job.muse.status = 'succeeded';
+  job.muse.attempts.push({ ...newAttempt(), status: 'succeeded' });
+  store.checkpointSnapshot(
+    job,
+    job.sam.snapshot!,
+    lastAttempt(job, 'sam')!.attemptId,
+  );
+  job.sam.result = partialAnalysis(job.sam.snapshot!, config);
+  job.candidateResult = job.sam.result;
+  const proposals: Inventory = {
+    objects: [
+      ...inventory.objects,
+      {
+        proposedType: 'white LED holder housing',
+        category: 'connector',
+        box: [50, 50, 150, 150],
+      },
+    ],
+  };
+  const initial = newAttempt();
+  initial.status = 'succeeded';
+  initial.sceneOperation = 'inventory';
+  job.scene = {
+    status: 'succeeded',
+    settings: {
+      timeoutMs: 45000,
+      maxRequests: 0,
+      maxPixels: 6000000,
+      maxCropPixels: 2000000,
+    },
+    attempts: [initial],
+    budget: { requests: 0, pixels: 0 },
+    work: [],
+  };
+  const graph = buildSceneGraph({
+    inventory: proposals,
+    imageHash: job.imageHash,
+    snapshot: job.sam.snapshot!,
+    attemptId: initial.attemptId,
+    model: 'muse-test',
+  });
+  checkpointScene(store, job, graph, [], initial.attemptId);
+  store.save(job);
+  const targets = planSceneTargets(graph, image, 2000000).slice(0, 3);
+  assert.match(targets[0]!.prompt, /snap/);
+  assert.match(targets[1]!.prompt, /LED holder/);
+  assert.equal(targets[2]!.reason, 'missing_conductor');
+  const binding = (j: typeof job) => ({
+    snapshotId: j.scene!.snapshotRef!.snapshotId,
+    snapshotHash: j.scene!.snapshotRef!.snapshotHash,
+  });
+  const originalResult = JSON.stringify(job.candidateResult),
+    originalSettings = JSON.stringify(job.settings);
+  const queued = store.requestSceneUnderstanding(job.analysisId, 'guided', {
+    ...binding(job),
+    objectIds: targets.map((o) => o.objectId),
+    guidedBudget: { maxRequests: 3, maxPixels: 6000000 },
+  });
+  assert.equal(queued.scene!.settings!.maxRequests, 3);
+  let samCalls = 0,
+    museCalls = 0;
+  const worker = new AnalysisWorker(
+    store,
+    config,
+    () => {},
+    undefined,
+    undefined,
+    {
+      async post(path, body) {
+        if (path === 'chat/completions') {
+          museCalls++;
+          return completion({ objects: [...proposals.objects].reverse() });
+        }
+        samCalls++;
+        const url = (body.input as { content: { image_url: string }[] }[])[0]!
+          .content[1]!.image_url;
+        const meta = await (
+          await import('sharp')
+        )
+          .default(Buffer.from(url.split(',')[1]!, 'base64'))
+          .metadata();
+        return record(meta.width!, meta.height!);
+      },
+    },
+  );
+  t.after(async () => {
+    await worker.close();
+    store.close();
+  });
+  worker.start();
+  await until(() => store.get(job.analysisId).scene!.status === 'succeeded');
+  let latest = store.get(job.analysisId);
+  assert.equal(samCalls, 3);
+  assert.equal(museCalls, 0);
+  assert.equal(latest.scene!.budget.requests, 3);
+  assert.equal(
+    latest.scene!.budget.pixels,
+    targets.reduce((n, t) => n + t.crop[2] * t.crop[3], 0),
+  );
+  assert.equal(latest.scene!.graph!.maskIdentityReviews?.length ?? 0, 0);
+  const first = latest.scene!.graph!.observations.find(
+    (o) => o.requestId === latest.scene!.work[0]!.requestId,
+  )!;
+  assert.throws(
+    () =>
+      store.requestSceneUnderstanding(job.analysisId, 'reconcile', {
+        ...binding(latest),
+        maskReview: {
+          objectId: targets[1]!.objectId,
+          observationId: first.id,
+          decision: 'accepted',
+          source: 'assistant_visual',
+          reason: 'An overlapping box is not physical identity evidence.',
+        },
+      }),
+    /exact physical/,
+  );
+  latest = store.requestSceneUnderstanding(job.analysisId, 'reconcile', {
+    ...binding(latest),
+    maskReview: {
+      objectId: targets[0]!.objectId,
+      observationId: first.id,
+      decision: 'rejected',
+      source: 'assistant_visual',
+      reason:
+        'Synthetic corner mask does not follow the proposed connector body.',
+    },
+  });
+  const before = structuredClone(latest.scene!.graph!);
+  const beforeNative = getSceneSnapshot(
+    store,
+    latest.scene!.snapshotRef!.snapshotId,
+  ).native;
+  assert.equal(beforeNative.length, 3);
+  store.requestSceneUnderstanding(job.analysisId, 'inventory', binding(latest));
+  worker.tick();
+  await until(() => store.get(job.analysisId).scene!.status === 'succeeded');
+  latest = store.get(job.analysisId);
+  assert.equal(samCalls, 3);
+  assert.equal(museCalls, 1);
+  assert.deepEqual(
+    latest.scene!.graph!.objects.map((o) => o.id).sort(),
+    before.objects.map((o) => o.id).sort(),
+  );
+  for (const observation of before.observations)
+    assert.deepEqual(
+      latest.scene!.graph!.observations.find((o) => o.id === observation.id),
+      observation,
+    );
+  assert.deepEqual(
+    latest.scene!.graph!.maskIdentityReviews,
+    before.maskIdentityReviews,
+  );
+  assert.deepEqual(
+    getSceneSnapshot(store, latest.scene!.snapshotRef!.snapshotId).native,
+    beforeNative,
+  );
+  assert.equal(JSON.stringify(latest.candidateResult), originalResult);
+  assert.equal(JSON.stringify(latest.settings), originalSettings);
+  assert.throws(
+    () =>
+      store.requestSceneUnderstanding(job.analysisId, 'guided', {
+        ...binding(latest),
+        objectIds: [graph.objects[0]!.id],
+        guidedBudget: { maxRequests: 3, maxPixels: 6000000 },
+      }),
+    /budget is exhausted/,
+  );
+});
+
+test('inventory omissions and ambiguous crossing-wire rediscoveries never erase prior evidence or silently reuse a wire identity', async () => {
+  const image = await prepareImage(await imageBytes(1000, 800), testConfig());
+  const args = {
+    inventory,
+    imageHash,
+    snapshot: { image, candidates: [] },
+    attemptId: randomUUID(),
+    model: 'muse-test',
+  };
+  const first = buildSceneGraph(args);
+  const omitted = buildSceneGraph({
+    ...args,
+    inventory: { objects: [] },
+    previous: first,
+    attemptId: randomUUID(),
+  });
+  assert.deepEqual(omitted, first);
+  const proposals = structuredClone(inventory);
+  proposals.objects[2]!.proposedType = 'red wire crossing another wire';
+  const refreshed = buildSceneGraph({
+    ...args,
+    inventory: proposals,
+    previous: first,
+    attemptId: randomUUID(),
+  });
+  for (const o of first.objects)
+    assert.ok(refreshed.objects.some((n) => n.id === o.id));
+  assert.equal(refreshed.objects.length, first.objects.length + 1);
+  assert.equal(refreshed.objects.at(-1)!.category, 'conductor');
+  const wrong = structuredClone(first);
+  wrong.imageHash = 'f'.repeat(64);
+  assert.throws(() => buildSceneGraph({ ...args, previous: wrong }));
 });

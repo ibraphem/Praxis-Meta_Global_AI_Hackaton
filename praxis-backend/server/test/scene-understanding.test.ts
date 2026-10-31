@@ -26,6 +26,7 @@ import { partialAnalysis } from '../src/services/partial-analysis.js';
 import { AppError } from '../src/lib/errors.js';
 import {
   scoreScene,
+  sceneTruthHash,
   type SceneTruth,
   type SceneReview,
 } from '../src/services/scene-evaluation.js';
@@ -93,6 +94,7 @@ function response(f: Awaited<ReturnType<typeof fixture>>) {
         pinLabel: null,
         electricalRole: null,
         roleMarking: null,
+        reference: null,
       },
       {
         key: 'B',
@@ -102,6 +104,7 @@ function response(f: Awaited<ReturnType<typeof fixture>>) {
         pinLabel: null,
         electricalRole: null,
         roleMarking: null,
+        reference: null,
       },
     ],
     attachments: [
@@ -174,6 +177,10 @@ test('reconciled presentation links body-vs-assembly baseline evidence once whil
     view.objects.find((o) => o.id === f.holder)!.sceneObjectIds.includes(f.led),
     false,
   );
+  f.graph.objects.find((o) => o.id === f.red)!.proposedType =
+    'red insulated wire from battery snap';
+  f.graph.objects.find((o) => o.id === f.white)!.proposedType =
+    'white wire from LED holder housing';
   assert.deepEqual(preferredTerminalTargets(f.graph), [f.snap, f.holder]);
 });
 
@@ -218,7 +225,7 @@ test('terminal localization maps native crop coordinates, keeps hidden terminals
   assert.equal(out.terminals![1]!.locationStatus, 'unresolved');
   assert.equal(out.terminals![0]!.electricalRole, null);
   assert.equal(out.terminals![0]!.roleStatus, 'unresolved');
-  assert.equal(out.terminals![0]!.promptVersion, 'physical-terminals-v1');
+  assert.equal(out.terminals![0]!.promptVersion, 'physical-terminals-v2');
   assert.equal(out.attachments![0]!.status, 'proposed');
   assert.equal(out.attachments![1]!.status, 'unresolved');
   assert.ok(
@@ -545,5 +552,238 @@ test('shutdown fences an ignored terminal response and retains the unknown charg
   assert.equal(
     f.store.get(f.job.analysisId).scene!.graph!.terminals?.length ?? 0,
     0,
+  );
+});
+
+test('identity reviews bind immutable evidence and affect only identity presentation', async (t) => {
+  const f = await savedFixture();
+  t.after(() => f.store.close());
+  const graph = await observe(f, response(f));
+  const priorClaims = JSON.stringify({
+    terminals: graph.terminals,
+    attachments: graph.attachments,
+  });
+  const original = graph.objects.find((o) => o.id === f.snap)!;
+  const copy = { ...structuredClone(original), id: randomUUID() };
+  graph.objects.push(copy);
+  graph.associations.push({
+    ...graph.associations.find((a) => a.objectId === original.id)!,
+    id: randomUUID(),
+    objectId: copy.id,
+  });
+  checkpointScene(
+    f.store,
+    f.job,
+    graph,
+    [],
+    f.job.scene!.attempts[0]!.attemptId,
+  );
+  f.store.save(f.job);
+  let current = f.store.get(f.job.analysisId);
+  const binding = {
+    snapshotId: current.scene!.snapshotRef!.snapshotId,
+    snapshotHash: current.scene!.snapshotRef!.snapshotHash,
+  };
+  const proposed = reconcileSceneView(graph);
+  assert.ok(
+    !preferredTerminalTargets(graph).some(
+      (id) => id === original.id || id === copy.id,
+    ),
+  );
+  assert.equal(
+    proposed.objects.find((o) => o.sceneObjectIds.includes(copy.id))!.grouping,
+    'proposed',
+  );
+  assert.equal(
+    reconcileSceneView(graph, [], true).objects.length,
+    proposed.objects.length + 1,
+  );
+  const claim = proposed.relations.find(
+    (r) =>
+      r.type === 'same_object' &&
+      [r.fromObjectId, r.toObjectId].includes(copy.id),
+  )!;
+  current = f.store.requestSceneUnderstanding(f.job.analysisId, 'reconcile', {
+    ...binding,
+    identityReview: { relationId: claim.id, decision: 'same_object' },
+  });
+  assert.equal(
+    reconcileSceneView(current.scene!.graph!).objects.find((o) =>
+      o.sceneObjectIds.includes(copy.id),
+    )!.grouping,
+    'confirmed',
+  );
+  assert.equal(
+    current.scene!.graph!.identityReviews![0]!.inputSnapshotHash,
+    binding.snapshotHash,
+  );
+  assert.equal(
+    JSON.stringify({
+      terminals: current.scene!.graph!.terminals,
+      attachments: current.scene!.graph!.attachments,
+    }),
+    priorClaims,
+  );
+  assert.equal(
+    current.scene!.graph!.electricalConnectionStatus,
+    'unestablished',
+  );
+  assert.equal(lastAttempt(current, 'scene')!.upstreamOutcome, 'not_sent');
+  assert.equal(current.revision, f.job.revision);
+  assert.deepEqual(getSceneSnapshot(f.store, binding.snapshotId).graph, graph);
+  assert.throws(
+    () =>
+      f.store.requestSceneUnderstanding(f.job.analysisId, 'reconcile', {
+        ...binding,
+        identityReview: { relationId: claim.id, decision: 'different_objects' },
+      }),
+    /Reload/,
+  );
+  const nextBinding = {
+    snapshotId: current.scene!.snapshotRef!.snapshotId,
+    snapshotHash: current.scene!.snapshotRef!.snapshotHash,
+  };
+  assert.throws(
+    () =>
+      f.store.requestSceneUnderstanding(f.job.analysisId, 'reconcile', {
+        ...nextBinding,
+        identityReview: { relationId: 'foreign', decision: 'same_object' },
+      }),
+    /existing/,
+  );
+  current = f.store.requestSceneUnderstanding(f.job.analysisId, 'reconcile', {
+    ...nextBinding,
+    identityReview: { relationId: claim.id, decision: 'different_objects' },
+  });
+  assert.equal(
+    reconcileSceneView(current.scene!.graph!).objects.length,
+    proposed.objects.length + 1,
+  );
+  assert.equal(current.scene!.graph!.identityReviews!.length, 2);
+  const conflicting = structuredClone(current.scene!.graph!);
+  conflicting.relations!.push({ ...claim, id: randomUUID(), source: 'muse' });
+  assert.equal(
+    reconcileSceneView(conflicting).objects.length,
+    proposed.objects.length + 1,
+  );
+  assert.equal(
+    JSON.stringify({
+      terminals: current.scene!.graph!.terminals,
+      attachments: current.scene!.graph!.attachments,
+    }),
+    priorClaims,
+  );
+});
+
+test('bare leads and housing junctions remain reference points with hidden contacts unresolved', async () => {
+  const f = await fixture();
+  for (const evidence of [
+    'insulated_housing_junction',
+    'exposed_conductive_lead',
+  ]) {
+    const data = response(f);
+    Object.assign(data.terminals[1]!, {
+      reference: { position: [250, 750], evidence },
+    });
+    const out = await observe(f, data),
+      terminal = out.terminals![1]!,
+      crop = terminalCrop(f.graph, f.holder);
+    assert.deepEqual(terminal.reference!.position, [
+      crop[0] + Math.round(crop[2] / 4),
+      crop[1] + Math.round(crop[3] * 0.75),
+    ]);
+    assert.equal(terminal.location, null);
+    assert.equal(terminal.locationStatus, 'unresolved');
+    assert.equal(out.attachments![1]!.status, 'unresolved');
+    assert.equal(terminal.electricalRole, null);
+    data.attachments[1]!.evidence = 'visible_attachment';
+    data.attachments[1]!.position = [250, 750];
+    await assert.rejects(observe(f, data));
+  }
+  const legacy = response(f);
+  legacy.terminals[0]!.evidence = 'visible_lead';
+  await assert.rejects(observe(f, legacy));
+});
+
+test('scoring counts false visible contacts while reference-only points do not establish contacts', async () => {
+  const f = await fixture(),
+    graph = await observe(f, response(f));
+  const truth: SceneTruth = {
+    version: 'scene-truth-v1',
+    imageHash: hash,
+    source: 'human_visual',
+    inventoryComplete: true,
+    attachmentsComplete: true,
+    terminalTolerancePx: 3,
+    objects: f.graph.objects.map((o) => ({ id: o.id, label: o.proposedType })),
+    terminals: [
+      {
+        id: 'hidden',
+        objectId: f.holder,
+        visible: false,
+        position: null,
+        electricalRole: null,
+      },
+    ],
+    attachments: [],
+  };
+  const review: SceneReview = {
+    version: 'scene-review-v1',
+    imageHash: hash,
+    sceneSnapshotHash: hash,
+    source: 'human_visual',
+    objectAssignments: graph.objects.map((o) => ({
+      predictionId: o.id,
+      truthObjectId: o.id,
+    })),
+    terminalAssignments: [
+      { predictionId: graph.terminals![0]!.id, truthTerminalId: 'hidden' },
+    ],
+  };
+  assert.equal(
+    scoreScene({ graph, snapshotHash: hash, truth, review }).terminals
+      .visibilityViolations,
+    1,
+  );
+  const p = graph.terminals![0]!;
+  p.reference = { position: p.location!, evidence: 'exposed_conductive_lead' };
+  p.location = null;
+  p.locationStatus = 'unresolved';
+  p.locationEvidence = 'occluded';
+  graph.attachments = [];
+  const score = scoreScene({ graph, snapshotHash: hash, truth, review });
+  assert.equal(score.terminals.visibilityViolations, 0);
+  assert.equal(score.terminals.referenceOnlyPredictions, 1);
+  assert.equal(score.terminals.accuracy, null);
+  const frozenTruth = {
+    version: 'scene-truth-freeze-v1' as const,
+    imageHash: hash,
+    truthHash: sceneTruthHash(truth),
+    frozenAt: 100,
+  };
+  const trial = {
+    graph,
+    snapshotHash: hash,
+    truth,
+    review,
+    frozenTruth,
+    attempts: [
+      { sceneOperation: 'terminals', status: 'succeeded', startedAt: 101 },
+    ],
+  };
+  assert.equal(
+    scoreScene(trial).annotationSource.frozenBeforeTerminalInference,
+    true,
+  );
+  assert.equal(
+    scoreScene({
+      ...trial,
+      attempts: [{ ...trial.attempts[0]!, startedAt: 99 }],
+    }).annotationSource.frozenBeforeTerminalInference,
+    false,
+  );
+  assert.throws(
+    () => scoreScene({ ...trial, truth: { ...truth, terminalTolerancePx: 4 } }),
+    /frozen annotation binding/,
   );
 });

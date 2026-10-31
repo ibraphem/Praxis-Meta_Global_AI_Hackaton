@@ -1,3 +1,4 @@
+import { planSceneTargets } from '../services/scene-guidance.js';
 import { retryCropWork } from '../services/crop-retry.js';
 import { RUNTIME } from '../lib/runtime.js';
 import { checkpointScene, getSceneSnapshot } from './scene-snapshots.js';
@@ -71,6 +72,8 @@ export interface Attempt {
   outputSnapshotHash?: string;
   sceneOperation?: 'inventory' | 'guided' | 'terminals' | 'reconcile';
   terminalObjectIds?: string[];
+  guidedObjectIds?: string[];
+  inventoryOnly?: boolean;
   sceneSnapshotId?: string;
   sceneSnapshotHash?: string;
 }
@@ -228,6 +231,9 @@ export class JobStore {
     );
     this.db.exec(
       "CREATE TABLE IF NOT EXISTS scene_snapshots (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, metadata TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_snapshots_analysis ON scene_snapshots(analysis_id); CREATE TRIGGER IF NOT EXISTS immutable_scene_snapshots BEFORE UPDATE ON scene_snapshots BEGIN SELECT RAISE(ABORT,'Scene snapshots are immutable'); END",
+    );
+    this.db.exec(
+      'CREATE TABLE IF NOT EXISTS scene_requests (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_requests_analysis ON scene_requests(analysis_id)',
     );
     this.experiments = new ExperimentRegistry(this);
     this.transaction(() => {
@@ -464,7 +470,7 @@ export class JobStore {
       )
       .run(now);
     this.db.exec(
-      'DELETE FROM sam_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM scene_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM experiments WHERE analysis_id NOT IN(SELECT id FROM jobs)',
+      'DELETE FROM sam_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM scene_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM experiments WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM scene_requests WHERE analysis_id NOT IN(SELECT id FROM jobs)',
     );
   }
   create(bytes: Buffer, image: PreparedImage): Job {
@@ -596,7 +602,7 @@ export class JobStore {
   }
   requestSceneUnderstanding(
     id: string,
-    operation: 'reconcile' | 'terminals',
+    operation: 'reconcile' | 'terminals' | 'guided' | 'inventory',
     body: unknown,
   ): Job {
     return this.transaction(() => {
@@ -605,7 +611,35 @@ export class JobStore {
         .object({
           snapshotId: z.uuid(),
           snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
-          objectIds: z.array(z.uuid()).min(1).max(2).optional(),
+          objectIds: z.array(z.uuid()).min(1).max(3).optional(),
+          guidedBudget: z
+            .object({
+              maxRequests: z.literal(3),
+              maxPixels: z.literal(6000000),
+            })
+            .strict()
+            .optional(),
+          maskReview: z
+            .object({
+              objectId: z.uuid(),
+              observationId: z.uuid(),
+              decision: z.enum(['accepted', 'rejected', 'uncertain']),
+              source: z.enum(['human_review', 'assistant_visual']),
+              reason: z.string().trim().min(8).max(600),
+            })
+            .strict()
+            .optional(),
+          identityReview: z
+            .object({
+              relationId: z.string().min(1).max(240),
+              decision: z.enum([
+                'same_object',
+                'different_objects',
+                'uncertain',
+              ]),
+            })
+            .strict()
+            .optional(),
         })
         .strict()
         .safeParse(body);
@@ -655,8 +689,74 @@ export class JobStore {
           samSnapshotHash: source.samSnapshotHash,
           snapshotBinding: 'recorded',
         });
+      if (
+        operation !== 'reconcile' &&
+        (parsed.data.identityReview || parsed.data.maskReview)
+      )
+        throw new AppError(
+          400,
+          'INVALID_SCENE_REVIEW',
+          'Review decisions are local reconciliation actions.',
+        );
+      if (operation !== 'guided' && parsed.data.guidedBudget)
+        throw new AppError(
+          400,
+          'INVALID_SCENE_BUDGET',
+          'Guided budgets apply only to explicit guided segmentation.',
+        );
       if (operation === 'reconcile') {
         const graph = reconcileSceneGraph(job.scene.graph);
+        if (parsed.data.identityReview) {
+          const review = parsed.data.identityReview;
+          if (
+            !graph.relations?.some(
+              (r) => r.id === review.relationId && r.type === 'same_object',
+            ) ||
+            (graph.identityReviews?.length ?? 0) >= 400
+          )
+            throw new AppError(
+              400,
+              'INVALID_IDENTITY_REVIEW',
+              'Choose an existing same-object claim within the review budget.',
+            );
+          graph.identityReviews ??= [];
+          graph.identityReviews.push({
+            id: randomUUID(),
+            ...review,
+            source: 'human_review',
+            inputSnapshotId: parsed.data.snapshotId,
+            inputSnapshotHash: parsed.data.snapshotHash,
+            reviewedAt: Date.now(),
+          });
+        }
+        if (parsed.data.maskReview) {
+          const review = parsed.data.maskReview;
+          if (
+            !graph.associations.some(
+              (a) =>
+                a.objectId === review.objectId &&
+                a.observationId === review.observationId &&
+                a.basis === 'prompt_target',
+            ) ||
+            !graph.observations.some(
+              (o) => o.id === review.observationId && o.kind === 'mask',
+            ) ||
+            (graph.maskIdentityReviews?.length ?? 0) >= 400
+          )
+            throw new AppError(
+              400,
+              'INVALID_MASK_REVIEW',
+              'Choose guided mask evidence for the exact physical-object hypothesis.',
+            );
+          graph.maskIdentityReviews ??= [];
+          graph.maskIdentityReviews.push({
+            id: randomUUID(),
+            ...review,
+            inputSnapshotId: parsed.data.snapshotId,
+            inputSnapshotHash: parsed.data.snapshotHash,
+            reviewedAt: Date.now(),
+          });
+        }
         if (JSON.stringify(graph) === JSON.stringify(job.scene.graph))
           return job;
         const evidence = getSceneSnapshot(
@@ -682,11 +782,97 @@ export class JobStore {
         job.scene.attempts.push(attempt);
         job.scene.graph = graph;
         job.scene.status = 'succeeded';
+      } else if (operation === 'guided' || operation === 'inventory') {
+        const samRef = job.recovery.snapshotRef ?? job.sam.snapshotRef;
+        if (!samRef || job.sam.status !== 'succeeded')
+          throw new AppError(
+            409,
+            'SAM_REQUIRED',
+            'A saved SAM checkpoint is required for this scene operation.',
+          );
+        Object.assign(attempt, {
+          samSnapshotId: samRef.samSnapshotId,
+          samSnapshotHash: samRef.samSnapshotHash,
+          snapshotBinding: 'recorded',
+        });
+        if (operation === 'inventory') {
+          if (parsed.data.objectIds)
+            throw new AppError(
+              400,
+              'INVALID_SCENE_TARGETS',
+              'Inventory refresh examines the whole scene.',
+            );
+          Object.assign(attempt, { inventoryOnly: true });
+        } else {
+          const ids = parsed.data.objectIds;
+          const targets = planSceneTargets(
+            job.scene.graph,
+            job.image,
+            job.scene.settings?.maxCropPixels ??
+              this.config.SCENE_MAX_CROP_PIXELS,
+          );
+          if (
+            !parsed.data.guidedBudget ||
+            !ids ||
+            new Set(ids).size !== ids.length ||
+            ids.some(
+              (id) =>
+                !targets.some((t) => t.objectId === id) ||
+                job.scene!.work.some((w) => w.objectId === id),
+            )
+          )
+            throw new AppError(
+              400,
+              'INVALID_SCENE_TARGETS',
+              'Choose up to three unattempted scene targets and the bounded guided budget.',
+            );
+          const pixels = targets
+            .filter((t) => ids.includes(t.objectId))
+            .reduce((n, t) => n + t.crop[2] * t.crop[3], 0);
+          if (
+            job.scene.budget.requests + ids.length > 3 ||
+            job.scene.budget.pixels + pixels > 6000000
+          )
+            throw new AppError(
+              409,
+              'SCENE_GUIDED_BUDGET',
+              'The cumulative three-request or six-million-pixel budget is exhausted.',
+            );
+          if (
+            job.scene.graph.observations.length + ids.length * 32 > 450 ||
+            job.scene.graph.associations.length + ids.length * 32 > 800
+          )
+            throw new AppError(
+              409,
+              'SCENE_EVIDENCE_BUDGET',
+              'The scene cannot retain the complete bounded segmentation response.',
+            );
+          job.scene.settings = {
+            timeoutMs:
+              job.scene.settings?.timeoutMs ??
+              this.config.SCENE_STAGE_TIMEOUT_MS,
+            maxCropPixels:
+              job.scene.settings?.maxCropPixels ??
+              this.config.SCENE_MAX_CROP_PIXELS,
+            ...job.scene.settings,
+            ...parsed.data.guidedBudget,
+          };
+          Object.assign(attempt, { guidedObjectIds: ids });
+        }
+        job.scene.attempts.push(attempt);
+        job.scene.status = 'queued';
       } else {
+        if (parsed.data.identityReview)
+          throw new AppError(
+            400,
+            'INVALID_IDENTITY_REVIEW',
+            'Identity review is a local reconciliation action.',
+          );
         const objectIds = parsed.data.objectIds;
         const inventory = inventoryObjectIds(job.scene.graph);
         if (
           !objectIds ||
+          objectIds.length > 2 ||
           new Set(objectIds).size !== objectIds.length ||
           objectIds.some((id) => !inventory.has(id))
         )
@@ -1315,6 +1501,7 @@ export class JobStore {
         .prepare('DELETE FROM scene_snapshots WHERE analysis_id=?')
         .run(id);
       this.db.prepare('DELETE FROM experiments WHERE analysis_id=?').run(id);
+      this.db.prepare('DELETE FROM scene_requests WHERE analysis_id=?').run(id);
     });
   }
   close() {

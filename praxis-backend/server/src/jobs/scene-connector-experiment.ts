@@ -1,0 +1,433 @@
+import { randomUUID } from 'node:crypto';
+import type { Config } from '../config.js';
+import type { MetaClient } from '../lib/meta-client.js';
+import { AnalysisTrace } from '../lib/diagnostics.js';
+import { AppError } from '../lib/errors.js';
+import {
+  boundaryProfileSchema,
+  buildBoundaryVariants,
+  type BoundaryProfile,
+} from '../services/connector-boundary.js';
+import { buildWirePrompt } from '../services/sam.js';
+import { prepareSceneCrop, segmentSceneTarget } from '../services/scene.js';
+import { getSceneSnapshot } from './scene-snapshots.js';
+import { SceneRequestRecorder, sha256 } from './scene-request-evidence.js';
+import { admittedClient } from './model-admission.js';
+import type { JobStore } from './store.js';
+
+async function bounded<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  let abort: (() => void) | undefined;
+  try {
+    signal.throwIfAborted();
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        abort = () => reject(signal.reason);
+        signal.addEventListener('abort', abort, { once: true });
+      }),
+    ]);
+  } finally {
+    if (abort) signal.removeEventListener('abort', abort);
+  }
+}
+export async function prepareConnectorExperiment(
+  store: JobStore,
+  analysisId: string,
+  objectId: string,
+  point: [number, number],
+  negative: [number, number],
+  options?: { profile: BoundaryProfile },
+) {
+  const job = store.get(analysisId),
+    scene = job.scene;
+  if (!scene?.snapshotRef || !scene.graph)
+    throw new AppError(
+      409,
+      'SCENE_REQUIRED',
+      'Use a persisted scene inventory.',
+    );
+  const saved = getSceneSnapshot(store, scene.snapshotRef.snapshotId);
+  const object = saved.graph.objects.find((o) => o.id === objectId);
+  if (
+    !object ||
+    object.category !== 'connector' ||
+    !scene.graph.associations.some(
+      (a) => a.objectId === objectId && a.basis === 'inventory',
+    )
+  )
+    throw new AppError(
+      400,
+      'INVALID_CONNECTOR_TARGET',
+      'Choose the exact inventory connector object ID.',
+    );
+  const samRef = job.recovery.snapshotRef ?? job.sam.snapshotRef;
+  if (!samRef)
+    throw new AppError(
+      409,
+      'SAM_REQUIRED',
+      'Use a persisted image checkpoint.',
+    );
+  const image = store.getSnapshot(samRef.samSnapshotId).snapshot.image;
+  const [x, y, w, h] = object.bbox,
+    pad = Math.max(4, Math.round(Math.max(w, h) * 0.15)),
+    widePad = Math.ceil(Math.max(w, h) * 0.65);
+  const crop = (padding: number): [number, number, number, number] => {
+    const l = Math.max(0, x - padding),
+      t = Math.max(0, y - padding);
+    return [
+      l,
+      t,
+      Math.min(image.width, x + w + padding) - l,
+      Math.min(image.height, y + h + padding) - t,
+    ];
+  };
+  const narrow =
+      scene.work.find((o) => o.objectId === objectId)?.crop ?? crop(pad),
+    wide = crop(widePad);
+  const relative = (p: [number, number]): [number, number] => [
+    p[0] - wide[0],
+    p[1] - wide[1],
+  ];
+  const spatial = buildWirePrompt(
+    [
+      {
+        id: 0,
+        bbox: [x - wide[0], y - wide[1], w, h],
+        positivePoints: [relative(point)],
+        negativePoints: [relative(negative)],
+      },
+    ],
+    { width: wide[2], height: wide[3] },
+  );
+  let variants: Array<{
+    name: string;
+    prompt: string;
+    crop: [number, number, number, number];
+    scope?: string;
+  }> = [
+    { name: 'A-short-original', prompt: 'battery connector', crop: narrow },
+    { name: 'B-short-context', prompt: 'battery connector', crop: wide },
+    { name: 'C-spatial-context', prompt: spatial, crop: wide },
+  ];
+  const profile = options?.profile
+    ? boundaryProfileSchema.parse(options.profile)
+    : undefined;
+  if (profile) {
+    if (
+      profile.imageHash !== job.imageHash ||
+      !scene.graph.objects.some(
+        (o) =>
+          o.id === profile.redConductorObjectId && o.category === 'conductor',
+      )
+    )
+      throw new AppError(
+        409,
+        'BOUNDARY_SOURCE_MISMATCH',
+        'Boundary annotation and conductor must belong to the persisted photograph.',
+      );
+    variants = buildBoundaryVariants(profile, wide);
+  }
+  const prepared = [];
+  for (const v of variants) {
+    if (v.crop[2] * v.crop[3] > 2000000)
+      throw new AppError(
+        400,
+        'CROP_BUDGET',
+        'Experiment crop exceeds two million pixels.',
+      );
+    const bytes = await prepareSceneCrop(image, v.crop);
+    prepared.push({
+      ...v,
+      imageSha256: sha256(bytes),
+      imageBytes: bytes.length,
+    });
+  }
+  const totalPixels = prepared.reduce((n, v) => n + v.crop[2] * v.crop[3], 0);
+  if (totalPixels > 6000000)
+    throw new AppError(
+      400,
+      'EXPERIMENT_BUDGET',
+      'Experiment exceeds six million input pixels.',
+    );
+  const spec = {
+    version: profile
+      ? 'connector-boundary-plan-v1'
+      : 'connector-experiment-plan-v1',
+    providerBaseUrl: store.config.META_BASE_URL,
+    analysisId,
+    objectId,
+    object,
+    imageHash: job.imageHash,
+    sceneSnapshotRef: scene.snapshotRef,
+    samSnapshotRef: samRef,
+    model: job.settings.samModel,
+    maxRequests: 3,
+    maxPixels: 6000000,
+    perRequestTimeoutMs: Math.min(
+      store.config.SCENE_STAGE_TIMEOUT_MS,
+      store.config.PROVIDER_TIMEOUT_MS,
+    ),
+    automaticRetries: 0,
+    museRequests: 0,
+    totalPixels,
+    spatialSeed: {
+      source: 'assistant_visual',
+      point,
+      negative,
+      meaning:
+        'Physical-object targeting only; not a terminal, polarity or electrical claim.',
+    },
+    variants: prepared,
+    ...(profile ? { profile } : {}),
+  };
+  return { ...spec, planHash: sha256(JSON.stringify(spec)) };
+}
+export type ConnectorExperimentPlan = Awaited<
+  ReturnType<typeof prepareConnectorExperiment>
+>;
+export async function runConnectorExperiment(
+  store: JobStore,
+  plan: ConnectorExperimentPlan,
+  config: Config,
+  options: { client?: MetaClient; signal?: AbortSignal } = {},
+) {
+  const validate = async () => {
+    const { planHash, ...spec } = plan;
+    if (sha256(JSON.stringify(spec)) !== planHash)
+      throw new AppError(
+        409,
+        'INVALID_EXPERIMENT_PLAN',
+        'Prepared experiment plan was modified.',
+      );
+    const current = await prepareConnectorExperiment(
+      store,
+      plan.analysisId,
+      plan.objectId,
+      plan.spatialSeed.point,
+      plan.spatialSeed.negative,
+      plan.profile ? { profile: plan.profile } : undefined,
+    );
+    if (current.planHash !== plan.planHash)
+      throw new AppError(
+        409,
+        'STALE_EXPERIMENT_PLAN',
+        'Prepared experiment evidence changed. No request was dispatched.',
+      );
+  };
+  await validate();
+  const reservation = store.experiments.reserve(
+      plan.analysisId,
+      plan.samSnapshotRef.samSnapshotId,
+    ),
+    owner = reservation.owner!;
+  const lost = new AbortController(),
+    signal = AbortSignal.any([
+      lost.signal,
+      ...(options.signal ? [options.signal] : []),
+    ]);
+  const heartbeat = setInterval(() => {
+    try {
+      if (!store.experiments.renew(reservation.experimentId, owner))
+        lost.abort(new Error('Experiment ownership lost'));
+    } catch {
+      lost.abort(new Error('Experiment ownership lost'));
+    }
+  }, 3000);
+  heartbeat.unref();
+  const report = {
+    version: plan.profile
+      ? 'connector-boundary-experiment-v1'
+      : 'connector-experiment-v1',
+    experimentId: reservation.experimentId,
+    plan,
+    status: 'running' as 'running' | 'completed' | 'interrupted',
+    startedAt: Date.now(),
+    finishedAt: null as number | null,
+    chargedRequests: 0,
+    chargedPixels: 0,
+    measurements: [] as Array<{
+      variant: string;
+      requestId: string;
+      objectId: string;
+      scope?: string;
+      status: string;
+      upstreamOutcome: string;
+      startedAt: number;
+      finishedAt: number | null;
+      diagnostics?: ReturnType<AnalysisTrace['snapshot']>;
+      observations?: unknown[];
+      native?: unknown[];
+      errorCode?: string;
+    }>,
+    note: 'Independent three-request experiment ledger. Reuses inventory; never changes the production budget, graph, IDs, observations, terminals or connectivity. Spatial points are targeting proposals. Candidate delivery is not physical identity verification.',
+  };
+  const persist = () => {
+    if (
+      !store.experiments.record(
+        reservation.experimentId,
+        owner,
+        report,
+        report.status,
+      )
+    )
+      throw new Error('Experiment ownership lost while persisting');
+  };
+  try {
+    await validate();
+    persist();
+    const image = store.getSnapshot(plan.samSnapshotRef.samSnapshotId).snapshot
+      .image;
+    const settings = {
+      ...config,
+      META_SAM_MODEL: plan.model,
+      SCENE_STAGE_TIMEOUT_MS: plan.perRequestTimeoutMs,
+    };
+    const client = admittedClient(
+      store,
+      { experimentId: reservation.experimentId, owner },
+      options.client,
+    );
+    for (const variant of plan.variants) {
+      signal.throwIfAborted();
+      if (
+        report.chargedRequests >= 3 ||
+        report.chargedPixels + variant.crop[2] * variant.crop[3] > 6000000
+      )
+        throw new Error('Experiment budget exhausted');
+      const requestId = randomUUID(),
+        trace = new AnalysisTrace(requestId, () => {});
+      const measurement = {
+        variant: variant.name,
+        requestId,
+        objectId: plan.objectId,
+        ...(variant.scope ? { scope: variant.scope } : {}),
+        status: 'running',
+        upstreamOutcome: 'unknown',
+        startedAt: Date.now(),
+        finishedAt: null,
+      } as (typeof report.measurements)[number];
+      report.measurements.push(measurement);
+      report.chargedRequests++;
+      report.chargedPixels += variant.crop[2] * variant.crop[3];
+      persist();
+      let recorder: SceneRequestRecorder | undefined;
+      const deadline = new AbortController();
+      const timeout = setTimeout(
+        () =>
+          deadline.abort(
+            new AppError(
+              504,
+              'EXPERIMENT_TIMEOUT',
+              'Connector request deadline expired.',
+            ),
+          ),
+        plan.perRequestTimeoutMs,
+      );
+      const requestSignal = AbortSignal.any([signal, deadline.signal]);
+      try {
+        const result = await bounded(
+          segmentSceneTarget(
+            settings,
+            client,
+            image,
+            {
+              objectId: plan.objectId,
+              prompt: plan.object.proposedType,
+              crop: variant.crop,
+              reason: 'missing_connector',
+              priority: 0,
+            },
+            reservation.experimentId,
+            requestSignal,
+            trace,
+            {
+              prompt: variant.prompt,
+              record: (bytes) => {
+                if (sha256(bytes) !== variant.imageSha256)
+                  throw new Error('Prepared crop bytes changed');
+                recorder = new SceneRequestRecorder(store, {
+                  requestId,
+                  analysisId: plan.analysisId,
+                  objectId: plan.objectId,
+                  experimentId: reservation.experimentId,
+                  variant: variant.name,
+                  inputSnapshotId: plan.sceneSnapshotRef.snapshotId,
+                  inputSnapshotHash: plan.sceneSnapshotRef.snapshotHash,
+                  imageHash: plan.imageHash,
+                  crop: variant.crop,
+                  prompt: variant.prompt,
+                  createdAt: Date.now(),
+                  cropImage: {
+                    mimeType: 'image/jpeg',
+                    sha256: sha256(bytes),
+                    base64: bytes.toString('base64'),
+                    bytes: bytes.length,
+                  },
+                });
+                return recorder;
+              },
+            },
+          ),
+          requestSignal,
+        );
+        measurement.status = result.observations.length
+          ? 'candidates_returned'
+          : 'empty_output';
+        measurement.upstreamOutcome = 'response_received';
+        measurement.observations = result.observations;
+        measurement.native = result.native;
+      } catch (error) {
+        measurement.errorCode =
+          error instanceof AppError ? error.code : 'EXPERIMENT_INTERRUPTED';
+        const response = recorder?.record.response;
+        const uncertain =
+          [
+            'PROVIDER_TIMEOUT',
+            'META_API_TIMEOUT',
+            'PROVIDER_CONNECTION_ERROR',
+            'REQUEST_CANCELLED',
+            'ANALYSIS_TIMEOUT',
+            'EXPERIMENT_TIMEOUT',
+          ].includes(measurement.errorCode) ||
+          requestSignal.aborted ||
+          response?.upstreamStatus === 504;
+        measurement.upstreamOutcome =
+          recorder?.record.dispatchStartedAt && uncertain
+            ? 'unknown'
+            : response
+              ? 'response_received'
+              : recorder?.record.dispatchStartedAt
+                ? 'unknown'
+                : 'not_sent';
+        measurement.status =
+          measurement.upstreamOutcome === 'unknown' ? 'interrupted' : 'failed';
+        if (measurement.upstreamOutcome === 'unknown' || requestSignal.aborted)
+          report.status = 'interrupted';
+        measurement.finishedAt = Date.now();
+        measurement.diagnostics = trace.snapshot();
+        if (report.status === 'running') persist();
+        break;
+      } finally {
+        clearTimeout(timeout);
+      }
+      measurement.finishedAt = Date.now();
+      measurement.diagnostics = trace.snapshot();
+      persist();
+    }
+    if (report.status === 'running') report.status = 'completed';
+    report.finishedAt = Date.now();
+    persist();
+    return report;
+  } catch (error) {
+    report.status = report.measurements.some(
+      (m) => m.upstreamOutcome === 'unknown',
+    )
+      ? 'interrupted'
+      : 'completed';
+    report.finishedAt = Date.now();
+    persist();
+    throw error;
+  } finally {
+    clearInterval(heartbeat);
+  }
+}

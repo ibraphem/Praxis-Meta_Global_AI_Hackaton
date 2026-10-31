@@ -7,6 +7,30 @@ const pointSchema = z.tuple([
 
 const id = z.uuid();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
+export const identityReviewSchema = z
+  .object({
+    id,
+    relationId: z.string().min(1).max(240),
+    decision: z.enum(["same_object", "different_objects", "uncertain"]),
+    source: z.literal("human_review"),
+    inputSnapshotId: id,
+    inputSnapshotHash: hash,
+    reviewedAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export const maskIdentityReviewSchema = z
+  .object({
+    id,
+    objectId: id,
+    observationId: id,
+    decision: z.enum(["accepted", "rejected", "uncertain"]),
+    source: z.enum(["human_review", "assistant_visual"]),
+    reason: z.string().trim().min(8).max(600),
+    inputSnapshotId: id,
+    inputSnapshotHash: hash,
+    reviewedAt: z.number().int().nonnegative(),
+  })
+  .strict();
 export const objectRelationSchema = z
   .object({
     id: z.string().min(1).max(240),
@@ -42,6 +66,16 @@ export const terminalSchema = z
       "occluded",
       "insufficient",
     ]),
+    reference: z
+      .object({
+        position: pointSchema,
+        evidence: z.enum([
+          "exposed_conductive_lead",
+          "insulated_housing_junction",
+        ]),
+      })
+      .strict()
+      .optional(),
     pinLabel: z.string().min(1).max(40).nullable(),
     electricalRole: z.string().min(1).max(40).nullable(),
     roleStatus: z.enum(["proposed", "unresolved"]),
@@ -50,13 +84,23 @@ export const terminalSchema = z
     attemptId: id,
     requestId: id,
     model: z.string().min(1).max(100),
-    promptVersion: z.literal("physical-terminals-v1").optional(),
+    promptVersion: z
+      .enum(["physical-terminals-v1", "physical-terminals-v2"])
+      .optional(),
   })
   .strict()
   .superRefine((t, ctx) => {
     const visible = ["visible_terminal", "visible_lead"].includes(
       t.locationEvidence,
     );
+    if (
+      t.promptVersion === "physical-terminals-v2" &&
+      t.locationEvidence === "visible_lead"
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Exposed leads are reference points, not terminal contacts.",
+      });
     if (
       visible !== (t.location !== null) ||
       visible !== (t.locationStatus === "observed")
@@ -188,6 +232,8 @@ export const sceneGraphSchema = z
     observations: z.array(visualObservationSchema).max(450),
     associations: z.array(observationAssociationSchema).max(800),
     relations: z.array(objectRelationSchema).max(400).optional(),
+    identityReviews: z.array(identityReviewSchema).max(400).optional(),
+    maskIdentityReviews: z.array(maskIdentityReviewSchema).max(400).optional(),
     terminals: z.array(terminalSchema).max(64).optional(),
     attachments: z.array(attachmentSchema).max(128).optional(),
     electricalConnectionStatus: z.literal("unestablished"),
@@ -202,6 +248,8 @@ export const sceneGraphSchema = z
       ...(graph.relations ?? []),
       ...(graph.terminals ?? []),
       ...(graph.attachments ?? []),
+      ...(graph.identityReviews ?? []),
+      ...(graph.maskIdentityReviews ?? []),
     ]) {
       if (ids.has(entity.id))
         ctx.addIssue({ code: "custom", message: "Duplicate scene identity." });
@@ -228,7 +276,9 @@ export const sceneGraphSchema = z
       (graph.objects.some((o) => o.terminalIds.length) ||
         graph.terminals?.length ||
         graph.attachments?.length ||
-        graph.relations?.length)
+        graph.relations?.length ||
+        graph.identityReviews?.length ||
+        graph.maskIdentityReviews?.length)
     )
       ctx.addIssue({
         code: "custom",
@@ -237,6 +287,36 @@ export const sceneGraphSchema = z
     const terminals = new Map((graph.terminals ?? []).map((t) => [t.id, t]));
     const inside = (p: [number, number] | null) =>
       !p || (p[0] < graph.image.width && p[1] < graph.image.height);
+    for (const review of graph.identityReviews ?? [])
+      if (
+        !graph.relations?.some(
+          (r) => r.id === review.relationId && r.type === "same_object",
+        )
+      )
+        ctx.addIssue({
+          code: "custom",
+          message: "Identity review requires an existing same-object claim.",
+        });
+    for (const review of graph.maskIdentityReviews ?? [])
+      if (
+        !graph.associations.some(
+          (a) =>
+            a.objectId === review.objectId &&
+            a.observationId === review.observationId &&
+            a.basis === "prompt_target",
+        ) ||
+        !graph.observations.some(
+          (o) =>
+            o.id === review.observationId &&
+            o.kind === "mask" &&
+            o.source === "sam",
+        )
+      )
+        ctx.addIssue({
+          code: "custom",
+          message:
+            "Mask identity review requires guided mask evidence for the exact object.",
+        });
     for (const relation of graph.relations ?? []) {
       if (
         !objects.has(relation.fromObjectId) ||
@@ -277,6 +357,7 @@ export const sceneGraphSchema = z
       if (
         !objects.has(terminal.objectId) ||
         !inside(terminal.location) ||
+        (terminal.reference && !inside(terminal.reference.position)) ||
         terminal.observationIds.some((o) => !observations.has(o)) ||
         !graph.objects
           .find((o) => o.id === terminal.objectId)
@@ -301,6 +382,11 @@ export const sceneGraphSchema = z
     for (const attachment of graph.attachments ?? []) {
       if (
         !terminals.has(attachment.terminalId) ||
+        (attachment.status === "proposed" &&
+          terminals.get(attachment.terminalId)?.promptVersion ===
+            "physical-terminals-v2" &&
+          terminals.get(attachment.terminalId)?.locationEvidence !==
+            "visible_terminal") ||
         graph.objects.find((o) => o.id === attachment.conductorObjectId)
           ?.category !== "conductor" ||
         !inside(attachment.position) ||

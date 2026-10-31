@@ -636,8 +636,43 @@ later phases.
 
 **Export evaluation bundle** downloads image metadata/SHA-256, full analysis with
 SAM masks, calibration snapshots/revisions, original proposals and timings, review
-records, refinement experiments and independent calibration audits. Save the
-original photograph separately; the JSON does not embed or upload its bytes.
+records, refinement experiments and independent calibration audits. Export is also
+available before board calibration, including saved analyses with scene discoveries.
+The existing `praxis-evaluation-v1` fields remain compatible with offline wire scorers.
+
+The additive `sceneEvaluation` section (`praxis-scene-evaluation-v1`) includes:
+
+- The complete current public scene graph, original object/observation identities,
+  associations, and scene/SAM checkpoint ID/hash bindings.
+- Inventory attempts (including failed and interrupted attempts), baseline candidate
+  masks, SAM observations, guided segmentation attempts and request/crop records.
+- Recorded reconciliation relations, guided-mask identity decisions with reviewer
+  source and visible-evidence reasons, the complete human identity-review ledger,
+  and a separately identified display projection derived at export time. Review
+  decisions retain their source checkpoint and timestamp.
+- Selective terminal coverage, terminal and reference-point proposals, attachment
+  evidence and request outcomes. Occluded contacts remain null; proposals are never
+  upgraded to confirmed contact or polarity.
+- Verification states for recognition, grouped identities, terminals, attachments
+  and recorded human wire reviews. Identity confirmation does not establish an
+  electrical connection.
+- SAM, Muse, recovery and scene attempt timestamps, queue/wall durations and original
+  diagnostic stage spans; guided/terminal request timings and browser endpoint
+  request history, including failures, cancellation and discarded replies.
+
+`capturedAt` identifies the click-time capture. Image hash/dimensions must match the
+saved job before its evidence can be downloaded. Missing scene data is explicitly
+`not_run` or `not_recorded`; missing or unfinished timing measurements are `null`.
+Server epoch timestamps, trace-relative offsets and browser clocks remain distinct.
+Diagnostic spans can overlap and must not be summed into total wall latency.
+Successful provider execution does not imply verified recognition or connectivity.
+
+Save the original photograph separately; the JSON does not embed or upload its
+bytes. The browser exports the current public graph and all recorded attempt
+metadata, not historical native checkpoints. Use backend `evidence:export` for
+historical scene graphs, private native segmentation masks and original photo bytes.
+The browser records checkpoint bindings without claiming to recompute private native
+checkpoint hashes. No inference or saved-analysis writes are triggered by export.
 
 Record a separate blinded truth file **before endpoint inference**, for example:
 

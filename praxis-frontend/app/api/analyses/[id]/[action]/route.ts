@@ -20,6 +20,8 @@ export async function POST(
       "start-scene",
       "reconcile-scene",
       "discover-terminals",
+      "guide-scene",
+      "refresh-scene",
       "retry-sam",
       "audit-wires",
       "recover-wires",
@@ -40,6 +42,8 @@ export async function POST(
       | "start-scene"
       | "reconcile-scene"
       | "discover-terminals"
+      | "guide-scene"
+      | "refresh-scene"
       | "retry-sam"
       | "audit-wires"
       | "recover-wires"

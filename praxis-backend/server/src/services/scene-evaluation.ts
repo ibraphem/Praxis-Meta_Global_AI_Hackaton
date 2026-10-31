@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { sceneGraphSchema, type SceneGraph } from '../schemas/scene.js';
 import {
   reconcileSceneView,
@@ -98,6 +99,19 @@ export const sceneReviewSchema = z
   .strict();
 export type SceneTruth = z.infer<typeof sceneTruthSchema>;
 export type SceneReview = z.infer<typeof sceneReviewSchema>;
+export const frozenSceneTruthSchema = z
+  .object({
+    version: z.literal('scene-truth-freeze-v1'),
+    imageHash: hash,
+    truthHash: hash,
+    frozenAt: z.number().int().nonnegative(),
+  })
+  .strict();
+export function sceneTruthHash(truth: SceneTruth) {
+  return createHash('sha256')
+    .update(JSON.stringify(sceneTruthSchema.parse(truth)))
+    .digest('hex');
+}
 export function scoreScene(input: {
   graph: SceneGraph;
   snapshotHash: string;
@@ -105,6 +119,7 @@ export function scoreScene(input: {
   review: SceneReview;
   baseline?: readonly BaselineObject[];
   baselineHash?: string;
+  frozenTruth?: z.infer<typeof frozenSceneTruthSchema>;
   attempts?: {
     sceneOperation?: string;
     startedAt?: number;
@@ -118,6 +133,24 @@ export function scoreScene(input: {
   const truth = sceneTruthSchema.parse(input.truth),
     review = sceneReviewSchema.parse(input.review),
     graph = sceneGraphSchema.parse(input.graph);
+  const frozen = input.frozenTruth
+    ? frozenSceneTruthSchema.parse(input.frozenTruth)
+    : undefined;
+  if (
+    frozen &&
+    (frozen.imageHash !== truth.imageHash ||
+      frozen.truthHash !== sceneTruthHash(truth))
+  )
+    throw new Error('Scene frozen annotation binding mismatch.');
+  const terminalAttempts = (input.attempts ?? []).filter(
+    (a) => a.sceneOperation === 'terminals',
+  );
+  const frozenBeforeInference =
+    frozen && terminalAttempts.length
+      ? terminalAttempts.every(
+          (a) => a.startedAt !== undefined && a.startedAt > frozen.frozenAt,
+        )
+      : false;
   if (
     truth.imageHash !== graph.imageHash ||
     review.imageHash !== graph.imageHash ||
@@ -200,7 +233,11 @@ export function scoreScene(input: {
     if (predictions.length !== 1) continue; // duplicates cannot be cherry-picked for accuracy
     const p = predictions[0]!;
     if (assignments.get(p.objectId) !== terminal.objectId) continue;
-    if (terminal.position && p.location) {
+    if (
+      terminal.position &&
+      p.location &&
+      p.locationEvidence === 'visible_terminal'
+    ) {
       const d = Math.hypot(
         p.location[0] - terminal.position[0],
         p.location[1] - terminal.position[1],
@@ -270,6 +307,8 @@ export function scoreScene(input: {
       truth: truth.source,
       review: review.source,
       independentlyReviewed: independent,
+      frozenBeforeTerminalInference: frozenBeforeInference,
+      truthHash: sceneTruthHash(truth),
     },
     objectRecall: coverage.size / truth.objects.length,
     coveredObjects: coverage.size,
@@ -288,6 +327,21 @@ export function scoreScene(input: {
     displayedGroups: view.objects.length,
     evidenceOnlyHypotheses: view.evidenceOnlyObjectIds.length,
     terminals: {
+      visibilityViolations: [...predictedTerminals.values()].filter((p) => {
+        const t = truthTerminals.get(terminalMap.get(p.id) ?? '');
+        return (
+          t &&
+          !t.visible &&
+          p.locationEvidence === 'visible_terminal' &&
+          p.location !== null
+        );
+      }).length,
+      referenceOnlyPredictions: [...predictedTerminals.values()].filter(
+        (p) => p.reference && !p.location,
+      ).length,
+      legacyLeadLocations: [...predictedTerminals.values()].filter(
+        (p) => p.locationEvidence === 'visible_lead',
+      ).length,
       correctWithinTolerance: correctTerminals,
       visibleTruthTerminals: visibleTerminals,
       accuracy: visibleTerminals ? correctTerminals / visibleTerminals : null,
@@ -321,6 +375,7 @@ export function scoreScene(input: {
     measurements: times,
     accuracyClaimsEligible:
       independent &&
+      frozenBeforeInference &&
       truth.inventoryComplete &&
       truth.attachmentsComplete &&
       !unreviewedGroups.length &&

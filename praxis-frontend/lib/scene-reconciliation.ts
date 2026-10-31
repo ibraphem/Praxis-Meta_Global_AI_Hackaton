@@ -16,6 +16,7 @@ export interface DisplayObject {
   baselineIds: string[];
   observationIds: string[];
   locationKind: "approximate_inventory" | "sam_candidate";
+  grouping?: "proposed" | "confirmed";
 }
 export interface ReconciledView {
   objects: DisplayObject[];
@@ -199,6 +200,7 @@ export function reconcileSceneGraph(input: SceneGraph): SceneGraph {
 export function reconcileSceneView(
   graph: SceneGraph,
   baseline: readonly BaselineObject[] = [],
+  separateMembers = false,
 ): ReconciledView {
   const inventory = inventoryObjectIds(graph);
   const derived = reconcileSceneGraph(graph);
@@ -206,12 +208,31 @@ export function reconcileSceneView(
   const pair = (r: ObjectRelation, a: string, b: string) =>
     (r.fromObjectId === a && r.toObjectId === b) ||
     (r.fromObjectId === b && r.toObjectId === a);
-  const same = (a: string, b: string) =>
-    !relations.some((r) => r.type === "part_of" && pair(r, a, b)) &&
-    relations.some(
-      (r) =>
-        r.type === "same_object" && r.status === "proposed" && pair(r, a, b),
-    );
+  const pairReview = (a: string, b: string) =>
+    graph.identityReviews
+      ?.filter((v) =>
+        relations.some(
+          (r) =>
+            r.id === v.relationId && r.type === "same_object" && pair(r, a, b),
+        ),
+      )
+      .at(-1);
+  const same = (a: string, b: string) => {
+    if (
+      separateMembers ||
+      relations.some((r) => r.type === "part_of" && pair(r, a, b))
+    )
+      return false;
+    const review = pairReview(a, b);
+    return review
+      ? review.decision === "same_object"
+      : relations.some(
+          (r) =>
+            r.type === "same_object" &&
+            r.status === "proposed" &&
+            pair(r, a, b),
+        );
+  };
   const objects: DisplayObject[] = [];
   for (const object of graph.objects
     .filter((o) => inventory.has(o.id))
@@ -237,11 +258,35 @@ export function reconcileSceneView(
   }
   for (const object of graph.objects.filter((o) => !inventory.has(o.id))) {
     const groups = objects.filter((g) =>
-      g.sceneObjectIds.some((id) => same(id, object.id)),
+      g.sceneObjectIds.every((id) => same(id, object.id)),
     );
     if (groups.length === 1) {
       groups[0]!.sceneObjectIds.push(object.id);
       groups[0]!.observationIds.push(...observationIds(graph, object.id));
+    } else if (
+      (separateMembers ||
+        relations.some(
+          (r) =>
+            (r.fromObjectId === object.id || r.toObjectId === object.id) &&
+            pairReview(r.fromObjectId, r.toObjectId)?.decision ===
+              "different_objects",
+        )) &&
+      relations.some(
+        (r) =>
+          r.type === "same_object" &&
+          (r.fromObjectId === object.id || r.toObjectId === object.id),
+      )
+    ) {
+      objects.push({
+        id: object.id,
+        name: object.proposedType,
+        bbox: object.bbox,
+        category: object.category,
+        sceneObjectIds: [object.id],
+        baselineIds: [],
+        observationIds: observationIds(graph, object.id),
+        locationKind: "sam_candidate",
+      });
     }
   }
   for (const candidate of baseline) {
@@ -276,6 +321,17 @@ export function reconcileSceneView(
       });
   }
   const displayed = new Set(objects.flatMap((o) => o.sceneObjectIds));
+  for (const object of objects) {
+    if (object.sceneObjectIds.length < 2) continue;
+    const members = object.sceneObjectIds;
+    object.grouping = members.every((a, i) =>
+      members
+        .slice(i + 1)
+        .every((b) => pairReview(a, b)?.decision === "same_object"),
+    )
+      ? "confirmed"
+      : "proposed";
+  }
   return {
     objects,
     evidenceOnlyObjectIds: graph.objects
@@ -287,10 +343,18 @@ export function reconcileSceneView(
 
 export function preferredTerminalTargets(graph: SceneGraph) {
   const ids = inventoryObjectIds(graph);
+  // A display group cannot silently choose which source object gets examined.
+  const grouped = new Set(
+    reconcileSceneView(graph)
+      .objects.filter((o) => o.sceneObjectIds.length > 1)
+      .flatMap((o) => o.sceneObjectIds),
+  );
   return graph.objects
     .filter(
       (o) =>
         ids.has(o.id) &&
+        !grouped.has(o.id) &&
+        !["conductor", "board", "unknown"].includes(o.category) &&
         !(graph.terminals ?? []).some((t) => t.objectId === o.id),
     )
     .map((o) => ({

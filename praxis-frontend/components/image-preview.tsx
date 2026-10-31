@@ -7,6 +7,7 @@ import { BreadboardWorkspace } from "./breadboard-workspace";
 import styles from "./breadboard-workspace.module.css";
 import { BreadboardRegionOverlays } from "./breadboard-regions";
 import { SceneOverlays } from "./scene-inventory";
+import type { AnalysisJob } from "@/lib/analysis-jobs";
 import type { SceneGraph } from "@/lib/scene";
 import { inventoryObjectIds } from "@/lib/scene-reconciliation";
 import { SceneObjectOverlays, type SceneMode } from "./scene-objects";
@@ -22,6 +23,7 @@ interface Props {
   photograph: Photograph | null;
   result: Analysis | null;
   sceneGraph?: SceneGraph;
+  analysisJob?: AnalysisJob | null;
   sceneMode?: SceneMode;
   loading: boolean;
   selecting: boolean;
@@ -42,6 +44,7 @@ export function ImagePreview({
   photograph,
   result,
   sceneGraph,
+  analysisJob,
   sceneMode = "objects",
   loading,
   selecting,
@@ -114,6 +117,7 @@ export function ImagePreview({
         imageFile={photograph.file}
         onRecoveryContext={onRecoveryContext}
         backendRuntime={backendRuntime}
+        analysisJob={analysisJob}
         disabled={loading || selecting}
         assignmentContext={{
           photoId: photograph.id,
@@ -128,8 +132,9 @@ export function ImagePreview({
           sceneGraph.image.width === photograph.width &&
           sceneGraph.image.height === photograph.height &&
           showOverlays &&
-          (hasInventory && sceneMode === "objects" ? (
+          (hasInventory && sceneMode !== "evidence" ? (
             <SceneObjectOverlays
+              separateMembers={sceneMode === "members"}
               graph={sceneGraph}
               result={result}
               selectedId={selectedId}

@@ -104,3 +104,16 @@ export function sceneJob(width = 100, height = 80) {
   };
   return job;
 }
+
+export function groupedSceneJob(width = 100, height = 80) {
+  const job = sceneJob(width, height),
+    graph = job.scene!.graph!;
+  const copy = { ...structuredClone(graph.objects[0]!), id: randomUUID() };
+  graph.objects.push(copy);
+  graph.associations.push({
+    ...graph.associations.find((a) => a.basis === "inventory")!,
+    id: randomUUID(),
+    objectId: copy.id,
+  });
+  return job;
+}

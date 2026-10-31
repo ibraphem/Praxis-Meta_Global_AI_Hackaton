@@ -12,6 +12,14 @@ cd praxis-backend/server
 npm run evidence:export -- ANALYSIS_UUID NEW_PRIVATE_ARCHIVE
 ```
 
+For a browser-side snapshot, use **Export evaluation bundle** in the workspace;
+calibration is not required. Its `sceneEvaluation` section includes the full current
+public graph, inventory/segmentation attempts and observations, identity-review
+decisions, terminal/reference proposals, apparent attachments, verification states
+and stage/request latency. Existing wire-review fields remain available. This
+snapshot does not establish contact accuracy or electrical continuity and does not
+embed historical native checkpoints. The offline archive complements it.
+
 The archive contains the original photograph, immutable SAM/scene checkpoints, and
 attempt history. Keep the original archive unchanged when evaluating a later stage;
 export a second directory. Compare the same photos, model configuration and request
@@ -72,6 +80,23 @@ recorded with null position. Declare roles only when independently supported; wi
 color alone is insufficient. Choose tolerance before comparing variants. Define
 whether bodies/housings are parts or separate physical identities consistently.
 
+Before any new terminal inference, independently annotate the untouched original
+photo and freeze those annotations. Use `visible: true` only for the actual visible
+electrical contact. A bare conductive lead or insulated wire entering a housing is
+not a visible hidden contact; leave that contact's position null. Include obscured
+contacts and unsupported attachments instead of excluding them from the trial.
+
+```sh
+npm run scene:freeze-truth -- ORIGINAL_PHOTO TRUTH.json NEW_FREEZE.json
+```
+
+This offline command validates the exact original-photo SHA-256 and independently
+attributed truth, then writes a new timestamped annotation digest without overwriting
+anything. Freeze tolerance, target selection and request budgets before inference.
+Keep the photo, truth and freeze artifact unchanged. The freeze is a local audit
+record, not cryptographic proof that an annotator never saw predictions. Existing
+results can be scored retrospectively but cannot establish prospective accuracy.
+
 A separate review file maps predictions to truth:
 
 ```json
@@ -99,7 +124,7 @@ a reviewed false prediction; an absent assignment remains unreviewed. Map all
 duplicate hypotheses to their actual truth identity: never select only the best one.
 
 ```sh
-npm run scene:score -- SCENE_SNAPSHOT.json TRUTH.json REVIEW.json NEW_REPORT.json JOB.json
+npm run scene:score -- SCENE_SNAPSHOT.json TRUTH.json REVIEW.json NEW_REPORT.json JOB.json NEW_FREEZE.json
 ```
 
 The scorer checks immutable snapshot integrity, exact evidence bindings and unique
@@ -110,7 +135,17 @@ available-point error, incorrect role proposals and false apparent attachments.
 Multiple predictions for one terminal cannot be cherry-picked for accuracy. Missing
 coordinates are unresolved, not zero error. Incomplete attachment truth yields an
 unknown false-proposal metric. Assistant-only or incomplete review cannot support
-the report's independent accuracy-claims flag.
+the report's independent accuracy-claims flag. That flag also requires the matching
+freeze artifact and recorded terminal attempt start times strictly after the freeze.
+The scorer rejects changes to frozen truth, including tolerance edits. Pass `-`
+instead of `JOB.json` for graph-only scoring; without attempt timings it cannot
+establish that annotations predate inference.
+
+`terminals.visibilityViolations` counts proposed visible contact locations assigned
+to independently obscured contacts. Reference-only points are counted separately and
+never earn terminal localization credit. Historical `visible_lead` coordinates remain
+readable and are reported as legacy lead locations, not promoted to contact accuracy.
+False or duplicate attachment proposals still count against the trial.
 
 Request timings come only from recorded attempts, including failed work. Monetary
 cost is not estimated without billing evidence. Synthetic tests exercise scoring

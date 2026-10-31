@@ -16,6 +16,17 @@ export interface ProviderOperation {
   timeoutMs?: number;
   maxRetries?: number;
   imageDimensions?: { width: number; height: number }[];
+  /** Private diagnostic sink. Never receives authentication headers. */
+  evidence?: {
+    request(payload: string): void;
+    response(value: {
+      bytes: Buffer;
+      upstreamStatus: number;
+      contentType: string | null;
+      providerRequestId?: string;
+      truncated: boolean;
+    }): void;
+  };
 }
 
 export interface MetaClient {
@@ -115,6 +126,7 @@ export function createMetaClient(
         let upstreamStatus: number | undefined;
         let failure: AppError | undefined;
         try {
+          operation?.evidence?.request(payload);
           const response = await fetcher(
             `${config.META_BASE_URL.replace(/\/$/, '')}/${path}`,
             {
@@ -137,6 +149,49 @@ export function createMetaClient(
           if (suppliedId && /^[a-zA-Z0-9_.:-]{1,128}$/.test(suppliedId))
             providerRequestId = suppliedId;
           upstreamStatus = response.status;
+          // Opt-in capture preserves response bytes before status/schema/decoder rejection.
+          let capturedBody: Buffer | undefined;
+          if (operation?.evidence && response.body) {
+            phase = 'reading_response';
+            const reader = response.body.getReader(),
+              chunks: Uint8Array[] = [];
+            let size = 0,
+              truncated = false;
+            try {
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const room = 16 * 1024 * 1024 - size;
+                chunks.push(value.subarray(0, Math.max(0, room)));
+                size += value.byteLength;
+                if (size > 16 * 1024 * 1024) {
+                  truncated = true;
+                  await reader.cancel();
+                  break;
+                }
+              }
+            } catch (error) {
+              operation.evidence.response({
+                bytes: Buffer.concat(chunks),
+                upstreamStatus: response.status,
+                contentType: response.headers.get('content-type'),
+                ...(providerRequestId ? { providerRequestId } : {}),
+                truncated: true,
+              });
+              throw error;
+            } finally {
+              reader.releaseLock();
+            }
+            capturedBody = Buffer.concat(chunks);
+            operation.evidence.response({
+              bytes: capturedBody,
+              upstreamStatus: response.status,
+              contentType: response.headers.get('content-type'),
+              ...(providerRequestId ? { providerRequestId } : {}),
+              truncated,
+            });
+            if (truncated) throw invalidProviderOutput();
+          }
           if (!response.ok) {
             // The HTTP failure is already known. Cleanup must not obscure it
             // with a later deadline or a broken error-response body.
@@ -181,12 +236,13 @@ export function createMetaClient(
             !response.body
           )
             throw invalidProviderOutput();
-          const reader = response.body.getReader();
+          const reader =
+            capturedBody === undefined ? response.body.getReader() : undefined;
           phase = 'reading_response';
-          const chunks: Uint8Array[] = [];
+          const chunks: Uint8Array[] = capturedBody ? [capturedBody] : [];
           let size = 0;
           try {
-            for (;;) {
+            while (reader) {
               const { done, value } = await reader.read();
               if (done) break;
               size += value.byteLength;
@@ -197,7 +253,7 @@ export function createMetaClient(
               chunks.push(value);
             }
           } finally {
-            reader.releaseLock();
+            reader?.releaseLock();
           }
           try {
             const result: unknown = JSON.parse(

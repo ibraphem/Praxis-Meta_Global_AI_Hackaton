@@ -13,9 +13,12 @@ import {
   SceneOverlays,
 } from "../components/scene-inventory";
 import { ResultsPanel } from "../components/results-panel";
-import { SceneObjectOverlays } from "../components/scene-objects";
+import {
+  SceneObjectOverlays,
+  SceneObjectPanel,
+} from "../components/scene-objects";
 import { createAnalysisJobProxy } from "../lib/server/analysis-job-proxy";
-import { sceneJob } from "./fixtures/scene";
+import { sceneJob, groupedSceneJob } from "./fixtures/scene";
 
 test("scene contracts preserve dynamic labels and reject promoted identities, cross-image evidence and native mask leakage", () => {
   const job = sceneJob();
@@ -176,13 +179,23 @@ test("object view uses one named primary label and keeps raw segmentation in Evi
 test("scene understanding proxy forwards exact checkpoint and target JSON to fixed actions", async () => {
   const job = sceneJob(),
     ref = job.scene!.snapshotRef!;
-  for (const action of ["reconcile-scene", "discover-terminals"] as const) {
+  for (const action of [
+    "reconcile-scene",
+    "discover-terminals",
+    "guide-scene",
+    "refresh-scene",
+  ] as const) {
     const payload = {
       snapshotId: ref.snapshotId,
       snapshotHash: ref.snapshotHash,
       ...(action === "discover-terminals"
         ? { objectIds: [job.scene!.graph!.objects[0]!.id] }
-        : {}),
+        : action === "guide-scene"
+          ? {
+              objectIds: [job.scene!.graph!.objects[0]!.id],
+              guidedBudget: { maxRequests: 3, maxPixels: 6000000 },
+            }
+          : {}),
     };
     const proxy = createAnalysisJobProxy({
       fetcher: async (url, init) => {
@@ -199,7 +212,7 @@ test("scene understanding proxy forwards exact checkpoint and target JSON to fix
           payload,
         );
         return Response.json(job, {
-          status: action === "discover-terminals" ? 202 : 200,
+          status: action !== "reconcile-scene" ? 202 : 200,
         });
       },
     });
@@ -212,6 +225,97 @@ test("scene understanding proxy forwards exact checkpoint and target JSON to fix
       action,
       job.analysisId,
     );
-    assert.equal(r.status, action === "discover-terminals" ? 202 : 200);
+    assert.equal(r.status, action !== "reconcile-scene" ? 202 : 200);
   }
+});
+
+test("proposed groups expose members, require an explicit terminal member, and have a separate-members presentation", () => {
+  const job = groupedSceneJob(),
+    graph = job.scene!.graph!;
+  const panel = renderToStaticMarkup(
+    createElement(SceneObjectPanel, {
+      graph,
+      result: job.result!,
+      job,
+      selectedId: graph.objects[0]!.id,
+      onSelect() {},
+      busy: false,
+      mode: "objects",
+      onModeChange() {},
+      onAction() {},
+    }),
+  );
+  assert.match(panel, /Grouped by proposal.*2.*members/);
+  assert.match(panel, /Original members \(2\)/);
+  assert.match(panel, /Confirm same object/);
+  assert.match(panel, /Selective terminal discovery/);
+  assert.match(panel, /not attempted/);
+  assert.match(panel, /disabled="">Discover selected terminals \(0\)/);
+  for (const object of graph.objects)
+    assert.match(panel, new RegExp(object.id));
+  const split = renderToStaticMarkup(
+    createElement(SceneObjectOverlays, {
+      graph,
+      result: job.result!,
+      selectedId: null,
+      onSelect() {},
+      separateMembers: true,
+    }),
+  );
+  assert.equal(
+    (split.match(/Inspect 9V battery snap connector object hypothesis/g) ?? [])
+      .length,
+    2,
+  );
+});
+
+test("reference-only terminal evidence has a distinct marker, unresolved contact and selective coverage", () => {
+  const job = sceneJob(),
+    graph = job.scene!.graph!,
+    object = graph.objects[0]!;
+  const id = "d5a65f52-5192-4a16-9d79-88ac7967064a";
+  graph.version = "scene-v2";
+  object.terminalIds.push(id);
+  graph.terminals = [
+    {
+      id,
+      objectId: object.id,
+      label: "A",
+      physicalKind: "unknown",
+      location: null,
+      locationStatus: "unresolved",
+      locationEvidence: "occluded",
+      reference: { position: [20, 30], evidence: "insulated_housing_junction" },
+      pinLabel: null,
+      electricalRole: null,
+      roleStatus: "unresolved",
+      roleMarking: null,
+      observationIds: [graph.observations[0]!.id],
+      attemptId: job.scene!.attempts[0]!.attemptId,
+      requestId: id,
+      model: "fixture",
+      promptVersion: "physical-terminals-v2",
+    },
+  ];
+  assert.ok(analysisJobSchema.safeParse(job).success);
+  const props = {
+    graph,
+    result: job.result!,
+    job,
+    selectedId: object.id,
+    onSelect() {},
+    busy: false,
+    mode: "objects" as const,
+    onModeChange() {},
+  };
+  const panel = renderToStaticMarkup(createElement(SceneObjectPanel, props));
+  assert.match(panel, /Contact location:.*unresolved/);
+  assert.match(panel, /Reference point:.*insulated housing junction/);
+  assert.match(panel, /examined but unresolved/);
+  assert.doesNotMatch(panel, /visible contact proposed/);
+  const overlay = renderToStaticMarkup(
+    createElement(SceneObjectOverlays, props),
+  );
+  assert.match(overlay, /Reference only: insulated_housing_junction/);
+  assert.doesNotMatch(overlay, /<circle/);
 });

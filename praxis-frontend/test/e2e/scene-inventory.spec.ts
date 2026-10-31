@@ -222,11 +222,195 @@ test("terminal proposals preserve unresolved roles and attachments without chang
     .getByRole("button", { name: /9V battery snap connector/ })
     .click();
   await panel
-    .getByRole("button", { name: "Discover terminals (1)", exact: true })
+    .getByRole("button", {
+      name: "Discover selected terminals (1)",
+      exact: true,
+    })
     .click();
   await expect(panel).toContainText("Terminal A");
   await expect(panel).toContainText("Role: unresolved");
   await expect(panel).toContainText("electrical connection unestablished");
   expect(requests).toBe(1);
   expect(job.revision).toBe(revision);
+});
+
+test("proposed identity groups are inspectable and separable and a review only changes identity", async ({
+  page,
+}) => {
+  const { groupedSceneJob } = await import("../fixtures/scene");
+  const { reconcileSceneGraph } =
+    await import("../../lib/scene-reconciliation");
+  const job = groupedSceneJob(1426, 1008),
+    graph = job.scene!.graph!;
+  const image = readFileSync(
+    resolve(
+      process.cwd(),
+      "test/fixtures/exact-hole-v1/jumper_wires_breadboard.png",
+    ),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}/image`, (route) =>
+    route.fulfill({ contentType: "image/png", body: image }),
+  );
+  let reviews = 0;
+  await page.route(
+    `**/api/analyses/${job.analysisId}/reconcile-scene`,
+    (route) => {
+      reviews++;
+      const body = route.request().postDataJSON();
+      expect(body.snapshotId).toBe(job.scene!.snapshotRef!.snapshotId);
+      expect(body.snapshotHash).toBe(job.scene!.snapshotRef!.snapshotHash);
+      expect(body.identityReview.decision).toBe("same_object");
+      job.scene!.graph = reconcileSceneGraph(graph);
+      job.scene!.graph.identityReviews = [
+        {
+          id: randomUUID(),
+          ...body.identityReview,
+          source: "human_review",
+          inputSnapshotId: body.snapshotId,
+          inputSnapshotHash: body.snapshotHash,
+          reviewedAt: Date.now(),
+        },
+      ];
+      job.scene!.snapshotRef!.snapshotId = randomUUID();
+      job.scene!.snapshotRef!.snapshotHash = "a".repeat(64);
+      return route.fulfill({ json: job });
+    },
+  );
+  await page.goto(`/?analysis=${job.analysisId}`);
+  const panel = page.getByRole("region", { name: "Reconciled scene objects" });
+  await expect(panel).toContainText("Grouped by proposal · 2 members");
+  await panel
+    .locator(".scene-inventory-list")
+    .getByRole("button")
+    .first()
+    .click();
+  await expect(panel).toContainText("Original members (2)");
+  await expect(
+    panel.getByRole("button", {
+      name: "Discover selected terminals (0)",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await panel
+    .getByRole("button", { name: /Muse inventory member/ })
+    .first()
+    .click();
+  await expect(
+    panel.getByRole("button", {
+      name: "Discover selected terminals (1)",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await panel
+    .getByRole("button", { name: "Show separately", exact: true })
+    .click();
+  await expect(
+    page
+      .getByLabel("Physical object hypotheses", { exact: true })
+      .getByRole("button"),
+  ).toHaveCount(2);
+  await panel.getByRole("button", { name: "Objects", exact: true }).click();
+  await panel
+    .getByRole("button", { name: "Confirm same object", exact: true })
+    .click();
+  await expect(panel).toContainText("Confirmed same object · 2 members");
+  await expect(panel).toContainText("electrical connection unestablished");
+  expect(job.scene!.graph!.terminals ?? []).toEqual([]);
+  expect(reviews).toBe(1);
+  await page.reload();
+  await expect(panel).toContainText("Confirmed same object · 2 members");
+});
+
+test("guided segmentation submits the bounded targets and exposes independent mask review", async ({
+  page,
+}) => {
+  const job = sceneJob(1426, 1008),
+    graph = job.scene!.graph!,
+    object = graph.objects[0]!;
+  const returnedMask = graph.observations.find((o) => o.source === "sam")!;
+  const returnedAssociation = graph.associations.find(
+    (a) => a.basis === "prompt_target",
+  )!;
+  graph.observations = graph.observations.filter(
+    (o) => o.id !== returnedMask.id,
+  );
+  graph.associations = graph.associations.filter(
+    (a) => a.id !== returnedAssociation.id,
+  );
+  object.segmentationStatus = "not_attempted";
+  const image = readFileSync(
+    resolve(
+      process.cwd(),
+      "test/fixtures/exact-hole-v1/jumper_wires_breadboard.png",
+    ),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}`, (r) =>
+    r.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}/image`, (r) =>
+    r.fulfill({ contentType: "image/png", body: image }),
+  );
+  let guided = 0,
+    reviews = 0;
+  await page.route(`**/api/analyses/${job.analysisId}/guide-scene`, (r) => {
+    guided++;
+    const body = r.request().postDataJSON();
+    expect(body.guidedBudget).toEqual({ maxRequests: 3, maxPixels: 6000000 });
+    expect(body.objectIds).toEqual([object.id]);
+    job.scene!.settings = {
+      timeoutMs: 45000,
+      maxRequests: 3,
+      maxPixels: 6000000,
+      maxCropPixels: 2000000,
+    };
+    graph.version = "scene-v2";
+    graph.observations.push(returnedMask);
+    graph.associations.push(returnedAssociation);
+    object.segmentationStatus = "candidates_returned";
+    job.scene!.budget.requests = 1;
+    return r.fulfill({ status: 202, json: job });
+  });
+  await page.route(`**/api/analyses/${job.analysisId}/reconcile-scene`, (r) => {
+    reviews++;
+    const body = r.request().postDataJSON();
+    expect(body.maskReview.decision).toBe("rejected");
+    expect(body.maskReview.source).toBe("human_review");
+    graph.maskIdentityReviews = [
+      {
+        id: randomUUID(),
+        ...body.maskReview,
+        inputSnapshotId: body.snapshotId,
+        inputSnapshotHash: body.snapshotHash,
+        reviewedAt: Date.now(),
+      },
+    ];
+    return r.fulfill({ json: job });
+  });
+  await page.goto(`/?analysis=${job.analysisId}`);
+  const panel = page.getByRole("region", { name: "Reconciled scene objects" });
+  await panel
+    .getByRole("button", { name: "Segment scene targets (1)", exact: true })
+    .click();
+  await panel
+    .locator(".scene-inventory-list")
+    .getByRole("button")
+    .first()
+    .click();
+  await expect(panel).toContainText("Mask identity: unreviewed");
+  await expect(
+    panel.getByRole("button", { name: "Accept object mask", exact: true }),
+  ).toBeDisabled();
+  await panel
+    .getByLabel("Visible mask evidence")
+    .fill("This mask follows the adjacent wire, not the connector housing.");
+  await panel
+    .getByRole("button", { name: "Reject object mask", exact: true })
+    .click();
+  await expect(panel).toContainText("rejected · human review");
+  expect(guided).toBe(1);
+  expect(reviews).toBe(1);
+  expect(graph.electricalConnectionStatus).toBe("unestablished");
 });

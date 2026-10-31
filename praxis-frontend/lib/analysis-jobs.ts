@@ -59,6 +59,8 @@ export const attemptSchema = z
       .enum(["inventory", "guided", "terminals", "reconcile"])
       .optional(),
     terminalObjectIds: z.array(z.uuid()).max(2).optional(),
+    guidedObjectIds: z.array(z.uuid()).max(3).optional(),
+    inventoryOnly: z.boolean().optional(),
     sceneSnapshotId: z.uuid().optional(),
     sceneSnapshotHash: z
       .string()

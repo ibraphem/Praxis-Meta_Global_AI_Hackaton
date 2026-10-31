@@ -94,6 +94,8 @@ export function registerAnalysisRoutes(
   for (const [path, operation] of [
     ['reconcile-scene', 'reconcile'],
     ['discover-terminals', 'terminals'],
+    ['guide-scene', 'guided'],
+    ['refresh-scene', 'inventory'],
   ] as const)
     app.post(`/api/analyses/:id/${path}`, async (request, reply) => {
       const job = store.requestSceneUnderstanding(
@@ -101,9 +103,9 @@ export function registerAnalysisRoutes(
         operation,
         request.body,
       );
-      if (operation === 'terminals') setImmediate(kick);
+      if (operation !== 'reconcile') setImmediate(kick);
       return reply
-        .code(operation === 'terminals' ? 202 : 200)
+        .code(operation !== 'reconcile' ? 202 : 200)
         .send(publicJob(job));
     });
   for (const stage of ['sam', 'muse', 'scene'] as const)

@@ -5,7 +5,8 @@ import { decodeMaskToSVGPath } from '@meta-sam/parser';
 import type { Config } from '../config.js';
 import type { MetaClient } from '../lib/meta-client.js';
 import type { AnalysisTrace } from '../lib/diagnostics.js';
-import { invalidProviderOutput } from '../lib/errors.js';
+import type { SceneRequestRecorder } from '../jobs/scene-request-evidence.js';
+import { AppError, invalidProviderOutput } from '../lib/errors.js';
 import type { BoundingBox, PreparedImage } from '../schemas/vision.js';
 import { maskSchema, type EncodedMask } from '../schemas/geometry.js';
 import {
@@ -14,11 +15,13 @@ import {
   type SceneGraph,
   type SceneObject,
   type SceneObservation,
-  type SceneWork,
 } from '../schemas/scene.js';
 import type { SamSnapshot } from './vision.js';
 import type { SnapshotRef } from '../jobs/snapshots.js';
 import { recoveryEligible } from './wire-evidence-policy.js';
+import type { SceneTarget } from './scene-guidance.js';
+export { planSceneTargets } from './scene-guidance.js';
+import { matchInventoryRediscoveries } from './scene-identity.js';
 import { museInput } from './muse-image.js';
 import { normalizedBoxToPixels } from './wire-refinement.js';
 import { decodeSamResponse } from './sam.js';
@@ -162,21 +165,40 @@ export function buildSceneGraph(input: {
   model: string;
   previous?: SceneGraph;
 }): SceneGraph {
-  const graph: SceneGraph = {
-    version: 'scene-v1',
-    promptVersion: 'open-inventory-v1',
-    imageHash: input.imageHash,
-    image: {
-      width: input.snapshot.image.width,
-      height: input.snapshot.image.height,
-    },
-    objects: [],
-    observations: [],
-    associations: [],
-    electricalConnectionStatus: 'unestablished',
-  };
-  for (const proposal of input.inventory.objects) {
-    const object: SceneObject = {
+  if (
+    input.previous &&
+    (input.previous.imageHash !== input.imageHash ||
+      input.previous.image.width !== input.snapshot.image.width ||
+      input.previous.image.height !== input.snapshot.image.height)
+  )
+    throw invalidProviderOutput();
+  const graph: SceneGraph = input.previous
+    ? structuredClone(input.previous)
+    : {
+        version: 'scene-v1',
+        promptVersion: 'open-inventory-v1',
+        imageHash: input.imageHash,
+        image: {
+          width: input.snapshot.image.width,
+          height: input.snapshot.image.height,
+        },
+        objects: [],
+        observations: [],
+        associations: [],
+        electricalConnectionStatus: 'unestablished',
+      };
+  const identities = matchInventoryRediscoveries(
+    graph,
+    input.inventory.objects.map((p) => ({
+      ...p,
+      bbox: normalizedBoxToPixels(p.box, input.snapshot.image),
+    })),
+  );
+  for (const [index, proposal] of input.inventory.objects.entries()) {
+    const reused = graph.objects.find(
+      (o) => o.id === identities[index]!.matchedObjectId,
+    );
+    const object: SceneObject = reused ?? {
       id: randomUUID(),
       proposedType: proposal.proposedType,
       category: proposal.category,
@@ -192,9 +214,10 @@ export function buildSceneGraph(input: {
       source: 'muse',
       attemptId: input.attemptId,
       model: input.model,
-      bbox: object.bbox,
+      bbox: normalizedBoxToPixels(proposal.box, input.snapshot.image),
+      prompt: proposal.proposedType,
     };
-    graph.objects.push(object);
+    if (!reused) graph.objects.push(object);
     graph.observations.push(observation);
     graph.associations.push({
       id: randomUUID(),
@@ -234,7 +257,7 @@ export function buildSceneGraph(input: {
         ? {}
         : { confidence: candidate.confidence }),
     };
-    graph.observations.push(observation);
+    if (!priorObservation) graph.observations.push(observation);
     const matches = graph.objects.filter(
       (o) =>
         matchesBaseline(o, candidate.type) &&
@@ -259,90 +282,43 @@ export function buildSceneGraph(input: {
           : 'unresolved',
         terminalIds: [],
       };
-      graph.objects.push(hypothesis);
-      matches.push(hypothesis);
+      const existing = graph.objects.find((o) => o.id === hypothesis.id);
+      if (!existing) graph.objects.push(hypothesis);
+      matches.push(existing ?? hypothesis);
     }
     for (const object of matches) {
-      graph.associations.push({
-        id: randomUUID(),
-        objectId: object.id,
-        observationId: observation.id,
-        relation: 'unknown',
-        basis:
-          object.category === 'unknown'
-            ? 'unclassified_observation'
-            : 'category_and_overlap',
-        status: 'proposed',
-        attemptId: input.attemptId,
-      });
-      if (candidate.encodedMask)
+      const basis =
+        object.category === 'unknown'
+          ? ('unclassified_observation' as const)
+          : ('category_and_overlap' as const);
+      if (
+        !graph.associations.some(
+          (a) =>
+            a.objectId === object.id &&
+            a.observationId === observation.id &&
+            a.basis === basis,
+        )
+      )
+        graph.associations.push({
+          id: randomUUID(),
+          objectId: object.id,
+          observationId: observation.id,
+          relation: 'unknown',
+          basis:
+            object.category === 'unknown'
+              ? 'unclassified_observation'
+              : 'category_and_overlap',
+          status: 'proposed',
+          attemptId: input.attemptId,
+        });
+      if (
+        candidate.encodedMask &&
+        ['not_attempted', 'unresolved'].includes(object.segmentationStatus)
+      )
         object.segmentationStatus = 'candidates_returned';
     }
   }
   return sceneGraphSchema.parse(graph);
-}
-
-export interface SceneTarget {
-  objectId: string;
-  prompt: string;
-  crop: BoundingBox;
-  reason: SceneWork['reason'];
-  priority: number;
-}
-/** Deterministic evidence priorities. No model-estimated cost or automatic pin inference. */
-export function planSceneTargets(
-  graph: SceneGraph,
-  image: PreparedImage,
-  maxCropPixels: number,
-): SceneTarget[] {
-  const priorities = {
-    connector: 0,
-    conductor: 1,
-    power_source: 2,
-    unknown: 3,
-    electrical_component: 4,
-    board: 5,
-  };
-  const reasons: Record<SceneObject['category'], SceneWork['reason']> = {
-    connector: 'missing_connector',
-    conductor: 'missing_conductor',
-    power_source: 'power_source',
-    unknown: 'unclassified_object',
-    electrical_component: 'other_component',
-    board: 'other_component',
-  };
-  return graph.objects
-    .filter(
-      (o) => o.segmentationStatus === 'not_attempted' && o.category !== 'board',
-    )
-    .flatMap((o) => {
-      const [x, y, w, h] = o.bbox;
-      const padding = Math.max(4, Math.round(Math.max(w, h) * 0.15));
-      const left = Math.max(0, x - padding),
-        top = Math.max(0, y - padding);
-      const crop: BoundingBox = [
-        left,
-        top,
-        Math.min(image.width, x + w + padding) - left,
-        Math.min(image.height, y + h + padding) - top,
-      ];
-      if (crop[2] * crop[3] > maxCropPixels) return [];
-      return [
-        {
-          objectId: o.id,
-          prompt: o.proposedType,
-          crop,
-          priority: priorities[o.category],
-          reason: reasons[o.category],
-        },
-      ];
-    })
-    .sort(
-      (a, b) =>
-        a.priority - b.priority ||
-        a.crop[2] * a.crop[3] - b.crop[2] * b.crop[3] ||
-        a.objectId.localeCompare(b.objectId),
-    );
 }
 
 export interface NativeSceneObservation {
@@ -350,6 +326,16 @@ export interface NativeSceneObservation {
   encodedMask: EncodedMask;
   crop: BoundingBox;
   samObjectId?: number;
+}
+export async function prepareSceneCrop(
+  image: PreparedImage,
+  crop: BoundingBox,
+) {
+  const [left, top, width, height] = crop;
+  return sharp(Buffer.from(image.dataUrl.split(',')[1]!, 'base64'))
+    .extract({ left, top, width, height })
+    .jpeg({ quality: 90 })
+    .toBuffer();
 }
 export async function segmentSceneTarget(
   config: Config,
@@ -359,96 +345,129 @@ export async function segmentSceneTarget(
   attemptId: string,
   signal: AbortSignal,
   trace?: AnalysisTrace,
+  options?: {
+    prompt?: string;
+    record?: (cropBytes: Buffer) => SceneRequestRecorder;
+  },
 ) {
   const [left, top, width, height] = target.crop;
-  const bytes = await sharp(Buffer.from(image.dataUrl.split(',')[1]!, 'base64'))
-    .extract({ left, top, width, height })
-    .jpeg({ quality: 90 })
-    .toBuffer();
-  signal.throwIfAborted();
-  const raw = await client.post(
-    'responses',
-    {
-      model: config.META_SAM_MODEL,
-      stream: false,
-      input: [
-        {
-          type: 'message',
-          role: 'user',
-          content: [
-            { type: 'input_text', text: target.prompt },
-            {
-              type: 'input_image',
-              image_url: `data:image/jpeg;base64,${bytes.toString('base64')}`,
-            },
-          ],
-        },
-      ],
-      metadata: { include_confidence: 'true', mask_encoding: 'one_bit' },
-    },
-    signal,
-    {
-      stage: 'sam.scene_guided',
-      timeoutMs: config.SCENE_STAGE_TIMEOUT_MS,
-      maxRetries: 0,
-      imageDimensions: [{ width, height }],
-      ...(trace ? { trace } : {}),
-    },
-  );
-  signal.throwIfAborted();
-  const detections = decodeSamResponse(
-    raw,
-    'scene_observation',
-    { width, height },
-    true,
-  );
-  // Bound response retention before publishing anything; never silently truncate evidence.
-  if (
-    detections.length > 32 ||
-    detections.reduce((n, d) => n + (d.encodedMask?.payload.length ?? 0), 0) >
-      2_000_000
-  )
-    throw invalidProviderOutput();
-  const observations: SceneObservation[] = [],
-    native: NativeSceneObservation[] = [];
-  let previewPixels = 0;
-  for (const detection of detections) {
-    const observationId = randomUUID();
-    const pixels =
-      (detection.encodedMask?.width ?? 0) *
-      (detection.encodedMask?.height ?? 0);
-    const preview =
-      previewPixels + pixels <= 2_000_000
-        ? maskPreview(detection.encodedMask)
-        : undefined;
-    previewPixels += pixels;
-    observations.push({
-      id: observationId,
-      kind: 'mask',
-      source: 'sam',
-      attemptId,
-      model: config.META_SAM_MODEL,
-      bbox: [
-        left + detection.bbox[0],
-        top + detection.bbox[1],
-        detection.bbox[2],
-        detection.bbox[3],
-      ],
-      prompt: target.prompt,
-      ...(preview ? { mask: preview } : {}),
-      ...(detection.confidence === undefined
-        ? {}
-        : { confidence: detection.confidence }),
-    });
-    if (detection.encodedMask)
-      native.push({
-        observationId,
-        encodedMask: detection.encodedMask,
-        crop: target.crop,
-        ...(detection.samObjectId === undefined
-          ? {}
-          : { samObjectId: detection.samObjectId }),
+  const bytes = await prepareSceneCrop(image, target.crop);
+  const recorder = options?.record?.(bytes);
+  let phase = 'provider';
+  try {
+    signal.throwIfAborted();
+    const raw = await client.post(
+      'responses',
+      {
+        model: config.META_SAM_MODEL,
+        stream: false,
+        input: [
+          {
+            type: 'message',
+            role: 'user',
+            content: [
+              { type: 'input_text', text: options?.prompt ?? target.prompt },
+              {
+                type: 'input_image',
+                image_url: `data:image/jpeg;base64,${bytes.toString('base64')}`,
+              },
+            ],
+          },
+        ],
+        metadata: { include_confidence: 'true', mask_encoding: 'one_bit' },
+      },
+      signal,
+      {
+        stage: 'sam.scene_guided',
+        ...(recorder ? { evidence: recorder.transport } : {}),
+        timeoutMs: config.SCENE_STAGE_TIMEOUT_MS,
+        maxRetries: 0,
+        imageDimensions: [{ width, height }],
+        ...(trace ? { trace } : {}),
+      },
+    );
+    signal.throwIfAborted();
+    phase = 'decoding';
+    const detections = decodeSamResponse(
+      raw,
+      'scene_observation',
+      { width, height },
+      true,
+    );
+    const parsedEvidence = {
+      candidateCount: detections.length,
+      candidates: detections,
+      previewUnavailable: [] as string[],
+      outcome: detections.length
+        ? ('candidates_returned' as const)
+        : ('empty_output' as const),
+    };
+    recorder?.decoded(parsedEvidence);
+    // Bound response retention before publishing anything; never silently truncate evidence.
+    if (
+      detections.length > 32 ||
+      detections.reduce((n, d) => n + (d.encodedMask?.payload.length ?? 0), 0) >
+        2_000_000
+    ) {
+      recorder?.decoded({
+        ...parsedEvidence,
+        outcome: 'candidate_limit_rejected',
       });
+      phase = 'quota';
+      throw invalidProviderOutput();
+    }
+    const observations: SceneObservation[] = [],
+      native: NativeSceneObservation[] = [];
+    let previewPixels = 0;
+    for (const detection of detections) {
+      const observationId = randomUUID();
+      const pixels =
+        (detection.encodedMask?.width ?? 0) *
+        (detection.encodedMask?.height ?? 0);
+      const preview =
+        previewPixels + pixels <= 2_000_000
+          ? maskPreview(detection.encodedMask)
+          : undefined;
+      if (detection.encodedMask && !preview)
+        parsedEvidence.previewUnavailable.push(
+          `${detection.samObjectId ?? observationId}:${previewPixels + pixels > 2000000 ? 'preview_pixel_budget' : 'preview_decode_or_schema_rejected'}`,
+        );
+      previewPixels += pixels;
+      observations.push({
+        id: observationId,
+        kind: detection.encodedMask ? 'mask' : 'bbox',
+        source: 'sam',
+        attemptId,
+        model: config.META_SAM_MODEL,
+        bbox: [
+          left + detection.bbox[0],
+          top + detection.bbox[1],
+          detection.bbox[2],
+          detection.bbox[3],
+        ],
+        prompt: target.prompt,
+        ...(preview ? { mask: preview } : {}),
+        ...(detection.confidence === undefined
+          ? {}
+          : { confidence: detection.confidence }),
+      });
+      if (detection.encodedMask)
+        native.push({
+          observationId,
+          encodedMask: detection.encodedMask,
+          crop: target.crop,
+          ...(detection.samObjectId === undefined
+            ? {}
+            : { samObjectId: detection.samObjectId }),
+        });
+    }
+    recorder?.decoded(parsedEvidence);
+    return { observations, native };
+  } catch (error) {
+    recorder?.failed(
+      error instanceof AppError ? error.code : 'STAGE_FAILED',
+      phase,
+    );
+    throw error;
   }
-  return { observations, native };
 }

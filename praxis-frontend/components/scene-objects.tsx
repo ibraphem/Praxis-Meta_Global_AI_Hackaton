@@ -1,14 +1,18 @@
+import { useState } from "react";
+import { planSceneTargets } from "@/lib/scene-guidance";
 import type { Analysis } from "@/lib/vision";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
 import type { SceneGraph } from "@/lib/scene";
 import {
   reconcileSceneView,
   preferredTerminalTargets,
+  inventoryObjectIds,
   type DisplayObject,
 } from "@/lib/scene-reconciliation";
 
-export type SceneMode = "objects" | "evidence";
-export type SceneAction = "reconcile-scene" | "discover-terminals";
+export type SceneMode = "objects" | "members" | "evidence";
+export type SceneAction =
+  "reconcile-scene" | "discover-terminals" | "guide-scene" | "refresh-scene";
 export function SceneModeControl({
   mode,
   onChange,
@@ -29,6 +33,14 @@ export function SceneModeControl({
         onClick={() => onChange("objects")}
       >
         Objects
+      </button>
+      <button
+        type="button"
+        className="button button-secondary"
+        aria-pressed={mode === "members"}
+        onClick={() => onChange("members")}
+      >
+        Show separately
       </button>
       <button
         type="button"
@@ -63,7 +75,14 @@ export function SceneObjectPanel({
   mode: SceneMode;
   onModeChange: (mode: SceneMode) => void;
 }) {
-  const view = reconcileSceneView(graph, result?.objects ?? []);
+  const view = reconcileSceneView(
+    graph,
+    result?.objects ?? [],
+    mode === "members",
+  );
+  const [maskNotes, setMaskNotes] = useState<Record<string, string>>({});
+  const [terminalMember, setTerminalMember] = useState<string | null>(null);
+  const inventory = inventoryObjectIds(graph);
   const selected = view.objects.find(
     (o) =>
       o.id === selectedId ||
@@ -71,24 +90,38 @@ export function SceneObjectPanel({
       o.baselineIds.includes(selectedId ?? ""),
   );
   const selectedIdInGraph =
-    selected?.sceneObjectIds.find((id) =>
-      graph.objects.some((o) => o.id === id && o.category !== "unknown"),
-    ) ?? selected?.sceneObjectIds[0];
+    selected && selected.sceneObjectIds.length > 1
+      ? terminalMember &&
+        selected.sceneObjectIds.includes(terminalMember) &&
+        inventory.has(terminalMember)
+        ? terminalMember
+        : undefined
+      : selectedId && inventory.has(selectedId)
+        ? selectedId
+        : undefined;
   const attempted = new Set([
     ...(job?.scene?.terminalWork?.map((w) => w.objectId) ?? []),
     ...(graph.terminals ?? []).map((t) => t.objectId),
   ]);
-  const targets =
-    selectedIdInGraph &&
-    selected?.sceneObjectIds.includes(selectedId ?? "") &&
-    !attempted.has(selectedIdInGraph) &&
-    graph.objects.find((o) => o.id === selectedIdInGraph)?.category !== "board"
+  const targets = selected
+    ? selectedIdInGraph &&
+      !attempted.has(selectedIdInGraph) &&
+      graph.objects.find((o) => o.id === selectedIdInGraph)?.category !==
+        "board"
       ? [selectedIdInGraph]
-      : preferredTerminalTargets(graph).filter((id) => !attempted.has(id));
+      : []
+    : preferredTerminalTargets(graph).filter((id) => !attempted.has(id));
   const binding = job?.scene?.snapshotRef;
   const terminalBudget = job?.scene?.settings?.maxTerminalRequests ?? 2;
   const remaining = terminalBudget - (job?.scene?.budget.terminalRequests ?? 0);
   const targetIds = targets.slice(0, Math.max(0, remaining));
+  const guidedTargets = planSceneTargets(
+    graph,
+    graph.image,
+    job?.scene?.settings?.maxCropPixels ?? 2000000,
+  )
+    .filter((t) => !job?.scene?.work.some((w) => w.objectId === t.objectId))
+    .slice(0, Math.max(0, 3 - (job?.scene?.budget.requests ?? 0)));
   const selectedTerminals = (graph.terminals ?? []).filter((t) =>
     selected?.sceneObjectIds.includes(t.objectId),
   );
@@ -99,7 +132,10 @@ export function SceneObjectPanel({
     >
       <h2>Object hypotheses</h2>
       <SceneModeControl mode={mode} onChange={onModeChange} />
-      <p>{view.objects.length} display groups · identities remain proposals.</p>
+      <p>
+        {view.objects.length} displayed hypotheses · identity reviews apply only
+        to same-object claims.
+      </p>
       <p>
         Dashed boxes show approximate Muse locations. Masks are candidate
         segmentation, shown on selection or in Evidence. No boundary is
@@ -117,6 +153,14 @@ export function SceneObjectPanel({
               }
             >
               <strong>{o.name}</strong>
+              {o.grouping && (
+                <span>
+                  {o.grouping === "confirmed"
+                    ? "Confirmed same object"
+                    : "Grouped by proposal"}{" "}
+                  · {o.sceneObjectIds.length} members
+                </span>
+              )}
               <span>
                 {o.locationKind === "approximate_inventory"
                   ? "Approximate inventory location"
@@ -136,8 +180,52 @@ export function SceneObjectPanel({
         <section aria-label="Selected object evidence">
           <h3>{selected.name}</h3>
           <p>
-            Physical identity proposed · electrical connection unestablished.
+            {selected.grouping === "confirmed"
+              ? "Same-object identity confirmed by review"
+              : "Physical identity proposed"}{" "}
+            · electrical connection unestablished.
           </p>
+          <h4>Original members ({selected.sceneObjectIds.length})</h4>
+          <p>
+            Choose the exact inventory member for selective terminal discovery.
+            Identity review does not confirm contacts, roles, attachments or
+            electrical connectivity.
+          </p>
+          {selected.sceneObjectIds.map((id) => {
+            const member = graph.objects.find((o) => o.id === id)!;
+            return (
+              <div key={id} style={{ margin: "10px 0" }}>
+                <button
+                  type="button"
+                  className="button button-secondary"
+                  style={{ width: "100%", textAlign: "left" }}
+                  onClick={() => {
+                    onSelect(id);
+                    setTerminalMember(id);
+                  }}
+                  aria-pressed={selectedIdInGraph === id}
+                >
+                  {member.proposedType} ·{" "}
+                  {inventory.has(id)
+                    ? "Muse inventory member"
+                    : "SAM evidence hypothesis"}
+                </button>
+                <small style={{ display: "block", overflowWrap: "anywhere" }}>
+                  {id} · box [{member.bbox.join(", ")}]
+                </small>
+              </div>
+            );
+          })}
+          {!!selected.baselineIds.length && (
+            <details>
+              <summary>Provisionally linked baseline observations</summary>
+              {selected.baselineIds.map((id) => (
+                <p key={id}>
+                  {id} · candidate evidence, not a confirmed identity
+                </p>
+              ))}
+            </details>
+          )}
           <button
             type="button"
             className="button button-secondary"
@@ -152,21 +240,147 @@ export function SceneObjectPanel({
                 selected.sceneObjectIds.includes(r.toObjectId),
             )
             .map((r) => (
-              <p key={r.id}>
-                {r.type.replaceAll("_", " ")} · {r.status} ·{" "}
-                {r.source === "local"
-                  ? "local reconciliation"
-                  : "visual model proposal"}
-                <br />
-                {
-                  graph.objects.find((o) => o.id === r.fromObjectId)
-                    ?.proposedType
-                }{" "}
-                →{" "}
-                {graph.objects.find((o) => o.id === r.toObjectId)?.proposedType}
-              </p>
+              <div key={r.id}>
+                <p>
+                  {r.type.replaceAll("_", " ")} · {r.status} ·{" "}
+                  {r.source === "local"
+                    ? "local reconciliation"
+                    : "visual model proposal"}
+                  <br />
+                  {
+                    graph.objects.find((o) => o.id === r.fromObjectId)
+                      ?.proposedType
+                  }{" "}
+                  →{" "}
+                  {
+                    graph.objects.find((o) => o.id === r.toObjectId)
+                      ?.proposedType
+                  }
+                </p>
+                {r.type === "same_object" && (
+                  <>
+                    <p>
+                      Identity review:{" "}
+                      {graph.identityReviews
+                        ?.filter((v) => v.relationId === r.id)
+                        .at(-1)
+                        ?.decision.replaceAll("_", " ") ?? "not reviewed"}
+                    </p>
+                    {binding &&
+                      onAction &&
+                      (
+                        [
+                          ["same_object", "Confirm same object"],
+                          ["different_objects", "Keep as different objects"],
+                          ["uncertain", "Identity uncertain"],
+                        ] as const
+                      ).map(([decision, label]) => (
+                        <button
+                          key={decision}
+                          type="button"
+                          className="button button-secondary"
+                          style={{ width: "100%", margin: "4px 0" }}
+                          disabled={busy}
+                          onClick={() =>
+                            onAction("reconcile-scene", {
+                              snapshotId: binding.snapshotId,
+                              snapshotHash: binding.snapshotHash,
+                              identityReview: { relationId: r.id, decision },
+                            })
+                          }
+                        >
+                          {label}
+                        </button>
+                      ))}
+                  </>
+                )}
+              </div>
             ))}
-          <h4>Terminals</h4>
+          <h4>Guided mask identity</h4>
+          <p>
+            Prompt targeting and box overlap do not verify a mask’s physical
+            identity. Inspect the actual pixels, neighboring objects and
+            conductor paths.
+          </p>
+          {graph.associations
+            .filter(
+              (a) =>
+                a.basis === "prompt_target" &&
+                selected.sceneObjectIds.includes(a.objectId) &&
+                graph.observations.some(
+                  (o) => o.id === a.observationId && o.kind === "mask",
+                ),
+            )
+            .map((a) => {
+              const review = graph.maskIdentityReviews
+                ?.filter(
+                  (r) =>
+                    r.objectId === a.objectId &&
+                    r.observationId === a.observationId,
+                )
+                .at(-1);
+              return (
+                <div key={a.id} style={{ margin: "10px 0" }}>
+                  <small style={{ overflowWrap: "anywhere" }}>
+                    {a.observationId}
+                  </small>
+                  <p>
+                    Mask identity:{" "}
+                    {review
+                      ? `${review.decision} · ${review.source.replaceAll("_", " ")}`
+                      : "unreviewed"}
+                    . {review?.reason}
+                  </p>
+                  <label>
+                    Visible mask evidence
+                    <textarea
+                      maxLength={600}
+                      value={maskNotes[a.id] ?? ""}
+                      onChange={(e) =>
+                        setMaskNotes({ ...maskNotes, [a.id]: e.target.value })
+                      }
+                    />
+                  </label>
+                  {binding &&
+                    onAction &&
+                    (
+                      [
+                        ["accepted", "Accept object mask"],
+                        ["rejected", "Reject object mask"],
+                        ["uncertain", "Mask identity uncertain"],
+                      ] as const
+                    ).map(([decision, label]) => (
+                      <button
+                        key={decision}
+                        type="button"
+                        className="button button-secondary"
+                        disabled={
+                          busy || (maskNotes[a.id]?.trim().length ?? 0) < 8
+                        }
+                        style={{ margin: "4px 0" }}
+                        onClick={() => {
+                          const reason = maskNotes[a.id];
+                          if (reason && reason.trim().length >= 8)
+                            onAction("reconcile-scene", {
+                              snapshotId: binding.snapshotId,
+                              snapshotHash: binding.snapshotHash,
+                              maskReview: {
+                                objectId: a.objectId,
+                                observationId: a.observationId,
+                                decision,
+                                source: "human_review",
+                                reason: reason.trim(),
+                              },
+                            });
+                        }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                </div>
+              );
+            })}
+          <h4>Contact and reference proposals</h4>
           {!selectedTerminals.length && (
             <p>No terminal positions established for this object.</p>
           )}
@@ -179,12 +393,19 @@ export function SceneObjectPanel({
                 Terminal {t.label} · {t.physicalKind}
               </strong>
               <p>
-                Location:{" "}
+                Contact location:{" "}
                 {t.location
-                  ? `${t.location.join(", ")} · model-observed`
+                  ? `${t.location.join(", ")} · ${t.locationEvidence === "visible_lead" ? "legacy exposed lead; contact unestablished" : "model-proposed visible contact"}`
                   : "unresolved"}{" "}
                 ({t.locationEvidence.replaceAll("_", " ")}).
               </p>
+              {t.reference && (
+                <p>
+                  Reference point: {t.reference.position.join(", ")} ·{" "}
+                  {t.reference.evidence.replaceAll("_", " ")}. This does not
+                  locate a hidden contact.
+                </p>
+              )}
               <p>
                 Role: {t.electricalRole ?? "unresolved"} · {t.roleStatus}.{" "}
                 {t.roleMarking
@@ -229,8 +450,120 @@ export function SceneObjectPanel({
           </button>
         ))}
       </details>
+      <h3>Selective terminal discovery</h3>
+      <p>
+        Suggested coverage prioritizes battery snap connectors and LED
+        assemblies, at most two objects within the request budget. Other
+        components are not examined automatically.
+      </p>
+      <details>
+        <summary>Terminal discovery coverage</summary>
+        {graph.objects
+          .filter((o) => inventory.has(o.id))
+          .map((o) => {
+            const work = job?.scene?.terminalWork
+              ?.filter((w) => w.objectId === o.id)
+              .at(-1);
+            const terminals = (graph.terminals ?? []).filter(
+              (t) => t.objectId === o.id,
+            );
+            const contact = terminals.some(
+              (t) => t.locationEvidence === "visible_terminal" && t.location,
+            );
+            const queued = job?.scene?.attempts.some(
+              (a) =>
+                ["queued", "running"].includes(a.status) &&
+                a.terminalObjectIds?.includes(o.id),
+            );
+            const coverage = contact
+              ? "visible contact proposed"
+              : work?.status === "succeeded" || terminals.length
+                ? "examined but unresolved"
+                : work
+                  ? `request ${work.status}; coverage unresolved`
+                  : queued
+                    ? "request queued; coverage unresolved"
+                    : "not attempted";
+            return (
+              <p key={o.id}>
+                {o.proposedType}: {coverage}
+              </p>
+            );
+          })}
+      </details>
       {binding && onAction && (
         <div style={{ marginTop: 16 }}>
+          <h3>Guided scene segmentation</h3>
+          <p>
+            Used {job?.scene?.budget.requests ?? 0}/3 requests ·{" "}
+            {job?.scene?.budget.pixels ?? 0}/6,000,000 crop pixels.
+          </p>
+          <p>
+            At most three cumulative SAM requests and six million crop pixels.
+            Priority: battery snap connector, LED housing, then an unsegmented
+            conductor. Each response remains candidate evidence until its
+            physical-object association is reviewed.
+          </p>
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={busy || !guidedTargets.length}
+            onClick={() =>
+              onAction("guide-scene", {
+                snapshotId: binding.snapshotId,
+                snapshotHash: binding.snapshotHash,
+                objectIds: guidedTargets.map((t) => t.objectId),
+                guidedBudget: { maxRequests: 3, maxPixels: 6000000 },
+              })
+            }
+          >
+            Segment scene targets ({guidedTargets.length})
+          </button>
+          <p>
+            {guidedTargets.map((t) => t.prompt).join("; ") ||
+              "No unattempted targets within this request budget."}
+          </p>
+          {!!job?.scene?.work.length && (
+            <details>
+              <summary>
+                Guided segmentation outcomes ({job.scene.work.length})
+              </summary>
+              {job.scene.work.map((work) => (
+                <p key={work.requestId}>
+                  {
+                    graph.objects.find((o) => o.id === work.objectId)
+                      ?.proposedType
+                  }
+                  :{" "}
+                  {work.status === "no_match"
+                    ? "No mask candidates returned"
+                    : work.status}{" "}
+                  · provider {work.upstreamOutcome}
+                  {work.finishedAt !== undefined
+                    ? ` · ${work.finishedAt - work.startedAt} ms`
+                    : ""}
+                </p>
+              ))}
+            </details>
+          )}
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={busy}
+            onClick={() =>
+              onAction("refresh-scene", {
+                snapshotId: binding.snapshotId,
+                snapshotHash: binding.snapshotHash,
+              })
+            }
+          >
+            Refresh inventory (1 Muse request)
+          </button>
+          <p>
+            Preserves previous object identities and evidence. Ambiguous
+            rediscoveries remain separate hypotheses. No guided requests are
+            started by refresh.
+          </p>
           <button
             type="button"
             className="button button-secondary"
@@ -257,7 +590,7 @@ export function SceneObjectPanel({
               })
             }
           >
-            Discover terminals ({targetIds.length})
+            Discover selected terminals ({targetIds.length})
           </button>
           <p>
             {targetIds
@@ -327,13 +660,19 @@ export function SceneObjectOverlays({
   result,
   selectedId,
   onSelect,
+  separateMembers = false,
 }: {
   graph: SceneGraph;
   result: Analysis | null;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  separateMembers?: boolean;
 }) {
-  const view = reconcileSceneView(graph, result?.objects ?? []),
+  const view = reconcileSceneView(
+      graph,
+      result?.objects ?? [],
+      separateMembers,
+    ),
     layout = labels(view.objects, graph);
   const selected = view.objects.find(
     (o) =>
@@ -420,6 +759,23 @@ export function SceneObjectOverlays({
               <title>{`Terminal ${t.label}: ${t.locationEvidence}; role ${t.electricalRole ?? "unresolved"}`}</title>
             </circle>
           ))}
+        {(graph.terminals ?? [])
+          .filter(
+            (t) => t.reference && selected?.sceneObjectIds.includes(t.objectId),
+          )
+          .map((t) => (
+            <rect
+              key={`reference:${t.id}`}
+              x={t.reference!.position[0] - 3}
+              y={t.reference!.position[1] - 3}
+              width={6}
+              height={6}
+              fill="none"
+              stroke="#156a9b"
+            >
+              <title>{`Reference only: ${t.reference!.evidence}; hidden contact unlocated`}</title>
+            </rect>
+          ))}
       </svg>
       {view.objects.map((o) => {
         const l = layout.get(o.id)!;
@@ -428,7 +784,7 @@ export function SceneObjectOverlays({
             key={o.id}
             type="button"
             className={`scene-object-label ${selected?.id === o.id ? "is-selected" : ""}`}
-            title={o.name}
+            title={`${o.name}${o.grouping ? ` · ${o.grouping === "confirmed" ? "confirmed same object" : "grouped by proposal"} · ${o.sceneObjectIds.length} members` : ""}`}
             style={{
               top: `${l.top}%`,
               ...(l.side === "left" ? { left: "1%" } : { right: "1%" }),

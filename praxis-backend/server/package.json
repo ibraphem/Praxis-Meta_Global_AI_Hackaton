@@ -21,7 +21,10 @@
     "test": "node --import tsx --test test/*.test.ts",
     "format": "prettier --write . ../README.md",
     "format:check": "prettier --check . ../README.md",
-    "check": "npm run typecheck && npm test && npm run build && npm run format:check"
+    "check": "npm run typecheck && npm test && npm run build && npm run format:check",
+    "scene:freeze-truth": "node --import tsx scripts/freeze-scene-truth.ts",
+    "scene:replay-identities": "node --import tsx scripts/replay-scene-identities.ts",
+    "experiment:connector": "node --env-file-if-exists=.env --import tsx scripts/experiment-connector.ts"
   },
   "dependencies": {
     "@fastify/helmet": "^13.2.0",

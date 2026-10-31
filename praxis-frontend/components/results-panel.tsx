@@ -52,7 +52,7 @@ export function ResultsPanel({
 }: Props) {
   const hasInventory =
     !!scene?.graph && inventoryObjectIds(scene.graph).size > 0;
-  if (hasInventory && sceneMode === "objects")
+  if (hasInventory && sceneMode !== "evidence")
     return (
       <aside
         className="results-panel"

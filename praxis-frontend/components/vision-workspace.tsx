@@ -525,6 +525,7 @@ export function VisionWorkspace() {
               <ImagePreview
                 photograph={photograph}
                 result={result}
+                analysisJob={job}
                 sceneGraph={job?.scene?.graph}
                 sceneMode={sceneMode}
                 loading={loading && !usingPartial && !(result && job?.scene)}

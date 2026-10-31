@@ -1,7 +1,8 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { resolve } from "node:path";
 import { completedJob } from "../fixtures/analysis-job";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import {
   calibrateBoard,
   project,
@@ -118,9 +119,13 @@ async function setup(
   closeups = false,
   normalized = false,
 ) {
-  await page.route("**/api/analyses", (route) =>
-    route.fulfill({ status: 202, json: completedJob(analysis) }),
-  );
+  await page.route("**/api/analyses", (route) => {
+    const job = completedJob(analysis);
+    job.imageHash = createHash("sha256")
+      .update(readFileSync(photograph))
+      .digest("hex");
+    return route.fulfill({ status: 202, json: job });
+  });
   await page.route("**/api/vision/endpoints", endpointReply);
   await page.goto("/");
   await page

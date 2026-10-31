@@ -160,15 +160,59 @@ The read-only projection works on old v1 scene snapshots. **Record reconciliatio
 (`POST .../reconcile-scene`) records a new v2 checkpoint without a model request or
 modifying earlier snapshots, baseline predictions, revisions or endpoint reviews.
 
-**Discover terminals** (`POST .../discover-terminals`) is an explicit bounded model
+Each multi-member display group states **Grouped by proposal** or **Confirmed same
+object**. Original member IDs, source descriptions and boxes remain inspectable;
+**Show separately** displays members individually without changing stored evidence.
+The same local endpoint accepts an optional `identityReview: { relationId, decision }`
+with `same_object`, `different_objects` or `uncertain`. Reviews append a human-review
+ledger entry bound to the input checkpoint and timestamp; the latest pair review
+controls grouping even if another model proposal repeats that pair. Confirming
+identity never confirms terminals, roles, apparent attachments or electrical contact.
+
+**Selective terminal discovery** (`POST .../discover-terminals`) is an explicit bounded model
 action. It starts with battery snap connectors and LED holders/assemblies; selected
-inventory objects can be inspected individually. Each object uses one Muse request
+inventory objects can be inspected individually. Default suggestions exclude
+conductors, boards and unknown categories, including wires whose descriptions mention
+a snap connector or LED holder. A grouped object requires explicit inventory-member
+selection. The coverage panel distinguishes not attempted, queued/failed requests,
+examined but unresolved, and visible contact proposed. Each object uses one Muse request
 with untouched full-scene context and a native focused crop. All points are projected
 from crop coordinates to original-image pixels. Terminal identity, physical kind,
 position, printed pin label and electrical role are separate fields. Hidden positions
 stay null; role proposals require a reported visible marking, never wire color.
+The `physical-terminals-v2` prompt can return separate crop-projected reference points
+for exposed conductive leads or insulated wire/housing junctions. These use distinct
+markers and never locate a hidden contact or justify a visible attachment. Historical
+v1 lead coordinates remain readable without being promoted to contact locations.
 Apparent attachments distinguish visible attachment, occluded path, proximity and
 insufficient evidence. None creates electrical connectivity or a verified terminal.
+
+**Segment scene targets** (`POST .../guide-scene`) explicitly enables a cumulative
+budget of three guided SAM requests and six million crop pixels on a saved scene,
+including inventory-only analyses. The body binds `snapshotId`, `snapshotHash`,
+`objectIds` (one to three unattempted objects) and
+`guidedBudget: { maxRequests: 3, maxPixels: 6000000 }`. Prior request/pixel charges
+are retained. Priority is battery snap connector, LED holder/housing, then an
+unsegmented conductor; the existing per-crop limit also applies. Unknown execution
+stops dispatch and is never retried automatically. Baseline SAM results are preserved.
+
+**Refresh inventory** (`POST .../refresh-scene`) binds the current scene checkpoint
+and makes one whole-image Muse request. It does not automatically queue guided SAM.
+Refresh appends observations and preserves existing objects, observations,
+associations, terminal/attachment claims, identity decisions and native scene masks.
+Rediscoveries reuse an object ID only for a unique reciprocal semantic/spatial match.
+Conductors require matching descriptions and strong spatial support; ambiguous or
+renamed wire hypotheses retain separate IDs. Omitted objects remain available.
+Capacity failure retains earlier evidence rather than truncating the graph.
+
+Guided response masks are proposals for the prompted object, never verified by
+box overlap. `reconcile-scene` accepts a local `maskReview` with exact `objectId`,
+`observationId`, `decision` (`accepted`, `rejected`, `uncertain`), `source`
+(`human_review`, `assistant_visual`) and a visible-evidence `reason`. Reviews bind
+the input checkpoint and are append-only. Assistant visual assessment remains
+explicitly distinct from human review; neither establishes terminal polarity,
+a confirmed boundary or electrical continuity. Evaluation bundles retain this ledger
+and its observation/object associations separately from identity grouping decisions.
 
 Both actions require the exact current scene checkpoint ID/hash. Terminal requests
 default to two cumulative requests and four million crop pixels per analysis;
@@ -1457,3 +1501,71 @@ or continuity is occluded. Crop-truncated extensions stay blocked. Results are b
 to the report/checkpoint under `extensionReviews` and consume the existing Muse
 verification budget. They never create human reviews, assign holes or establish
 connections; new checkpoints require a fresh extension check.
+
+### Connector-only SAM diagnosis
+
+Guided scene requests now retain private diagnostic evidence in `scene_requests`,
+linked by request ID. This includes crop JPEG bytes/SHA-256, exact request JSON,
+bounded raw HTTP response bytes/status, decoded native candidates, preview failures
+and provider/decoder/quota failure phases. Request authentication headers are never
+captured. Browser job JSON does not expose these private payloads. `evidence:export`
+includes them under `scene-requests/`; deletion/retention cleanup removes database
+records with their source analysis. Old runs cannot retroactively acquire raw bodies.
+
+Prepare the three-arm connector experiment offline, using the exact inventory UUID
+and visually inspected original-image targeting points:
+
+```sh
+npm run experiment:connector -- prepare ANALYSIS_ID OBJECT_ID POS_X,POS_Y NEG_X,NEG_Y NEW_DIRECTORY
+```
+
+Review `plan.json` and the crop JPEGs before dispatch. Arm A uses `battery connector`
+on the original crop; B uses the same noun on a wider native crop; C uses only the
+native box/point grammar on the same JPEG bytes as B. Points target the physical
+object, not electrical contacts or polarity. The prepared hash binds source photo,
+scene/SAM checkpoints, object ID, model, destination, images and prompts.
+
+```sh
+npm run experiment:connector -- run PREPARED_DIRECTORY/plan.json NEW_RUN_DIRECTORY
+```
+
+Run sends up to three SAM requests to the configured external Meta service and zero
+Muse requests, with no retries and a separate six-million-pixel experiment ledger.
+A shared reservation fences ordinary jobs; source scene work must also be inactive.
+Production budgets, results, object IDs and observations remain unchanged. Unknown
+execution stops remaining arms and retains an interrupted reservation for explicit
+release using the existing experiment release command. Durable evidence survives a
+CLI interruption and is available through the offline exporter. Output paths are new.
+Candidate masks remain proposals until independently inspected.
+
+Identity matching can be replayed without inference or production writes:
+
+```sh
+npm run scene:replay-identities -- BEFORE_BUNDLE.json REFRESH_BUNDLE.json NEW_REPORT.json
+```
+
+The replay reports candidate matches and ambiguities using category/part compatibility,
+semantic aliases, geometry, board anchors and direct segmentation references. Wire
+reuse still requires matching descriptions and strong geometry; shared boxes or mask
+references alone do not establish physical-wire identity. Replay suggestions are not
+independent truth and do not merge existing duplicate objects in a saved scene.
+
+### Connector body versus attached lead
+
+`experiment:connector prepare-boundary ANALYSIS_ID OBJECT_ID PROFILE.json NEW_DIRECTORY`
+creates an offline three-arm plan. The strict profile defines the visible connector
+body separately from an experimental connector-plus-red-lead composite, source image
+hash, manual targeting boxes/points and sparse held-out pixel probes. The profile
+and probes are included in the immutable plan hash. A/B differ only by a second
+positive body point; C deliberately changes the target scope and red-lead point label.
+All three use the same native context JPEG bytes. No noun phrase is mixed with native
+geometry. The installed official parser builds the spatial prompts.
+
+`evaluateBoundaryMask` decodes native binary masks and reports foreground area and
+probe inclusion by body, red lead, black lead, battery and background. It refuses
+mask/observation identity mismatches and non-unit raster mappings. Prompt/evaluation
+point reuse and points outside the frozen crop are rejected before dispatch. Sparse
+probe agreement is not full boundary accuracy, independent physical truth or automatic
+acceptance. Composite targets are experimental scopes, not production identity merges.
+The existing separate reservation, three-request cap, six-million-pixel ceiling, zero
+Muse requests, raw capture and no-retry safeguards also apply to boundary plans.

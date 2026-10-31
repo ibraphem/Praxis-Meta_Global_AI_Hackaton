@@ -1,3 +1,4 @@
+import { SceneRequestRecorder, sha256 } from './scene-request-evidence.js';
 import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.js';
 import type { MetaClient } from '../lib/meta-client.js';
@@ -77,7 +78,11 @@ export async function runSceneStage(
     delete j.leaseUntil;
   };
   if (attempt.sceneOperation === 'inventory') {
-    // Publish SAM-only hypotheses first, even if Muse fails, times out or returns invalid JSON.
+    // Refresh is append-only, including private native masks and earlier review claims.
+    const previousNative = job.scene?.snapshotRef
+      ? getSceneSnapshot(store, job.scene.snapshotRef.snapshotId).native
+      : [];
+    // Publish broad hypotheses first, even if Muse fails or returns invalid JSON.
     const baseline = buildSceneGraph({
       inventory: { objects: [] },
       imageHash: job.imageHash,
@@ -88,7 +93,13 @@ export async function runSceneStage(
       model: config.META_REASONING_MODEL,
     });
     commit((j, a) => {
-      const ref = checkpointScene(store, j, baseline, [], attemptId);
+      const ref = checkpointScene(
+        store,
+        j,
+        baseline,
+        previousNative,
+        attemptId,
+      );
       a.outputSnapshotId = ref.snapshotId;
       a.outputSnapshotHash = ref.snapshotHash;
     });
@@ -109,11 +120,12 @@ export async function runSceneStage(
       model: config.META_REASONING_MODEL,
     });
     commit((j, a) => {
-      const ref = checkpointScene(store, j, graph, [], attemptId);
+      const ref = checkpointScene(store, j, graph, previousNative, attemptId);
       a.outputSnapshotId = ref.snapshotId;
       a.outputSnapshotHash = ref.snapshotHash;
       finish(j);
       if (
+        !attempt.inventoryOnly &&
         config.VISION_MODE === 'combined' &&
         config.SCENE_MAX_GUIDED_REQUESTS > j.scene!.budget.requests &&
         planSceneTargets(graph, snapshot.image, config.SCENE_MAX_CROP_PIXELS)
@@ -159,6 +171,9 @@ export async function runSceneStage(
     graph,
     snapshot.image,
     config.SCENE_MAX_CROP_PIXELS,
+  ).filter(
+    (t) =>
+      !attempt.guidedObjectIds || attempt.guidedObjectIds.includes(t.objectId),
   );
   for (const target of targets) {
     signal.throwIfAborted();
@@ -202,6 +217,26 @@ export async function runSceneStage(
         attemptId,
         signal,
         trace,
+        {
+          record: (bytes) =>
+            new SceneRequestRecorder(store, {
+              requestId: work.requestId,
+              analysisId: job.analysisId,
+              objectId: target.objectId,
+              inputSnapshotId: input.ref.snapshotId,
+              inputSnapshotHash: input.ref.snapshotHash,
+              imageHash: job.imageHash,
+              crop: target.crop,
+              prompt: target.prompt,
+              createdAt: Date.now(),
+              cropImage: {
+                mimeType: 'image/jpeg',
+                sha256: sha256(bytes),
+                base64: bytes.toString('base64'),
+                bytes: bytes.length,
+              },
+            }),
+        },
       );
       for (const observation of result.observations)
         observation.requestId = work.requestId;

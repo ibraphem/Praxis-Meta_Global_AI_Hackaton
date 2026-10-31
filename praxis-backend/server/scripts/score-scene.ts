@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { sceneGraphSchema } from '../src/schemas/scene.js';
 import {
+  frozenSceneTruthSchema,
   sceneReviewSchema,
   sceneTruthSchema,
   scoreScene,
@@ -15,10 +16,10 @@ try {
   if (
     bindingsOnly
       ? args.length < 2 || args.length > 3
-      : args.length < 4 || args.length > 5
+      : args.length < 4 || args.length > 6
   )
     throw new Error(
-      'Usage: npm run scene:score -- SCENE_SNAPSHOT.json TRUTH.json REVIEW.json NEW_OUTPUT.json [EXPORTED_JOB.json]\nOr: npm run scene:score -- --bindings SCENE_SNAPSHOT.json [EXPORTED_JOB.json]',
+      'Usage: npm run scene:score -- SCENE_SNAPSHOT.json TRUTH.json REVIEW.json NEW_OUTPUT.json [EXPORTED_JOB.json|-] [FROZEN_TRUTH.json]\nOr: npm run scene:score -- --bindings SCENE_SNAPSHOT.json [EXPORTED_JOB.json]',
     );
   const json = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
   const snapshot = json(args[bindingsOnly ? 1 : 0]!) as SceneSnapshot;
@@ -31,7 +32,7 @@ try {
   )
     throw new Error('Scene snapshot integrity check failed.');
   const jobPath = args[bindingsOnly ? 2 : 4];
-  const job = jobPath ? (json(jobPath) as Job) : undefined;
+  const job = jobPath && jobPath !== '-' ? (json(jobPath) as Job) : undefined;
   if (job && job.imageHash !== snapshot.graph.imageHash)
     throw new Error('Job/image binding mismatch.');
   if (job && job.scene?.snapshotRef?.snapshotHash !== snapshot.ref.snapshotHash)
@@ -63,6 +64,9 @@ try {
       ? { baseline: baseline.objects, baselineHash }
       : {}),
     ...(job?.scene ? { attempts: job.scene.attempts } : {}),
+    ...(args[5]
+      ? { frozenTruth: frozenSceneTruthSchema.parse(json(args[5])) }
+      : {}),
   });
   writeFileSync(args[3]!, JSON.stringify(result, null, 2) + '\n', {
     flag: 'wx',

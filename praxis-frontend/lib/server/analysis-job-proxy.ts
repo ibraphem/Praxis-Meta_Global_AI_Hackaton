@@ -13,6 +13,8 @@ type Action =
   | "start-scene"
   | "reconcile-scene"
   | "discover-terminals"
+  | "guide-scene"
+  | "refresh-scene"
   | "delete"
   | "audit-wires"
   | "recover-wires"
@@ -144,6 +146,8 @@ export function createAnalysisJobProxy(
         action === "verify-wire" ||
         action === "reconcile-scene" ||
         action === "discover-terminals" ||
+        action === "guide-scene" ||
+        action === "refresh-scene" ||
         action === "retry-wire-crop" ||
         action === "verify-wire-extension" ||
         action === "wire-identities" ||
@@ -208,7 +212,12 @@ export function createAnalysisJobProxy(
             "Crop retry is blocked by active work, an unknown upstream outcome, an earlier retry, or the remaining budget. Refresh the saved status.",
           ];
         }
-        if (action === "reconcile-scene" || action === "discover-terminals") {
+        if (
+          action === "reconcile-scene" ||
+          action === "discover-terminals" ||
+          action === "guide-scene" ||
+          action === "refresh-scene"
+        ) {
           errors[400] = [
             "INVALID_SCENE_TARGETS",
             "Choose current inventory objects and their scene checkpoint before requesting terminal evidence.",

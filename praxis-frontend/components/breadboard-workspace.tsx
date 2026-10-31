@@ -2,6 +2,8 @@
 /* Blob photographs must be rendered directly, without an image optimizer. */
 /* eslint-disable @next/next/no-img-element */
 
+import type { AnalysisJob } from "@/lib/analysis-jobs";
+import { buildSceneEvaluationEvidence } from "@/lib/scene-evaluation-bundle";
 import type { RuntimeFingerprint } from "@/lib/runtime-schema";
 import { FRONTEND_RUNTIME } from "@/lib/runtime";
 import {
@@ -119,6 +121,7 @@ export function BreadboardWorkspace({
   overlaysVisible = true,
   imageFile,
   backendRuntime,
+  analysisJob,
   onRecoveryContext,
 }: {
   image: ImageSize;
@@ -131,6 +134,7 @@ export function BreadboardWorkspace({
   overlaysVisible?: boolean;
   imageFile?: File;
   backendRuntime?: RuntimeFingerprint | null;
+  analysisJob?: AnalysisJob | null;
   onRecoveryContext?: (context: {
     pitchPx: number;
     gridPoints: [number, number][];
@@ -146,6 +150,8 @@ export function BreadboardWorkspace({
   const [railSettings, setRailSettings] = useState<RailSettings>(initialRail);
   const [selected, setSelected] = useState<HoleSelection | null>(null);
   const [notice, setNotice] = useState("");
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const [lookup, setLookup] = useState("");
   const [pixelX, setPixelX] = useState("");
   const [pixelY, setPixelY] = useState("");
@@ -997,7 +1003,10 @@ export function BreadboardWorkspace({
   }
   async function exportEvaluationBundle() {
     if (!imageFile || !assignmentContext) return;
+    setExportError(null);
+    setExporting(true);
     try {
+      const capturedAt = Date.now();
       const bytes = await imageFile.arrayBuffer();
       const hash = Array.from(
         new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
@@ -1005,6 +1014,18 @@ export function BreadboardWorkspace({
       ).join("");
       const bundle = {
         schemaVersion: "praxis-evaluation-v1",
+        capturedAt,
+        imageHash: hash,
+        sceneEvaluation: buildSceneEvaluationEvidence({
+          job: analysisJob,
+          imageHash: hash,
+          image,
+          analysis: assignmentContext.analysis,
+          analysisRunId: assignmentContext.analysisRunId,
+          endpointRequests,
+          capturedAt,
+        }),
+        endpointRequests,
         runtime: {
           frontend: FRONTEND_RUNTIME,
           backendProducer:
@@ -1030,7 +1051,7 @@ export function BreadboardWorkspace({
           residuals: calibrationResiduals(audit.checkpoints),
         })),
         notes:
-          "Archive the original image separately. SAM masks are retained in analysis. Refinement is experimental; original proposals and user decisions remain separate.",
+          "Archive the original image separately. SAM masks are retained in analysis; full public scene evidence and stage timings are in sceneEvaluation. Native masks and historical checkpoints require the offline evidence archive. Refinement is experimental; original proposals and user decisions remain separate.",
       };
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(bundle, null, 2)], {
@@ -1043,7 +1064,9 @@ export function BreadboardWorkspace({
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
-      setNotice(message(error));
+      setExportError(message(error));
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -1260,30 +1283,6 @@ export function BreadboardWorkspace({
               {notice}
             </p>
           )}
-          <button
-            type="button"
-            className="button button-secondary"
-            disabled={disabled || !!activeAudit}
-            onClick={() => void exportEvaluationBundle()}
-          >
-            Export evaluation bundle
-          </button>
-          <details>
-            <summary>Benchmark build provenance</summary>
-            <p>
-              Frontend: {FRONTEND_RUNTIME.buildId ?? "unavailable"} (
-              {FRONTEND_RUNTIME.mode}). Backend running:{" "}
-              {backendRuntime?.buildId ?? "unavailable"}. Result producer:{" "}
-              {assignmentContext?.analysis?.provenance.runtime?.buildId ??
-                "not recorded by this saved result"}
-              .
-            </p>
-            <p>
-              Development fingerprints identify the server-start source
-              snapshot. Restart development servers after code changes before a
-              controlled benchmark.
-            </p>
-          </details>
           {onRecoveryContext && (
             <button
               type="button"
@@ -1321,6 +1320,37 @@ export function BreadboardWorkspace({
             </button>
           )}
         </>
+      )}
+      {assignmentContext && imageFile && (
+        <section aria-label="Evaluation export" style={{ margin: "12px 0" }}>
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={disabled || !!activeAudit || exporting}
+            onClick={() => void exportEvaluationBundle()}
+          >
+            {exporting
+              ? "Preparing evaluation bundle…"
+              : "Export evaluation bundle"}
+          </button>
+          {exportError && <p role="alert">{exportError}</p>}
+          <details>
+            <summary>Benchmark build provenance</summary>
+            <p>
+              Frontend: {FRONTEND_RUNTIME.buildId ?? "unavailable"} (
+              {FRONTEND_RUNTIME.mode}). Backend running:{" "}
+              {backendRuntime?.buildId ?? "unavailable"}. Result producer:{" "}
+              {assignmentContext?.analysis?.provenance.runtime?.buildId ??
+                "not recorded by this saved result"}
+              .
+            </p>
+            <p>
+              Development fingerprints identify the server-start source
+              snapshot. Restart development servers after code changes before a
+              controlled benchmark.
+            </p>
+          </details>
+        </section>
       )}
       {assignmentContext &&
         !activeAudit &&

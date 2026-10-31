@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { AppError } from '../lib/errors.js';
 import type { JobStore } from './store.js';
+import { sceneRequestEvidence } from './scene-request-evidence.js';
 import { sceneSnapshots } from './scene-snapshots.js';
 
 /** Offline evidence archive, distinct from the browser's calibration/review evaluation bundle. */
@@ -17,6 +18,7 @@ export function exportJobEvidence(
     image: store.image(analysisId),
     snapshots: store.snapshots(analysisId),
     sceneSnapshots: sceneSnapshots(store, analysisId),
+    sceneRequests: sceneRequestEvidence(store, analysisId),
     experiments: store.experiments.forAnalysis(analysisId),
   }));
   const extras: {
@@ -105,6 +107,19 @@ export function exportJobEvidence(
   evidence.experiments.forEach((record, i) =>
     write(`experiments/${i + 1}.json`, json(record)),
   );
+  mkdirSync(join(outputDirectory, 'scene-requests'), { mode: 0o700 });
+  evidence.sceneRequests.forEach((record, i) => {
+    const prefix = `scene-requests/${i + 1}`;
+    write(`${prefix}.json`, json(record));
+    write(`${prefix}-crop.jpg`, Buffer.from(record.cropImage.base64, 'base64'));
+    if (record.request)
+      write(`${prefix}-request.json`, Buffer.from(record.request.payload));
+    if (record.response)
+      write(
+        `${prefix}-response.bin`,
+        Buffer.from(record.response.base64, 'base64'),
+      );
+  });
   extras.forEach((file) => write(file.path, file.bytes));
   const manifest = {
     schemaVersion: 1,
