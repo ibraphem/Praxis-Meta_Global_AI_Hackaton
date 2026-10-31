@@ -10,6 +10,13 @@ import { regionLabel, regionExplanations } from "@/lib/geometry";
 import { BreadboardRegions } from "./breadboard-regions";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
 import { SceneInventory, SceneInventoryNotRun } from "./scene-inventory";
+import { inventoryObjectIds } from "@/lib/scene-reconciliation";
+import {
+  SceneObjectPanel,
+  SceneModeControl,
+  type SceneMode,
+  type SceneAction,
+} from "./scene-objects";
 
 interface Props {
   result: Analysis | null;
@@ -22,6 +29,9 @@ interface Props {
   onStartScene?: () => void;
   onRetryScene?: () => void;
   busy?: boolean;
+  sceneMode?: SceneMode;
+  onSceneModeChange?: (mode: SceneMode) => void;
+  onSceneAction?: (action: SceneAction, payload: unknown) => void;
 }
 
 /** Results and overlays share IDs, so inspection never relies on array order. */
@@ -36,7 +46,32 @@ export function ResultsPanel({
   onStartScene,
   onRetryScene,
   busy = false,
+  sceneMode = "objects",
+  onSceneModeChange = () => {},
+  onSceneAction,
 }: Props) {
+  const hasInventory =
+    !!scene?.graph && inventoryObjectIds(scene.graph).size > 0;
+  if (hasInventory && sceneMode === "objects")
+    return (
+      <aside
+        className="results-panel"
+        aria-label="Analysis results"
+        aria-busy={loading}
+      >
+        <SceneObjectPanel
+          graph={scene!.graph!}
+          result={result}
+          job={job}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          busy={busy}
+          onAction={onSceneAction}
+          mode={sceneMode}
+          onModeChange={onSceneModeChange}
+        />
+      </aside>
+    );
   return (
     <aside
       className="results-panel"
@@ -54,6 +89,9 @@ export function ResultsPanel({
           {result ? result.objects.length.toString().padStart(2, "0") : "—"}
         </span>
       </div>
+      {hasInventory && (
+        <SceneModeControl mode={sceneMode} onChange={onSceneModeChange} />
+      )}
       <div className="category-summary">
         {componentTypes.map((type) => (
           <div key={type} className="category-count">

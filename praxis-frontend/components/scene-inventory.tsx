@@ -185,7 +185,11 @@ export function SceneInventory({
         <p key={a.attemptId}>
           {a.sceneOperation === "inventory"
             ? "Inventory"
-            : "Guided segmentation"}
+            : a.sceneOperation === "terminals"
+              ? "Terminal discovery"
+              : a.sceneOperation === "reconcile"
+                ? "Local reconciliation"
+                : "Guided segmentation"}
           : {a.status.replaceAll("_", " ")}
           {a.startedAt && a.finishedAt
             ? ` · ${((a.finishedAt - a.startedAt) / 1000).toFixed(1)}s`

@@ -5,6 +5,7 @@ import type {
   SceneGraph,
   SceneSnapshotRef,
   SceneWork,
+  TerminalWork,
 } from '../schemas/scene.js';
 import {
   normalizeCropAttempts,
@@ -39,6 +40,12 @@ import { AppError } from '../lib/errors.js';
 import type { Diagnostics } from '../lib/diagnostics.js';
 import type { Analysis, PreparedImage } from '../schemas/vision.js';
 import type { SamSnapshot } from '../services/vision.js';
+import {
+  reconcileSceneGraph,
+  inventoryObjectIds,
+} from '../services/scene-reconciliation.js';
+import { terminalCrop } from '../services/scene-terminals.js';
+import { z } from 'zod';
 
 export type JobStage = 'sam' | 'muse' | 'recovery' | 'scene';
 export type AttemptStatus =
@@ -62,7 +69,8 @@ export interface Attempt {
   recoveryReport?: RecoveryReport;
   outputSnapshotId?: string;
   outputSnapshotHash?: string;
-  sceneOperation?: 'inventory' | 'guided';
+  sceneOperation?: 'inventory' | 'guided' | 'terminals' | 'reconcile';
+  terminalObjectIds?: string[];
   sceneSnapshotId?: string;
   sceneSnapshotHash?: string;
 }
@@ -142,12 +150,20 @@ export interface Job {
       maxRequests: number;
       maxPixels: number;
       maxCropPixels: number;
+      maxTerminalRequests?: number;
+      maxTerminalPixels?: number;
     };
     attempts: Attempt[];
     snapshotRef?: SceneSnapshotRef;
     graph?: SceneGraph;
-    budget: { requests: number; pixels: number };
+    budget: {
+      requests: number;
+      pixels: number;
+      terminalRequests?: number;
+      terminalPixels?: number;
+    };
     work: SceneWork[];
+    terminalWork?: TerminalWork[];
   };
   experiment?: {
     experimentId: string;
@@ -578,6 +594,176 @@ export class JobStore {
       return job;
     });
   }
+  requestSceneUnderstanding(
+    id: string,
+    operation: 'reconcile' | 'terminals',
+    body: unknown,
+  ): Job {
+    return this.transaction(() => {
+      const job = this.get(id);
+      const parsed = z
+        .object({
+          snapshotId: z.uuid(),
+          snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
+          objectIds: z.array(z.uuid()).min(1).max(2).optional(),
+        })
+        .strict()
+        .safeParse(body);
+      if (
+        !parsed.success ||
+        !job.scene?.snapshotRef ||
+        !job.scene.graph ||
+        parsed.data.snapshotId !== job.scene.snapshotRef.snapshotId ||
+        parsed.data.snapshotHash !== job.scene.snapshotRef.snapshotHash
+      )
+        throw new AppError(
+          409,
+          'STALE_SCENE',
+          'Reload the current scene inventory before proposing relationships or terminals.',
+        );
+      if (
+        this.experiments.active() ||
+        job.owner ||
+        [
+          job.sam.status,
+          job.muse.status,
+          job.recovery.status,
+          job.scene.status,
+        ].some((s) => s === 'queued' || s === 'running')
+      )
+        throw new AppError(
+          409,
+          'ATTEMPT_ACTIVE',
+          'Wait for active model work or reservations to finish.',
+        );
+      if (job.scene.attempts.length >= 20)
+        throw new AppError(
+          409,
+          'ATTEMPT_LIMIT',
+          'The scene attempt limit was reached.',
+        );
+      const attempt = {
+        ...newAttempt(),
+        sceneOperation: operation,
+        sceneSnapshotId: job.scene.snapshotRef.snapshotId,
+        sceneSnapshotHash: job.scene.snapshotRef.snapshotHash,
+      };
+      const source = lastAttempt(job, 'scene');
+      if (source?.samSnapshotId)
+        Object.assign(attempt, {
+          samSnapshotId: source.samSnapshotId,
+          samSnapshotHash: source.samSnapshotHash,
+          snapshotBinding: 'recorded',
+        });
+      if (operation === 'reconcile') {
+        const graph = reconcileSceneGraph(job.scene.graph);
+        if (JSON.stringify(graph) === JSON.stringify(job.scene.graph))
+          return job;
+        const evidence = getSceneSnapshot(
+          this,
+          job.scene.snapshotRef.snapshotId,
+        );
+        const ref = checkpointScene(
+          this,
+          job,
+          graph,
+          evidence.native,
+          attempt.attemptId,
+        );
+        Object.assign(attempt, {
+          status: 'succeeded',
+          upstreamOutcome: 'not_sent',
+          retryPolicy: 'not_retryable',
+          startedAt: Date.now(),
+          finishedAt: Date.now(),
+          outputSnapshotId: ref.snapshotId,
+          outputSnapshotHash: ref.snapshotHash,
+        });
+        job.scene.attempts.push(attempt);
+        job.scene.graph = graph;
+        job.scene.status = 'succeeded';
+      } else {
+        const objectIds = parsed.data.objectIds;
+        const inventory = inventoryObjectIds(job.scene.graph);
+        if (
+          !objectIds ||
+          new Set(objectIds).size !== objectIds.length ||
+          objectIds.some((id) => !inventory.has(id))
+        )
+          throw new AppError(
+            400,
+            'INVALID_TERMINAL_TARGETS',
+            'Choose up to two inventory objects for terminal discovery.',
+          );
+        const capacity = reconcileSceneGraph(job.scene.graph),
+          count = objectIds.length;
+        if (
+          capacity.observations.length + count * 8 > 450 ||
+          capacity.associations.length + count * 8 > 800 ||
+          (capacity.terminals?.length ?? 0) + count * 8 > 64 ||
+          (capacity.attachments?.length ?? 0) + count * 16 > 128 ||
+          (capacity.relations?.length ?? 0) + count * 8 > 400
+        )
+          throw new AppError(
+            409,
+            'SCENE_EVIDENCE_BUDGET',
+            'The scene has no capacity for a complete bounded terminal response.',
+          );
+        const settings = job.scene.settings ?? {
+          timeoutMs:
+            job.settings.sceneTimeoutMs ?? this.config.SCENE_STAGE_TIMEOUT_MS,
+          maxRequests: 0,
+          maxPixels: this.config.SCENE_MAX_GUIDED_PIXELS,
+          maxCropPixels: this.config.SCENE_MAX_CROP_PIXELS,
+        };
+        settings.maxTerminalRequests ??=
+          this.config.SCENE_MAX_TERMINAL_REQUESTS;
+        settings.maxTerminalPixels ??= this.config.SCENE_MAX_TERMINAL_PIXELS;
+        const used = job.scene.budget.terminalRequests ?? 0;
+        const pixels = objectIds.reduce((n, id) => {
+          const crop = terminalCrop(job.scene!.graph!, id);
+          if (crop[2] * crop[3] > settings.maxCropPixels)
+            throw new AppError(
+              409,
+              'TERMINAL_CROP_BUDGET',
+              'The selected object crop exceeds the terminal input budget.',
+            );
+          return n + crop[2] * crop[3];
+        }, 0);
+        if (
+          used + objectIds.length > settings.maxTerminalRequests ||
+          (job.scene.budget.terminalPixels ?? 0) + pixels >
+            settings.maxTerminalPixels
+        )
+          throw new AppError(
+            409,
+            'TERMINAL_BUDGET',
+            'The cumulative terminal discovery budget is exhausted.',
+          );
+        if (
+          objectIds.some(
+            (id) =>
+              job.scene!.terminalWork?.some((w) => w.objectId === id) ||
+              job.scene!.graph!.terminals?.some((t) => t.objectId === id),
+          )
+        )
+          throw new AppError(
+            409,
+            'TERMINAL_ALREADY_ATTEMPTED',
+            'Terminal evidence for this object already has an attempt; it is not automatically repeated.',
+          );
+        job.scene.settings = settings;
+        job.scene.terminalWork ??= [];
+        job.scene.budget.terminalRequests ??= 0;
+        job.scene.budget.terminalPixels ??= 0;
+        Object.assign(attempt, { terminalObjectIds: objectIds });
+        job.scene.attempts.push(attempt);
+        job.scene.status = 'queued';
+      }
+      this.save(job);
+      return job;
+    });
+  }
   retry(id: string, stage: 'sam' | 'muse' | 'scene'): Job {
     return this.transaction(() => {
       const job = this.get(id);
@@ -627,7 +813,7 @@ export class JobStore {
       const retry = newAttempt();
       if (stage === 'scene') {
         retry.sceneOperation = previous.sceneOperation ?? 'inventory';
-        if (retry.sceneOperation === 'guided')
+        if (retry.sceneOperation !== 'inventory')
           throw new AppError(
             409,
             'SCENE_RETRY_BLOCKED',
@@ -972,6 +1158,14 @@ export class JobStore {
           a.finishedAt = now;
           job[stage]!.status = 'interrupted';
           if (stage === 'scene')
+            for (const work of job.scene!.terminalWork ?? [])
+              if (work.status === 'running') {
+                work.status = 'interrupted';
+                work.upstreamOutcome = 'unknown';
+                work.errorCode = 'WORKER_INTERRUPTED';
+                work.finishedAt = now;
+              }
+          if (stage === 'scene')
             for (const work of job.scene!.work)
               if (work.status === 'running') {
                 work.status = 'interrupted';
@@ -995,7 +1189,7 @@ export class JobStore {
                   );
                 }
               }
-          if (stage === 'scene' && a.sceneOperation === 'guided')
+          if (stage === 'scene' && a.sceneOperation !== 'inventory')
             a.retryPolicy = 'not_retryable';
           if (stage === 'recovery')
             finishRunningCrops(

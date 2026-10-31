@@ -21,6 +21,7 @@ import { WireRecoveryPanel, type RecoveryAction } from "./wire-recovery-panel";
 import { Icon, PraxisMark } from "./icons";
 import { ImagePreview, type Photograph } from "./image-preview";
 import { ResultsPanel } from "./results-panel";
+import type { SceneMode, SceneAction } from "./scene-objects";
 import { AnalysisError } from "./analysis-error";
 import { failureSchema, type Failure } from "@/lib/diagnostics";
 
@@ -56,6 +57,7 @@ export function VisionWorkspace() {
   const [dragging, setDragging] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showOverlays, setShowOverlays] = useState(true);
+  const [sceneMode, setSceneMode] = useState<SceneMode>("objects");
   const [elapsed, setElapsed] = useState<number | null>(null);
 
   // Release blob URLs on replacement/unmount; photographs never enter browser storage.
@@ -121,6 +123,7 @@ export function VisionWorkspace() {
       setSelectedId(null);
       setElapsed(null);
       setShowOverlays(true);
+      setSceneMode("objects");
     } catch (cause) {
       URL.revokeObjectURL(url);
       if (version === selectionVersion.current)
@@ -219,6 +222,7 @@ export function VisionWorkspace() {
       | "retry-muse"
       | "retry-scene"
       | "start-scene"
+      | SceneAction
       | RecoveryAction,
     savedId?: string,
     payload?: unknown,
@@ -522,6 +526,7 @@ export function VisionWorkspace() {
                 photograph={photograph}
                 result={result}
                 sceneGraph={job?.scene?.graph}
+                sceneMode={sceneMode}
                 loading={loading && !usingPartial && !(result && job?.scene)}
                 selecting={selecting}
                 dragging={dragging}
@@ -622,6 +627,11 @@ export function VisionWorkspace() {
             result={result}
             loading={loading && !usingPartial && !(result && job?.scene)}
             scene={job?.scene}
+            sceneMode={sceneMode}
+            onSceneModeChange={setSceneMode}
+            onSceneAction={(action, payload) =>
+              void runJob(action, undefined, payload)
+            }
             job={job}
             onStartScene={() => void runJob("start-scene")}
             busy={loading || (!!job && jobIsActive(job))}

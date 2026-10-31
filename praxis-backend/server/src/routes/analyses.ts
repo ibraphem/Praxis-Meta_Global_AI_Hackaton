@@ -91,6 +91,21 @@ export function registerAnalysisRoutes(
     setImmediate(kick);
     return reply.code(202).send(publicJob(job));
   });
+  for (const [path, operation] of [
+    ['reconcile-scene', 'reconcile'],
+    ['discover-terminals', 'terminals'],
+  ] as const)
+    app.post(`/api/analyses/:id/${path}`, async (request, reply) => {
+      const job = store.requestSceneUnderstanding(
+        id(request.params),
+        operation,
+        request.body,
+      );
+      if (operation === 'terminals') setImmediate(kick);
+      return reply
+        .code(operation === 'terminals' ? 202 : 200)
+        .send(publicJob(job));
+    });
   for (const stage of ['sam', 'muse', 'scene'] as const)
     app.post(`/api/analyses/:id/retry-${stage}`, async (request, reply) => {
       const job = store.retry(id(request.params), stage);

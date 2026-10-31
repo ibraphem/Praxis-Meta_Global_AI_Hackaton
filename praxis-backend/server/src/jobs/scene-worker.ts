@@ -12,6 +12,7 @@ import {
 import type { SceneGraph, SceneWork } from '../schemas/scene.js';
 import { checkpointScene, getSceneSnapshot } from './scene-snapshots.js';
 import { JobStore, lastAttempt, newAttempt, type Job } from './store.js';
+import { runTerminalStage } from './terminal-worker.js';
 
 /** Optional stages share the existing fenced lease; broad results are published first. */
 export async function runSceneStage(
@@ -25,6 +26,17 @@ export async function runSceneStage(
   trace: AnalysisTrace,
 ) {
   const attempt = lastAttempt(job, 'scene')!;
+  if (attempt.sceneOperation === 'terminals')
+    return runTerminalStage(
+      store,
+      job,
+      owner,
+      attemptId,
+      config,
+      client,
+      signal,
+      trace,
+    );
   const bound = attempt.samSnapshotId
     ? store.getSnapshot(attempt.samSnapshotId)
     : undefined;

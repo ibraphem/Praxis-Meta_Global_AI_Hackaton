@@ -8,6 +8,8 @@ import styles from "./breadboard-workspace.module.css";
 import { BreadboardRegionOverlays } from "./breadboard-regions";
 import { SceneOverlays } from "./scene-inventory";
 import type { SceneGraph } from "@/lib/scene";
+import { inventoryObjectIds } from "@/lib/scene-reconciliation";
+import { SceneObjectOverlays, type SceneMode } from "./scene-objects";
 
 export interface Photograph {
   id: string;
@@ -20,6 +22,7 @@ interface Props {
   photograph: Photograph | null;
   result: Analysis | null;
   sceneGraph?: SceneGraph;
+  sceneMode?: SceneMode;
   loading: boolean;
   selecting: boolean;
   dragging: boolean;
@@ -39,6 +42,7 @@ export function ImagePreview({
   photograph,
   result,
   sceneGraph,
+  sceneMode = "objects",
   loading,
   selecting,
   dragging,
@@ -97,6 +101,7 @@ export function ImagePreview({
     !result ||
     (result.image.width === photograph.width &&
       result.image.height === photograph.height);
+  const hasInventory = !!sceneGraph && inventoryObjectIds(sceneGraph).size > 0;
   return (
     <div
       className={`photo-stage ${styles.workspace} ${dragging ? "is-dragging" : ""}`}
@@ -122,56 +127,72 @@ export function ImagePreview({
         {sceneGraph &&
           sceneGraph.image.width === photograph.width &&
           sceneGraph.image.height === photograph.height &&
-          showOverlays && (
+          showOverlays &&
+          (hasInventory && sceneMode === "objects" ? (
+            <SceneObjectOverlays
+              graph={sceneGraph}
+              result={result}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ) : (
             <SceneOverlays
               graph={sceneGraph}
               selectedId={selectedId}
               onSelect={onSelect}
             />
+          ))}
+        {result &&
+          dimensionsMatch &&
+          showOverlays &&
+          (!hasInventory || sceneMode === "evidence") && (
+            <div
+              className="detection-overlays"
+              aria-label="Component locations"
+            >
+              {/* Keep smaller components above their enclosing breadboard. */}
+              {[...result.objects]
+                .filter((object) => object.type !== "jumper_wire")
+                .sort((a, b) => b.bbox[2] * b.bbox[3] - a.bbox[2] * a.bbox[3])
+                .map((object, index) => {
+                  const [x, y, width, height] = object.bbox;
+                  return (
+                    <button
+                      type="button"
+                      key={object.id}
+                      aria-label={`Inspect ${componentLabel(object)}`}
+                      aria-pressed={selectedId === object.id}
+                      className={`bounding-box ${selectedId === object.id ? "is-selected" : ""} ${object.interpretation === "uncertain" ? "is-uncertain" : ""}`}
+                      onClick={() => onSelect(object.id)}
+                      style={
+                        {
+                          left: `${(x / result.image.width) * 100}%`,
+                          top: `${(y / result.image.height) * 100}%`,
+                          width: `${(width / result.image.width) * 100}%`,
+                          height: `${(height / result.image.height) * 100}%`,
+                          zIndex: index + 1,
+                          "--component-color": categories[object.type].color,
+                        } as CSSProperties
+                      }
+                    >
+                      <span className="box-label">
+                        {componentLabel(object)}
+                      </span>
+                    </button>
+                  );
+                })}
+              <WireOverlays
+                result={result}
+                selectedId={selectedId}
+                onSelect={onSelect}
+              />
+              <BreadboardRegionOverlays
+                result={result}
+                selectedId={selectedId}
+                onSelect={onSelect}
+              />
+            </div>
           )}
-        {result && dimensionsMatch && showOverlays && (
-          <div className="detection-overlays" aria-label="Component locations">
-            {/* Keep smaller components above their enclosing breadboard. */}
-            {[...result.objects]
-              .filter((object) => object.type !== "jumper_wire")
-              .sort((a, b) => b.bbox[2] * b.bbox[3] - a.bbox[2] * a.bbox[3])
-              .map((object, index) => {
-                const [x, y, width, height] = object.bbox;
-                return (
-                  <button
-                    type="button"
-                    key={object.id}
-                    aria-label={`Inspect ${componentLabel(object)}`}
-                    aria-pressed={selectedId === object.id}
-                    className={`bounding-box ${selectedId === object.id ? "is-selected" : ""} ${object.interpretation === "uncertain" ? "is-uncertain" : ""}`}
-                    onClick={() => onSelect(object.id)}
-                    style={
-                      {
-                        left: `${(x / result.image.width) * 100}%`,
-                        top: `${(y / result.image.height) * 100}%`,
-                        width: `${(width / result.image.width) * 100}%`,
-                        height: `${(height / result.image.height) * 100}%`,
-                        zIndex: index + 1,
-                        "--component-color": categories[object.type].color,
-                      } as CSSProperties
-                    }
-                  >
-                    <span className="box-label">{componentLabel(object)}</span>
-                  </button>
-                );
-              })}
-            <WireOverlays
-              result={result}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
-            <BreadboardRegionOverlays
-              result={result}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
-          </div>
-        )}
         {loading && (
           <div className="scanning-overlay" aria-hidden="true">
             <div className="scan-line" />

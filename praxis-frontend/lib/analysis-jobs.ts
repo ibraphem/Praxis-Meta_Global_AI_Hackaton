@@ -2,6 +2,7 @@ import {
   sceneGraphSchema,
   sceneSnapshotRefSchema,
   sceneWorkSchema,
+  terminalWorkSchema,
 } from "./scene";
 import { runtimeSchema } from "./runtime-schema";
 import {
@@ -54,7 +55,10 @@ export const attemptSchema = z
       .string()
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
-    sceneOperation: z.enum(["inventory", "guided"]).optional(),
+    sceneOperation: z
+      .enum(["inventory", "guided", "terminals", "reconcile"])
+      .optional(),
+    terminalObjectIds: z.array(z.uuid()).max(2).optional(),
     sceneSnapshotId: z.uuid().optional(),
     sceneSnapshotHash: z
       .string()
@@ -128,6 +132,13 @@ export const analysisJobSchema = z
             maxRequests: z.number().int().min(0).max(8),
             maxPixels: z.number().int().positive().max(16000000),
             maxCropPixels: z.number().int().positive().max(4000000),
+            maxTerminalRequests: z.number().int().min(0).max(8).optional(),
+            maxTerminalPixels: z
+              .number()
+              .int()
+              .positive()
+              .max(16000000)
+              .optional(),
           })
           .strict()
           .optional(),
@@ -137,9 +148,12 @@ export const analysisJobSchema = z
           .object({
             requests: z.number().int().nonnegative(),
             pixels: z.number().int().nonnegative(),
+            terminalRequests: z.number().int().nonnegative().max(8).optional(),
+            terminalPixels: z.number().int().nonnegative().optional(),
           })
           .strict(),
         work: z.array(sceneWorkSchema).max(8),
+        terminalWork: z.array(terminalWorkSchema).max(8).optional(),
       })
       .optional(),
     sam: stageSchema.extend({ snapshotRef: snapshotRefSchema.optional() }),
@@ -227,6 +241,11 @@ export function retryStage(job: AnalysisJob): "sam" | "muse" | null {
     : null;
 }
 export function jobMessage(job: AnalysisJob) {
+  if (
+    job.scene?.status === "running" &&
+    job.scene.attempts.at(-1)?.sceneOperation === "terminals"
+  )
+    return "Discovering terminal and attachment proposals. Existing evidence stays available; electrical connectivity remains unestablished.";
   if (job.scene?.status === "running")
     return job.scene.attempts.at(-1)?.sceneOperation === "guided"
       ? "Inspecting selected scene objects. Existing candidates remain available."

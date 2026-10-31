@@ -13,6 +13,7 @@
     "experiment:muse": "node --env-file-if-exists=.env --import tsx scripts/experiment-muse.ts",
     "wire:audit": "node --import tsx scripts/audit-wires.ts",
     "wire:score": "node --import tsx scripts/score-wires.ts",
+    "scene:score": "node --import tsx scripts/score-scene.ts",
     "evidence:export": "node --env-file-if-exists=.env --import tsx scripts/export-evidence.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=.env dist/index.js",

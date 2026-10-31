@@ -1,8 +1,113 @@
 import { z } from 'zod';
-import { boxSchema, maskSchema } from './geometry.js';
+import { boxSchema, maskSchema, pointSchema } from './geometry.js';
 
 const id = z.uuid();
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
+export const objectRelationSchema = z
+  .object({
+    id: z.string().min(1).max(240),
+    fromObjectId: id,
+    toObjectId: id,
+    type: z.enum(['same_object', 'part_of']),
+    status: z.enum(['proposed', 'unresolved']),
+    basis: z.enum(['semantic_geometry', 'shared_observation', 'model_visual']),
+    observationIds: z.array(id).min(1).max(64),
+    source: z.enum(['local', 'muse']),
+    algorithmVersion: z.literal('object-reconciliation-v1').optional(),
+    attemptId: id.optional(),
+  })
+  .strict();
+export const terminalSchema = z
+  .object({
+    id,
+    objectId: id,
+    label: z.string().min(1).max(40),
+    physicalKind: z.enum([
+      'pin',
+      'lead',
+      'contact',
+      'breadboard_hole',
+      'rail',
+      'unknown',
+    ]),
+    location: pointSchema.nullable(),
+    locationStatus: z.enum(['observed', 'unresolved']),
+    locationEvidence: z.enum([
+      'visible_terminal',
+      'visible_lead',
+      'occluded',
+      'insufficient',
+    ]),
+    pinLabel: z.string().min(1).max(40).nullable(),
+    electricalRole: z.string().min(1).max(40).nullable(),
+    roleStatus: z.enum(['proposed', 'unresolved']),
+    roleMarking: z.string().min(1).max(80).nullable(),
+    observationIds: z.array(id).min(1).max(16),
+    attemptId: id,
+    requestId: id,
+    model: z.string().min(1).max(100),
+    promptVersion: z.literal('physical-terminals-v1').optional(),
+  })
+  .strict()
+  .superRefine((t, ctx) => {
+    const visible = ['visible_terminal', 'visible_lead'].includes(
+      t.locationEvidence,
+    );
+    if (
+      visible !== (t.location !== null) ||
+      visible !== (t.locationStatus === 'observed')
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Terminal positions require visible physical evidence.',
+      });
+    if ((t.electricalRole !== null || t.pinLabel !== null) && !t.roleMarking)
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Pin labels and electrical roles require a visible marking.',
+      });
+    if (
+      t.roleMarking &&
+      /^(red|black|white|blue|green|yellow|orange|brown|purple)(\s+(wire|lead|insulation))?$/i.test(
+        t.roleMarking,
+      )
+    )
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Wire color is not an electrical role marking.',
+      });
+    if ((t.electricalRole !== null) !== (t.roleStatus === 'proposed'))
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Role status must match the role proposal.',
+      });
+  });
+export const attachmentSchema = z
+  .object({
+    id,
+    terminalId: id,
+    conductorObjectId: id,
+    evidence: z.enum([
+      'visible_attachment',
+      'occluded_path',
+      'proximity',
+      'insufficient',
+    ]),
+    position: pointSchema.nullable(),
+    status: z.enum(['proposed', 'unresolved']),
+    observationIds: z.array(id).min(1).max(16),
+    attemptId: id,
+    requestId: id,
+    electricalConnectionStatus: z.literal('unestablished'),
+  })
+  .strict()
+  .refine(
+    (a) =>
+      (a.evidence === 'visible_attachment') === (a.status === 'proposed') &&
+      (a.evidence === 'visible_attachment'
+        ? a.position !== null
+        : a.position === null),
+  );
 export const sceneCategorySchema = z.enum([
   'electrical_component',
   'power_source',
@@ -58,6 +163,7 @@ export const observationAssociationSchema = z
       'category_and_overlap',
       'unclassified_observation',
       'prompt_target',
+      'terminal_localization',
     ]),
     status: z.literal('proposed'),
     attemptId: id,
@@ -65,7 +171,7 @@ export const observationAssociationSchema = z
   .strict();
 export const sceneGraphSchema = z
   .object({
-    version: z.literal('scene-v1'),
+    version: z.enum(['scene-v1', 'scene-v2']),
     imageHash: hash,
     image: z
       .object({
@@ -77,7 +183,9 @@ export const sceneGraphSchema = z
     objects: z.array(sceneObjectSchema).max(164),
     observations: z.array(visualObservationSchema).max(450),
     associations: z.array(observationAssociationSchema).max(800),
-    // Discovery of terminals and electrical relationships is a separate release.
+    relations: z.array(objectRelationSchema).max(400).optional(),
+    terminals: z.array(terminalSchema).max(64).optional(),
+    attachments: z.array(attachmentSchema).max(128).optional(),
     electricalConnectionStatus: z.literal('unestablished'),
   })
   .strict()
@@ -87,6 +195,9 @@ export const sceneGraphSchema = z
       ...graph.objects,
       ...graph.observations,
       ...graph.associations,
+      ...(graph.relations ?? []),
+      ...(graph.terminals ?? []),
+      ...(graph.attachments ?? []),
     ]) {
       if (ids.has(entity.id))
         ctx.addIssue({ code: 'custom', message: 'Duplicate scene identity.' });
@@ -108,11 +219,94 @@ export const sceneGraphSchema = z
           code: 'custom',
           message: 'Dangling scene association.',
         });
-    if (graph.objects.some((o) => o.terminalIds.length))
+    if (
+      graph.version === 'scene-v1' &&
+      (graph.objects.some((o) => o.terminalIds.length) ||
+        graph.terminals?.length ||
+        graph.attachments?.length ||
+        graph.relations?.length)
+    )
       ctx.addIssue({
         code: 'custom',
         message: 'Scene v1 does not establish terminals.',
       });
+    const terminals = new Map((graph.terminals ?? []).map((t) => [t.id, t]));
+    const inside = (p: [number, number] | null) =>
+      !p || (p[0] < graph.image.width && p[1] < graph.image.height);
+    for (const relation of graph.relations ?? []) {
+      if (
+        !objects.has(relation.fromObjectId) ||
+        !objects.has(relation.toObjectId) ||
+        relation.fromObjectId === relation.toObjectId ||
+        relation.observationIds.some((o) => !observations.has(o))
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Invalid object relation evidence.',
+        });
+    }
+    const children = new Map<string, string[]>();
+    for (const r of graph.relations ?? [])
+      if (r.type === 'part_of' && r.status === 'proposed')
+        children.set(r.fromObjectId, [
+          ...(children.get(r.fromObjectId) ?? []),
+          r.toObjectId,
+        ]);
+    const visiting = new Set<string>(),
+      visited = new Set<string>();
+    const cycle = (id: string): boolean => {
+      if (visiting.has(id)) return true;
+      if (visited.has(id)) return false;
+      visiting.add(id);
+      for (const parent of children.get(id) ?? [])
+        if (cycle(parent)) return true;
+      visiting.delete(id);
+      visited.add(id);
+      return false;
+    };
+    if ([...objects].some(cycle))
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Part relations cannot form a cycle.',
+      });
+    for (const terminal of graph.terminals ?? []) {
+      if (
+        !objects.has(terminal.objectId) ||
+        !inside(terminal.location) ||
+        terminal.observationIds.some((o) => !observations.has(o)) ||
+        !graph.objects
+          .find((o) => o.id === terminal.objectId)
+          ?.terminalIds.includes(terminal.id)
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Invalid terminal ownership, geometry or evidence.',
+        });
+    }
+    for (const object of graph.objects)
+      if (
+        object.terminalIds.some(
+          (t) => terminals.get(t)?.objectId !== object.id,
+        ) ||
+        new Set(object.terminalIds).size !== object.terminalIds.length
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Invalid terminal references.',
+        });
+    for (const attachment of graph.attachments ?? []) {
+      if (
+        !terminals.has(attachment.terminalId) ||
+        graph.objects.find((o) => o.id === attachment.conductorObjectId)
+          ?.category !== 'conductor' ||
+        !inside(attachment.position) ||
+        attachment.observationIds.some((o) => !observations.has(o))
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Invalid attachment references or evidence.',
+        });
+    }
     if (
       graph.observations.reduce((n, o) => n + (o.mask?.path.length ?? 0), 0) >
       120000
@@ -170,3 +364,31 @@ export type SceneObject = z.infer<typeof sceneObjectSchema>;
 export type SceneObservation = z.infer<typeof visualObservationSchema>;
 export type SceneSnapshotRef = z.infer<typeof sceneSnapshotRefSchema>;
 export type SceneWork = z.infer<typeof sceneWorkSchema>;
+export type ObjectRelation = z.infer<typeof objectRelationSchema>;
+export type Terminal = z.infer<typeof terminalSchema>;
+export type Attachment = z.infer<typeof attachmentSchema>;
+export const terminalWorkSchema = z
+  .object({
+    requestId: id,
+    attemptId: id,
+    objectId: id,
+    inputSnapshotId: id,
+    inputSnapshotHash: hash,
+    crop: boxSchema,
+    status: z.enum([
+      'running',
+      'succeeded',
+      'failed',
+      'timed_out',
+      'interrupted',
+    ]),
+    upstreamOutcome: z.enum(['unknown', 'response_received']),
+    startedAt: z.number().int().nonnegative(),
+    finishedAt: z.number().int().nonnegative().optional(),
+    errorCode: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]{0,63}$/)
+      .optional(),
+  })
+  .strict();
+export type TerminalWork = z.infer<typeof terminalWorkSchema>;

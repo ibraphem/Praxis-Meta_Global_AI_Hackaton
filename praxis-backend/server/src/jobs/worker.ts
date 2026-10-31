@@ -440,7 +440,7 @@ export class AnalysisWorker {
         ].includes(e.code)
           ? 'not_retryable'
           : 'manual_only';
-        if (stage === 'scene' && a.sceneOperation === 'guided')
+        if (stage === 'scene' && a.sceneOperation !== 'inventory')
           a.retryPolicy = 'not_retryable';
         if (stage === 'muse' && completedInterpretation)
           a.result = completedInterpretation;
@@ -448,6 +448,19 @@ export class AnalysisWorker {
         a.finishedAt = Date.now();
         a.diagnostics = trace.snapshot();
         j[stage]!.status = a.status;
+        if (stage === 'scene')
+          for (const work of j.scene!.terminalWork ?? [])
+            if (work.status === 'running') {
+              work.status =
+                a.status === 'interrupted'
+                  ? 'interrupted'
+                  : a.status === 'timed_out'
+                    ? 'timed_out'
+                    : 'failed';
+              work.upstreamOutcome = 'unknown';
+              work.errorCode = e.code;
+              work.finishedAt = Date.now();
+            }
         if (stage === 'scene')
           for (const work of j.scene!.work)
             if (work.status === 'running') {

@@ -13,6 +13,7 @@ import {
   SceneOverlays,
 } from "../components/scene-inventory";
 import { ResultsPanel } from "../components/results-panel";
+import { SceneObjectOverlays } from "../components/scene-objects";
 import { createAnalysisJobProxy } from "../lib/server/analysis-job-proxy";
 import { sceneJob } from "./fixtures/scene";
 
@@ -70,7 +71,8 @@ test("scene work keeps polling active without changing the legacy result or pres
     }),
   );
   assert.doesNotMatch(results, /No components identified/);
-  assert.match(results, /Scene hypotheses are available above/);
+  assert.match(results, /Object hypotheses/);
+  assert.doesNotMatch(results, /S1 ·/);
 });
 
 test("scene overlay projects candidate mask geometry and estimated boxes in the original image frame", () => {
@@ -143,4 +145,73 @@ test("saved-job proxy supports an explicit discovery start without creating anot
     job.analysisId,
   );
   assert.equal(response.status, 202);
+});
+
+test("object view uses one named primary label and keeps raw segmentation in Evidence or selection", () => {
+  const job = sceneJob(),
+    graph = job.scene!.graph!;
+  const html = renderToStaticMarkup(
+    createElement(SceneObjectOverlays, {
+      graph,
+      result: job.result!,
+      selectedId: null,
+      onSelect() {},
+    }),
+  );
+  assert.match(html, /Inspect 9V battery snap connector object hypothesis/);
+  assert.doesNotMatch(html, /<path|S1|Wire region/);
+  assert.match(html, /Approximate Muse location/);
+  const selected = renderToStaticMarkup(
+    createElement(SceneObjectOverlays, {
+      graph,
+      result: job.result!,
+      selectedId: graph.objects[0]!.id,
+      onSelect() {},
+    }),
+  );
+  assert.match(selected, /<path/);
+  assert.match(selected, /boundary unconfirmed/);
+});
+
+test("scene understanding proxy forwards exact checkpoint and target JSON to fixed actions", async () => {
+  const job = sceneJob(),
+    ref = job.scene!.snapshotRef!;
+  for (const action of ["reconcile-scene", "discover-terminals"] as const) {
+    const payload = {
+      snapshotId: ref.snapshotId,
+      snapshotHash: ref.snapshotHash,
+      ...(action === "discover-terminals"
+        ? { objectIds: [job.scene!.graph!.objects[0]!.id] }
+        : {}),
+    };
+    const proxy = createAnalysisJobProxy({
+      fetcher: async (url, init) => {
+        assert.equal(
+          String(url),
+          `http://127.0.0.1:3000/api/analyses/${job.analysisId}/${action}`,
+        );
+        assert.equal(
+          new Headers(init?.headers).get("content-type"),
+          "application/json",
+        );
+        assert.deepEqual(
+          JSON.parse(Buffer.from(init?.body as Uint8Array).toString()),
+          payload,
+        );
+        return Response.json(job, {
+          status: action === "discover-terminals" ? 202 : 200,
+        });
+      },
+    });
+    const r = await proxy(
+      new Request("http://localhost/api/analyses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+      action,
+      job.analysisId,
+    );
+    assert.equal(r.status, action === "discover-terminals" ? 202 : 200);
+  }
 });

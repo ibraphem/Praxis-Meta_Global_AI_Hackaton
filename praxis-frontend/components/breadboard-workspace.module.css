@@ -687,6 +687,58 @@
 }
 
 /* Scene geometry and hit targets load with the photograph workspace. */
+.workspace :global(.scene-object-overlay) {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+.workspace :global(.scene-object-overlay svg) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.workspace :global(.scene-object-overlay rect) {
+  fill: none;
+  stroke: #6b778899;
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.scene-object-overlay rect.is-selected) {
+  stroke: #6d28d9;
+  stroke-width: 2;
+}
+.workspace :global(.scene-label-leader) {
+  stroke: #69768088;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.workspace :global(.scene-object-label) {
+  position: absolute;
+  pointer-events: auto;
+  max-width: 38%;
+  padding: 2px 5px;
+  color: #24362b;
+  background: #fffef4ee;
+  border: 1px solid #aebcae;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 10px;
+  line-height: 12px;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+.workspace :global(.scene-object-label.is-selected) {
+  border-color: #6d28d9;
+  background: #f1e9ff;
+}
 .workspace :global(.scene-inventory-selected-evidence) {
   position: absolute;
   inset: 0;

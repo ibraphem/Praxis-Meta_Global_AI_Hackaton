@@ -11,6 +11,8 @@ type Action =
   | "retry-muse"
   | "retry-scene"
   | "start-scene"
+  | "reconcile-scene"
+  | "discover-terminals"
   | "delete"
   | "audit-wires"
   | "recover-wires"
@@ -140,6 +142,8 @@ export function createAnalysisJobProxy(
       phase = "backend.connect";
       if (
         action === "verify-wire" ||
+        action === "reconcile-scene" ||
+        action === "discover-terminals" ||
         action === "retry-wire-crop" ||
         action === "verify-wire-extension" ||
         action === "wire-identities" ||
@@ -202,6 +206,16 @@ export function createAnalysisJobProxy(
           errors[409] = [
             "CROP_RETRY_CONFLICT",
             "Crop retry is blocked by active work, an unknown upstream outcome, an earlier retry, or the remaining budget. Refresh the saved status.",
+          ];
+        }
+        if (action === "reconcile-scene" || action === "discover-terminals") {
+          errors[400] = [
+            "INVALID_SCENE_TARGETS",
+            "Choose current inventory objects and their scene checkpoint before requesting terminal evidence.",
+          ];
+          errors[409] = [
+            "SCENE_CONFLICT",
+            "Scene evidence changed, work is active, a selected object was already attempted, or the terminal budget is exhausted. Refresh the inventory.",
           ];
         }
         if (action === "verify-wire-extension") {
@@ -276,7 +290,12 @@ export function createAnalysisJobProxy(
         );
       }
       return Response.json(parsed.data, {
-        status: !["get", "image", "wire-identities"].includes(action)
+        status: ![
+          "get",
+          "image",
+          "wire-identities",
+          "reconcile-scene",
+        ].includes(action)
           ? 202
           : 200,
         headers,

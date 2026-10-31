@@ -142,7 +142,47 @@ denominators and report incremental requests, crop pixels and stage latency. Rel
 1 does not claim improved terminal coverage or electrical connectivity. Synthetic
 contract/browser tests verify behavior, not real-photo recognition accuracy.
 
-### Persisted baseline jobs
+### Reconciled object view and terminal proposals
+
+The workspace now defaults to **Objects** when a scene inventory exists. It presents
+one primary label per reconciled display group, using named object hypotheses rather
+than anonymous S markers. Original SAM/Muse objects, observations and stable IDs stay
+saved. **Evidence** exposes baseline candidates, masks, fragments, search regions and
+alternative identities. Selecting an object also exposes its candidate masks and
+terminal positions. Approximate Muse locations, SAM candidate geometry and confirmed
+physical boundaries are explicitly distinguished; this release confirms no boundary.
+
+Reconciliation uses semantic compatibility, body/assembly containment and spatial
+evidence. Wire containment alone never establishes wire identity. Ambiguous matches
+remain unresolved, overlap chains do not merge arbitrarily, and bodies/housings keep
+separate `part_of` hypotheses. Display grouping does not verify physical identity.
+The read-only projection works on old v1 scene snapshots. **Record reconciliation**
+(`POST .../reconcile-scene`) records a new v2 checkpoint without a model request or
+modifying earlier snapshots, baseline predictions, revisions or endpoint reviews.
+
+**Discover terminals** (`POST .../discover-terminals`) is an explicit bounded model
+action. It starts with battery snap connectors and LED holders/assemblies; selected
+inventory objects can be inspected individually. Each object uses one Muse request
+with untouched full-scene context and a native focused crop. All points are projected
+from crop coordinates to original-image pixels. Terminal identity, physical kind,
+position, printed pin label and electrical role are separate fields. Hidden positions
+stay null; role proposals require a reported visible marking, never wire color.
+Apparent attachments distinguish visible attachment, occluded path, proximity and
+insufficient evidence. None creates electrical connectivity or a verified terminal.
+
+Both actions require the exact current scene checkpoint ID/hash. Terminal requests
+default to two cumulative requests and four million crop pixels per analysis;
+`SCENE_MAX_TERMINAL_REQUESTS=0` disables dispatch. Charges and input bindings are saved
+before provider execution. A failure stops further dispatch, preserves earlier
+results and does not trigger retries. Interrupted/unknown work stays recorded and
+cannot be silently repeated. Existing baseline analysis and wire budgets are unchanged.
+
+See the [independent annotation and scoring workflow](benchmarks/scene-v2/README.md)
+for `scene:score`, including recall, duplicate/merged identities, terminal error,
+false attachment proposals and measured attempt latency. No new accuracy claim is
+made without independently annotated real photographs.
+
+### Persisted baseline job API
 
 The frontend uses a persisted job API. Run on Node.js **22.13 or later** for built-in
 [`node:sqlite`](https://nodejs.org/download/release/v22.13.0/docs/api/cli.html#--no-experimental-sqlite).

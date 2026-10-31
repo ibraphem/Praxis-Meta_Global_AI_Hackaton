@@ -91,6 +91,13 @@ export function sceneJob(width = 100, height = 80) {
         sceneOperation: "guided",
       },
     ],
+    snapshotRef: {
+      snapshotId: randomUUID(),
+      snapshotHash: "3".repeat(64),
+      imageHash: job.imageHash,
+      sourceAttemptId: attemptId,
+      createdAt: job.createdAt,
+    },
     graph,
     budget: { requests: 1, pixels: 1600 },
     work: [],

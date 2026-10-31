@@ -11,6 +11,7 @@ const stageSchema = z.enum([
   "sam.wire_crop",
   "sam.scene_guided",
   "muse.inventory",
+  "muse.terminals",
   "muse.wire_verify",
   "wire.geometry",
   "wire.grounding",
