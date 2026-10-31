@@ -7,7 +7,11 @@ import {
   jobIsActive,
   jobMessage,
 } from "../lib/analysis-jobs";
-import { SceneInventory, SceneOverlays } from "../components/scene-inventory";
+import {
+  SceneInventory,
+  SceneInventoryNotRun,
+  SceneOverlays,
+} from "../components/scene-inventory";
 import { ResultsPanel } from "../components/results-panel";
 import { createAnalysisJobProxy } from "../lib/server/analysis-job-proxy";
 import { sceneJob } from "./fixtures/scene";
@@ -27,7 +31,7 @@ test("scene contracts preserve dynamic labels and reject promoted identities, cr
   mismatch.scene!.graph!.imageHash = "a".repeat(64);
   assert.equal(analysisJobSchema.safeParse(mismatch).success, false);
   const leakage = structuredClone(job);
-  Object.assign(leakage.scene!.graph!.observations[0]!, {
+  Object.assign(leakage.scene!.graph!.observations[1]!, {
     encodedMask: { payload: "private" },
   });
   assert.equal(analysisJobSchema.safeParse(leakage).success, false);
@@ -78,12 +82,23 @@ test("scene overlay projects candidate mask geometry and estimated boxes in the 
   assert.match(html, /translate\(10 20\) scale\(1 1\)/);
   assert.match(html, /left:10%/);
   assert.match(html, /top:25%/);
-  assert.equal(
-    renderToStaticMarkup(
-      createElement(SceneOverlays, { graph, selectedId: null }),
-    ),
-    "",
+  const unselected = renderToStaticMarkup(
+    createElement(SceneOverlays, { graph, selectedId: null }),
   );
+  assert.match(unselected, /9V battery snap connector/);
+  assert.doesNotMatch(unselected, /<path/); // inventory boxes do not depend on mask or selection
+});
+
+test("absent inventory is explicit for a disabled upload and offers a separate saved-photo discovery action", () => {
+  const job = sceneJob();
+  delete job.scene;
+  job.settings.dynamicScene = false;
+  const html = renderToStaticMarkup(
+    createElement(SceneInventoryNotRun, { job, busy: false, onStart() {} }),
+  );
+  assert.match(html, /Not run for this analysis/);
+  assert.match(html, /disabled when this photograph was uploaded/);
+  assert.match(html, /Discover scene objects/);
 });
 
 test("saved-job proxy forwards an explicit inventory retry and preserves scene evidence", async () => {
@@ -108,4 +123,24 @@ test("saved-job proxy forwards an explicit inventory retry and preserves scene e
     (await response.json()).scene.graph.objects[0].proposedType,
     "9V battery snap connector",
   );
+});
+
+test("saved-job proxy supports an explicit discovery start without creating another analysis", async () => {
+  const job = sceneJob();
+  const proxy = createAnalysisJobProxy({
+    fetcher: async (url, init) => {
+      assert.equal(
+        String(url),
+        `http://127.0.0.1:3000/api/analyses/${job.analysisId}/start-scene`,
+      );
+      assert.equal(init?.method, "POST");
+      return Response.json(job, { status: 202 });
+    },
+  });
+  const response = await proxy(
+    new Request("http://localhost/api/analyses", { method: "POST" }),
+    "start-scene",
+    job.analysisId,
+  );
+  assert.equal(response.status, 202);
 });

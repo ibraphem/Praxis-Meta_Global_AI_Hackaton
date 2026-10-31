@@ -10,6 +10,7 @@ type Action =
   | "retry-sam"
   | "retry-muse"
   | "retry-scene"
+  | "start-scene"
   | "delete"
   | "audit-wires"
   | "recover-wires"

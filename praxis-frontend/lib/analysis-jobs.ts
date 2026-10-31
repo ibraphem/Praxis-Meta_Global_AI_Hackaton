@@ -121,6 +121,16 @@ export const analysisJobSchema = z
       .strict(),
     scene: stageSchema
       .extend({
+        enabledBy: z.enum(["upload", "manual"]).optional(),
+        settings: z
+          .object({
+            timeoutMs: z.number().int().positive().max(90000),
+            maxRequests: z.number().int().min(0).max(8),
+            maxPixels: z.number().int().positive().max(16000000),
+            maxCropPixels: z.number().int().positive().max(4000000),
+          })
+          .strict()
+          .optional(),
         snapshotRef: sceneSnapshotRefSchema.optional(),
         graph: sceneGraphSchema.optional(),
         budget: z

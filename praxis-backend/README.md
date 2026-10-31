@@ -61,6 +61,22 @@ open-vocabulary scene discovery for **new persisted analyses**. It is off by def
 pending annotated real-photo evaluation. Existing saved analyses and the legacy
 synchronous `/api/vision/analyze` contract do not acquire new stages or model calls.
 
+Saved analyses now always show a scene-inventory status. A photograph uploaded with
+automatic discovery disabled says **Not run** rather than hiding the panel. Click
+**Discover scene objects** to explicitly opt an existing analysis into inventory:
+`POST /api/analyses/:id/start-scene` binds its saved SAM checkpoint and makes one
+whole-image Muse request, with **zero new SAM requests**. This manual discovery is
+available even when automatic discovery is disabled. Its settings and manual origin
+are recorded separately; original upload settings, baseline predictions, revisions
+and wire reviews remain unchanged. Repeated starts conflict rather than duplicate
+inference. An eligible failed inventory still uses the explicit retry action.
+
+Muse-discovered object boxes and proposed labels appear on the photograph as soon
+as inventory is saved, including box-only objects. They do not require selection or
+successful guided segmentation. Click a scene label or inventory row to inspect its
+associated evidence. Unclassified SAM hypotheses remain listed without duplicating
+every baseline overlay by default.
+
 The existing broad SAM pass, local coverage audit and interpretation publish first.
 Inventory and guided segmentation then run as separate attempts under the same
 per-analysis worker lease. They are serialized with baseline work, not executed in

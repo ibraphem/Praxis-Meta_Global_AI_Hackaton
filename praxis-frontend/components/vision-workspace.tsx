@@ -218,6 +218,7 @@ export function VisionWorkspace() {
       | "retry-sam"
       | "retry-muse"
       | "retry-scene"
+      | "start-scene"
       | RecoveryAction,
     savedId?: string,
     payload?: unknown,
@@ -621,6 +622,8 @@ export function VisionWorkspace() {
             result={result}
             loading={loading && !usingPartial && !(result && job?.scene)}
             scene={job?.scene}
+            job={job}
+            onStartScene={() => void runJob("start-scene")}
             busy={loading || (!!job && jobIsActive(job))}
             onRetryScene={() => void runJob("retry-scene")}
             selectedId={selectedId}

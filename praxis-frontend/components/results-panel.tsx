@@ -9,7 +9,7 @@ import { Icon } from "./icons";
 import { regionLabel, regionExplanations } from "@/lib/geometry";
 import { BreadboardRegions } from "./breadboard-regions";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
-import { SceneInventory } from "./scene-inventory";
+import { SceneInventory, SceneInventoryNotRun } from "./scene-inventory";
 
 interface Props {
   result: Analysis | null;
@@ -18,6 +18,8 @@ interface Props {
   onSelect: (id: string) => void;
   elapsed: number | null;
   scene?: AnalysisJob["scene"];
+  job?: AnalysisJob | null;
+  onStartScene?: () => void;
   onRetryScene?: () => void;
   busy?: boolean;
 }
@@ -30,6 +32,8 @@ export function ResultsPanel({
   onSelect,
   elapsed,
   scene,
+  job,
+  onStartScene,
   onRetryScene,
   busy = false,
 }: Props) {
@@ -79,6 +83,13 @@ export function ResultsPanel({
           onSelect={onSelect}
           onRetry={onRetryScene ?? (() => {})}
           busy={busy}
+        />
+      )}
+      {!scene && job && (
+        <SceneInventoryNotRun
+          job={job}
+          busy={busy}
+          onStart={onStartScene ?? (() => {})}
         />
       )}
       <div className="detection-area">

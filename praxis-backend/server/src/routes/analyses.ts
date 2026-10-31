@@ -86,6 +86,11 @@ export function registerAnalysisRoutes(
           : 'image/png';
     return reply.type(type).send(bytes);
   });
+  app.post('/api/analyses/:id/start-scene', async (request, reply) => {
+    const job = store.requestScene(id(request.params));
+    setImmediate(kick);
+    return reply.code(202).send(publicJob(job));
+  });
   for (const stage of ['sam', 'muse', 'scene'] as const)
     app.post(`/api/analyses/:id/retry-${stage}`, async (request, reply) => {
       const job = store.retry(id(request.params), stage);

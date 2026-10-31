@@ -123,7 +123,11 @@ export function ImagePreview({
           sceneGraph.image.width === photograph.width &&
           sceneGraph.image.height === photograph.height &&
           showOverlays && (
-            <SceneOverlays graph={sceneGraph} selectedId={selectedId} />
+            <SceneOverlays
+              graph={sceneGraph}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
           )}
         {result && dimensionsMatch && showOverlays && (
           <div className="detection-overlays" aria-label="Component locations">

@@ -88,13 +88,21 @@ export class AnalysisWorker {
       MUSE_MAX_DIMENSION: job.settings.maxDimension,
       MUSE_MINIMAL_PROMPT: job.settings.minimalPrompt,
       SCENE_STAGE_TIMEOUT_MS:
-        job.settings.sceneTimeoutMs ?? this.config.SCENE_STAGE_TIMEOUT_MS,
+        job.scene?.settings?.timeoutMs ??
+        job.settings.sceneTimeoutMs ??
+        this.config.SCENE_STAGE_TIMEOUT_MS,
       SCENE_MAX_GUIDED_REQUESTS:
-        job.settings.sceneMaxRequests ?? this.config.SCENE_MAX_GUIDED_REQUESTS,
+        job.scene?.settings?.maxRequests ??
+        job.settings.sceneMaxRequests ??
+        this.config.SCENE_MAX_GUIDED_REQUESTS,
       SCENE_MAX_GUIDED_PIXELS:
-        job.settings.sceneMaxPixels ?? this.config.SCENE_MAX_GUIDED_PIXELS,
+        job.scene?.settings?.maxPixels ??
+        job.settings.sceneMaxPixels ??
+        this.config.SCENE_MAX_GUIDED_PIXELS,
       SCENE_MAX_CROP_PIXELS:
-        job.settings.sceneMaxCropPixels ?? this.config.SCENE_MAX_CROP_PIXELS,
+        job.scene?.settings?.maxCropPixels ??
+        job.settings.sceneMaxCropPixels ??
+        this.config.SCENE_MAX_CROP_PIXELS,
     };
     const client =
       this.sceneClient && stage === 'scene'

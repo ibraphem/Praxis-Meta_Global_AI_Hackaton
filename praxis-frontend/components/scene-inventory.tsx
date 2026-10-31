@@ -2,6 +2,47 @@ import type { CSSProperties } from "react";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
 import type { SceneGraph } from "@/lib/scene";
 
+export function SceneInventoryNotRun({
+  job,
+  busy,
+  onStart,
+}: {
+  job: AnalysisJob;
+  busy: boolean;
+  onStart: () => void;
+}) {
+  const ready = job.sam.status === "succeeded" && !!job.sam.snapshotRef;
+  return (
+    <section
+      className="scene-inventory-panel"
+      aria-label="Dynamic scene inventory"
+    >
+      <h3>Scene inventory</h3>
+      <p>
+        <strong>Not run for this analysis.</strong>
+      </p>
+      <p>
+        {job.settings.dynamicScene === false
+          ? "Automatic scene discovery was disabled when this photograph was uploaded. The four-category results do not include an open-vocabulary inventory."
+          : "This saved analysis has no dynamic inventory. Its existing component results are preserved."}
+      </p>
+      <button
+        type="button"
+        className="button button-secondary"
+        disabled={busy || !ready}
+        onClick={onStart}
+      >
+        Discover scene objects
+      </button>
+      <p>
+        {ready
+          ? "Uses one Muse request to inspect the whole photograph. Reuses saved segmentation and displays discovered objects as boxes; no new SAM requests."
+          : "Complete segmentation before discovering objects on this saved photograph."}
+      </p>
+    </section>
+  );
+}
+
 export function SceneInventory({
   scene,
   selectedId,
@@ -34,9 +75,13 @@ export function SceneInventory({
         Labels and mask associations are proposals. Hypothesis counts do not
         establish distinct physical objects or electrical connections.
       </p>
+      <p>
+        Small objects use S markers on the photograph. Select a marker or row to
+        inspect its full description and evidence.
+      </p>
       {graph && (
         <ul className={"scene-inventory-list"}>
-          {graph.objects.map((object) => (
+          {graph.objects.map((object, index) => (
             <li key={object.id}>
               <button
                 type="button"
@@ -46,7 +91,9 @@ export function SceneInventory({
                 aria-pressed={selectedId === object.id}
                 onClick={() => onSelect(object.id)}
               >
-                <strong>{object.proposedType}</strong>
+                <strong>
+                  S{index + 1} · {object.proposedType}
+                </strong>
                 <span>
                   {object.category.replaceAll("_", " ")} ·{" "}
                   {object.recognitionStatus}
@@ -165,68 +212,123 @@ export function SceneInventory({
 export function SceneOverlays({
   graph,
   selectedId,
+  onSelect = () => {},
 }: {
   graph: SceneGraph;
   selectedId: string | null;
+  onSelect?: (id: string) => void;
 }) {
   const object = graph.objects.find((o) => o.id === selectedId);
-  if (!object) return null;
   const ids = new Set(
     graph.associations
-      .filter((a) => a.objectId === object.id)
+      .filter((a) => a.objectId === object?.id)
       .map((a) => a.observationId),
   );
   const observations = graph.observations.filter((o) => ids.has(o.id));
-  const boxes = [
-    { id: object.id, bbox: object.bbox },
-    ...observations.filter((o) => o.source === "sam"),
-  ];
+  const inventoryIds = new Set(
+    graph.associations
+      .filter((a) => a.basis === "inventory")
+      .map((a) => a.objectId),
+  );
+  const visibleObjects = graph.objects
+    .filter((o) => inventoryIds.has(o.id) || o.id === object?.id)
+    .sort((a, b) => b.bbox[2] * b.bbox[3] - a.bbox[2] * a.bbox[3]);
+  if (!visibleObjects.length) return null;
   return (
     <div
       className={"scene-inventory-overlays"}
-      aria-label="Selected scene object locations"
+      aria-label="Scene object locations"
     >
-      {boxes.map((box) => (
-        <div
-          key={box.id}
-          className={"scene-inventory-box"}
-          style={
-            {
-              left: `${(box.bbox[0] / graph.image.width) * 100}%`,
-              top: `${(box.bbox[1] / graph.image.height) * 100}%`,
-              width: `${(box.bbox[2] / graph.image.width) * 100}%`,
-              height: `${(box.bbox[3] / graph.image.height) * 100}%`,
-            } as CSSProperties
-          }
-        >
-          {box.id === object.id && (
-            <span style={{ width: "max-content" }}>{object.proposedType}</span>
-          )}
-        </div>
-      ))}
-      <svg
-        viewBox={`0 0 ${graph.image.width} ${graph.image.height}`}
-        preserveAspectRatio="none"
-        aria-label="Scene mask candidates"
-      >
-        {observations
-          .filter((o) => o.mask)
-          .map((o) => (
-            <g
-              key={o.id}
-              transform={`translate(${o.bbox[0]} ${o.bbox[1]}) scale(${o.bbox[2] / o.mask!.width} ${o.bbox[3] / o.mask!.height})`}
+      {visibleObjects.map((box, index) => {
+        const showName =
+          box.id === selectedId ||
+          box.category === "power_source" ||
+          (box.category === "connector" &&
+            (box.bbox[2] * box.bbox[3]) /
+              (graph.image.width * graph.image.height) >=
+              0.005);
+        return (
+          <div
+            key={box.id}
+            className={`scene-inventory-box ${box.id === selectedId ? "is-selected" : ""}`}
+            style={
+              {
+                left: `${(box.bbox[0] / graph.image.width) * 100}%`,
+                top: `${(box.bbox[1] / graph.image.height) * 100}%`,
+                width: `${(box.bbox[2] / graph.image.width) * 100}%`,
+                height: `${(box.bbox[3] / graph.image.height) * 100}%`,
+                zIndex: index + 1,
+              } as CSSProperties
+            }
+          >
+            <button
+              type="button"
+              className={`scene-inventory-label ${showName ? "" : "is-compact"}`}
+              style={{
+                width: "max-content",
+                ...(box.bbox[0] > graph.image.width * 0.6
+                  ? { left: "auto", right: 0 }
+                  : {}),
+              }}
+              title={`${box.proposedType} — ${box.recognitionStatus}`}
+              aria-label={`Inspect ${box.proposedType} scene hypothesis`}
+              aria-pressed={box.id === selectedId}
+              onClick={() => onSelect(box.id)}
             >
-              <path
-                d={o.mask!.path}
-                fill="#8b5cf6"
-                fillOpacity="0.35"
-                fillRule="evenodd"
-              >
-                <title>{`Proposed mask association for ${object.proposedType}`}</title>
-              </path>
-            </g>
-          ))}
-      </svg>
+              <strong>
+                {showName
+                  ? box.proposedType
+                  : `S${graph.objects.indexOf(box) + 1}`}
+              </strong>
+              {showName && <small>{box.recognitionStatus}</small>}
+            </button>
+          </div>
+        );
+      })}
+      {object && (
+        <div
+          className="scene-inventory-selected-evidence"
+          aria-label="Selected scene object locations"
+        >
+          {observations
+            .filter((o) => o.source === "sam")
+            .map((o) => (
+              <div
+                key={o.id}
+                className="scene-inventory-box scene-inventory-evidence-box"
+                style={{
+                  left: `${(o.bbox[0] / graph.image.width) * 100}%`,
+                  top: `${(o.bbox[1] / graph.image.height) * 100}%`,
+                  width: `${(o.bbox[2] / graph.image.width) * 100}%`,
+                  height: `${(o.bbox[3] / graph.image.height) * 100}%`,
+                }}
+              />
+            ))}
+          <svg
+            viewBox={`0 0 ${graph.image.width} ${graph.image.height}`}
+            preserveAspectRatio="none"
+            aria-label="Scene mask candidates"
+          >
+            {observations
+              .filter((o) => o.mask)
+              .map((o) => (
+                <g
+                  key={o.id}
+                  transform={`translate(${o.bbox[0]} ${o.bbox[1]}) scale(${o.bbox[2] / o.mask!.width} ${o.bbox[3] / o.mask!.height})`}
+                >
+                  <path
+                    d={o.mask!.path}
+                    fill="#8b5cf6"
+                    fillOpacity="0.35"
+                    fillRule="evenodd"
+                  >
+                    <title>{`Proposed mask association for ${object.proposedType}`}</title>
+                  </path>
+                </g>
+              ))}
+          </svg>
+        </div>
+      )}
     </div>
   );
 }

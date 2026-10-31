@@ -136,6 +136,13 @@ export interface Job {
   wireIdentities: WireIdentity[];
   scene?: {
     status: AttemptStatus | 'not_started';
+    enabledBy?: 'upload' | 'manual';
+    settings?: {
+      timeoutMs: number;
+      maxRequests: number;
+      maxPixels: number;
+      maxCropPixels: number;
+    };
     attempts: Attempt[];
     snapshotRef?: SceneSnapshotRef;
     graph?: SceneGraph;
@@ -491,6 +498,7 @@ export class JobStore {
           ? {
               scene: {
                 status: 'queued' as const,
+                enabledBy: 'upload' as const,
                 attempts: [
                   { ...newAttempt(), sceneOperation: 'inventory' as const },
                 ],
@@ -505,6 +513,68 @@ export class JobStore {
           'INSERT INTO jobs (id,data,image,expires_at,queued_stage) VALUES (?,?,?,?,?)',
         )
         .run(job.analysisId, JSON.stringify(job), bytes, job.expiresAt, 'sam');
+      return job;
+    });
+  }
+  /** Explicit opt-in for a saved photograph. Never reruns or replaces baseline predictions. */
+  requestScene(id: string): Job {
+    return this.transaction(() => {
+      const job = this.get(id);
+      if (
+        this.experiments.active() ||
+        job.owner ||
+        [
+          job.sam.status,
+          job.muse.status,
+          job.recovery.status,
+          job.scene?.status,
+        ].some((s) => s === 'queued' || s === 'running')
+      )
+        throw new AppError(
+          409,
+          'ATTEMPT_ACTIVE',
+          'Wait for active model work or reservations to finish.',
+        );
+      if (job.scene)
+        throw new AppError(
+          409,
+          'SCENE_ALREADY_STARTED',
+          'Scene discovery already has saved evidence. Use an eligible inventory retry instead.',
+        );
+      const ref = job.recovery.snapshotRef ?? job.sam.snapshotRef;
+      if (job.sam.status !== 'succeeded' || !ref)
+        throw new AppError(
+          409,
+          'SAM_REQUIRED',
+          'Complete segmentation before starting discovery on this saved photograph.',
+        );
+      job.scene = {
+        status: 'queued',
+        enabledBy: 'manual',
+        settings: {
+          timeoutMs:
+            job.settings.sceneTimeoutMs ?? this.config.SCENE_STAGE_TIMEOUT_MS,
+          // Explicit saved-photo discovery isolates Muse inventory from new SAM work.
+          maxRequests: 0,
+          maxPixels:
+            job.settings.sceneMaxPixels ?? this.config.SCENE_MAX_GUIDED_PIXELS,
+          maxCropPixels:
+            job.settings.sceneMaxCropPixels ??
+            this.config.SCENE_MAX_CROP_PIXELS,
+        },
+        attempts: [
+          {
+            ...newAttempt(),
+            sceneOperation: 'inventory',
+            samSnapshotId: ref.samSnapshotId,
+            samSnapshotHash: ref.samSnapshotHash,
+            snapshotBinding: 'recorded',
+          },
+        ],
+        budget: { requests: 0, pixels: 0 },
+        work: [],
+      };
+      this.save(job);
       return job;
     });
   }

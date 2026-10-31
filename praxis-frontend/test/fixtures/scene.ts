@@ -35,6 +35,14 @@ export function sceneJob(width = 100, height = 80) {
     ],
     observations: [
       {
+        id: randomUUID(),
+        kind: "bbox",
+        source: "muse",
+        attemptId,
+        model: "muse-test",
+        bbox: [10, 20, 20, 20],
+      },
+      {
         id: observationId,
         kind: "mask",
         source: "sam",
@@ -61,6 +69,15 @@ export function sceneJob(width = 100, height = 80) {
         attemptId,
       },
     ],
+  });
+  graph.associations.push({
+    id: randomUUID(),
+    objectId,
+    observationId: graph.observations[0]!.id,
+    relation: "unknown",
+    basis: "inventory",
+    status: "proposed",
+    attemptId,
   });
   job.scene = {
     status: "succeeded",

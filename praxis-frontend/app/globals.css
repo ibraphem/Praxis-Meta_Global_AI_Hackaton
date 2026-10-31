@@ -1514,31 +1514,3 @@ h1 > span {
   background: #f7f8f7;
   border-radius: 8px;
 }
-.scene-inventory-overlays {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 20;
-}
-.scene-inventory-overlays svg {
-  width: 100%;
-  height: 100%;
-  position: absolute;
-  inset: 0;
-}
-.scene-inventory-box {
-  position: absolute;
-  border: 2px dashed #8b5cf6;
-}
-.scene-inventory-box span {
-  position: absolute;
-  top: 0;
-  left: 0;
-  background: #6d28d9;
-  color: white;
-  padding: 2px 5px;
-  font-size: 11px;
-  width: max-content;
-  max-width: 240px;
-  overflow-wrap: anywhere;
-}

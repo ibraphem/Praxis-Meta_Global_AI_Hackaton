@@ -32,6 +32,8 @@ import type { SamSnapshot } from '../src/services/vision.js';
 import type { MetaClient } from '../src/lib/meta-client.js';
 import type { SnapshotRef } from '../src/jobs/snapshots.js';
 import { AppError } from '../src/lib/errors.js';
+import Fastify from 'fastify';
+import { registerAnalysisRoutes } from '../src/routes/analyses.js';
 import {
   completion,
   imageBytes,
@@ -683,4 +685,123 @@ test('inventory can still discover objects after broad segmentation fails', asyn
   assert.equal(result.scene!.graph!.objects.length, 4);
   assert.equal(result.scene!.graph!.objects[0]!.proposedType, '9V battery');
   assert.equal(result.scene!.budget.requests, 0);
+});
+
+test('explicit saved-photo discovery works when automatic discovery was disabled and preserves the baseline without new SAM calls', async (t) => {
+  const config = testConfig({ DYNAMIC_SCENE_ENABLED: 'false' });
+  const store = new JobStore(config, ':memory:');
+  const bytes = await imageBytes(1000, 800),
+    image = await prepareImage(bytes, config);
+  const created = store.create(bytes, image);
+  assert.throws(
+    () => store.requestScene(created.analysisId),
+    /active model work/,
+  );
+  let inventoryCalls = 0,
+    samCalls = 0;
+  const worker = new AnalysisWorker(
+    store,
+    config,
+    () => {},
+    fixtureStages(),
+    undefined,
+    {
+      async post(path) {
+        if (path === 'responses') {
+          samCalls++;
+          throw new Error('Discovery must not run SAM');
+        }
+        inventoryCalls++;
+        return completion(inventory);
+      },
+    },
+  );
+  const app = Fastify();
+  let kicks = 0;
+  registerAnalysisRoutes(app, config, store, () => {
+    kicks++;
+    worker.tick();
+  });
+  t.after(async () => {
+    await app.close();
+    await worker.close();
+    store.close();
+  });
+  worker.start();
+  await until(() => store.get(created.analysisId).status === 'completed');
+  const before = store.get(created.analysisId);
+  const baseline = JSON.stringify({
+    settings: before.settings,
+    sam: before.sam,
+    muse: before.muse,
+    candidateResult: before.candidateResult,
+    revision: before.revision,
+    wireIdentities: before.wireIdentities,
+  });
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/analyses/${created.analysisId}/start-scene`,
+  });
+  assert.equal(response.statusCode, 202);
+  assert.equal(response.json().scene.enabledBy, 'manual');
+  assert.equal(response.json().scene.settings.maxRequests, 0);
+  assert.equal(
+    response.json().scene.attempts[0].samSnapshotId,
+    before.sam.snapshotRef!.samSnapshotId,
+  );
+  await until(
+    () => store.get(created.analysisId).scene?.status === 'succeeded',
+  );
+  const after = store.get(created.analysisId);
+  assert.equal(
+    JSON.stringify({
+      settings: after.settings,
+      sam: after.sam,
+      muse: after.muse,
+      candidateResult: after.candidateResult,
+      revision: after.revision,
+      wireIdentities: after.wireIdentities,
+    }),
+    baseline,
+  );
+  assert.equal(
+    after.scene!.graph!.objects.find((o) => o.category === 'power_source')!
+      .proposedType,
+    '9V battery',
+  );
+  assert.equal(samCalls, 0);
+  assert.equal(inventoryCalls, 1);
+  assert.equal(kicks, 1);
+  const duplicate = await app.inject({
+    method: 'POST',
+    url: `/api/analyses/${created.analysisId}/start-scene`,
+  });
+  assert.equal(duplicate.statusCode, 409);
+  assert.equal(inventoryCalls, 1);
+});
+
+test('explicit discovery freezes its own settings on a legacy analysis without rewriting its original settings', async (t) => {
+  const config = testConfig();
+  const store = new JobStore(config, ':memory:');
+  t.after(() => store.close());
+  const bytes = await imageBytes(),
+    image = await prepareImage(bytes, config),
+    job = store.create(bytes, image);
+  job.sam.status = 'succeeded';
+  lastAttempt(job, 'sam')!.status = 'succeeded';
+  delete job.settings.dynamicScene;
+  delete job.settings.sceneTimeoutMs;
+  delete job.settings.sceneMaxRequests;
+  delete job.settings.sceneMaxPixels;
+  delete job.settings.sceneMaxCropPixels;
+  store.save(job);
+  const original = JSON.stringify(job.settings);
+  const next = store.requestScene(job.analysisId);
+  assert.equal(JSON.stringify(next.settings), original);
+  assert.equal(next.scene!.settings!.timeoutMs, config.SCENE_STAGE_TIMEOUT_MS);
+  assert.equal(next.scene!.settings!.maxRequests, 0);
+  assert.equal(
+    next.scene!.attempts[0]!.samSnapshotHash,
+    next.sam.snapshotRef!.samSnapshotHash,
+  );
 });

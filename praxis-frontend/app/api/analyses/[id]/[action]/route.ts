@@ -17,6 +17,7 @@ export async function POST(
     ![
       "retry-muse",
       "retry-scene",
+      "start-scene",
       "retry-sam",
       "audit-wires",
       "recover-wires",
@@ -34,6 +35,7 @@ export async function POST(
     action as
       | "retry-muse"
       | "retry-scene"
+      | "start-scene"
       | "retry-sam"
       | "audit-wires"
       | "recover-wires"
