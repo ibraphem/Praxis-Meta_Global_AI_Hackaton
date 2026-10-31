@@ -640,6 +640,18 @@ export class JobStore {
             })
             .strict()
             .optional(),
+          ambiguityReview: z
+            .object({
+              clusterId: z.uuid(),
+              memberObjectIds: z.array(z.uuid()).min(2).max(164),
+              decision: z.enum([
+                'same_object',
+                'different_objects',
+                'uncertain',
+              ]),
+            })
+            .strict()
+            .optional(),
         })
         .strict()
         .safeParse(body);
@@ -691,7 +703,9 @@ export class JobStore {
         });
       if (
         operation !== 'reconcile' &&
-        (parsed.data.identityReview || parsed.data.maskReview)
+        (parsed.data.identityReview ||
+          parsed.data.maskReview ||
+          parsed.data.ambiguityReview)
       )
         throw new AppError(
           400,
@@ -706,6 +720,37 @@ export class JobStore {
         );
       if (operation === 'reconcile') {
         const graph = reconcileSceneGraph(job.scene.graph);
+        if (parsed.data.ambiguityReview) {
+          const review = parsed.data.ambiguityReview;
+          const cluster = graph.ambiguityClusters?.find(
+            (c) => c.id === review.clusterId,
+          );
+          if (
+            !cluster ||
+            review.memberObjectIds.length !== cluster.memberObjectIds.length ||
+            new Set(review.memberObjectIds).size !==
+              review.memberObjectIds.length ||
+            review.memberObjectIds.some(
+              (id) => !cluster.memberObjectIds.includes(id),
+            ) ||
+            (graph.ambiguityReviews?.length ?? 0) >= 400
+          )
+            throw new AppError(
+              400,
+              'INVALID_AMBIGUITY_REVIEW',
+              'Review the complete current cluster membership against this scene checkpoint.',
+            );
+          graph.version = 'scene-v2';
+          graph.ambiguityReviews ??= [];
+          graph.ambiguityReviews.push({
+            id: randomUUID(),
+            ...review,
+            source: 'human_review',
+            inputSnapshotId: parsed.data.snapshotId,
+            inputSnapshotHash: parsed.data.snapshotHash,
+            reviewedAt: Date.now(),
+          });
+        }
         if (parsed.data.identityReview) {
           const review = parsed.data.identityReview;
           if (

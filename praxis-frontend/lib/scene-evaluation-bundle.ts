@@ -83,6 +83,8 @@ export function buildSceneEvaluationEvidence(input: {
       attempts: attempts.filter((a) => a.sceneOperation === "reconcile"),
       recordedRelations: graph?.relations ?? (graph ? [] : null),
       decisions: graph?.identityReviews ?? (graph ? [] : null),
+      ambiguityClusters: graph?.ambiguityClusters ?? (graph ? [] : null),
+      ambiguityDecisions: graph?.ambiguityReviews ?? (graph ? [] : null),
       maskIdentityDecisions: graph?.maskIdentityReviews ?? (graph ? [] : null),
       displayProjection: view
         ? {

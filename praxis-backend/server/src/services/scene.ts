@@ -21,7 +21,10 @@ import type { SnapshotRef } from '../jobs/snapshots.js';
 import { recoveryEligible } from './wire-evidence-policy.js';
 import type { SceneTarget } from './scene-guidance.js';
 export { planSceneTargets } from './scene-guidance.js';
-import { matchInventoryRediscoveries } from './scene-identity.js';
+import {
+  matchInventoryRediscoveries,
+  recordIdentityAmbiguities,
+} from './scene-identity.js';
 import { museInput } from './muse-image.js';
 import { normalizedBoxToPixels } from './wire-refinement.js';
 import { decodeSamResponse } from './sam.js';
@@ -194,6 +197,7 @@ export function buildSceneGraph(input: {
       bbox: normalizedBoxToPixels(p.box, input.snapshot.image),
     })),
   );
+  const proposalReferences = [];
   for (const [index, proposal] of input.inventory.objects.entries()) {
     const reused = graph.objects.find(
       (o) => o.id === identities[index]!.matchedObjectId,
@@ -219,6 +223,11 @@ export function buildSceneGraph(input: {
     };
     if (!reused) graph.objects.push(object);
     graph.observations.push(observation);
+    proposalReferences.push({
+      objectId: object.id,
+      observationId: observation.id,
+      attemptId: input.attemptId,
+    });
     graph.associations.push({
       id: randomUUID(),
       objectId: object.id,
@@ -229,6 +238,7 @@ export function buildSceneGraph(input: {
       attemptId: input.attemptId,
     });
   }
+  recordIdentityAmbiguities(graph, identities, proposalReferences);
   for (const candidate of input.snapshot.candidates.filter(recoveryEligible)) {
     const priorObservation =
       input.ref &&

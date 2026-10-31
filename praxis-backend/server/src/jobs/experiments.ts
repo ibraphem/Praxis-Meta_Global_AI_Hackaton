@@ -9,7 +9,7 @@ export interface ExperimentRecord {
   snapshotRef: SnapshotRef;
   createdAt: number;
   finishedAt?: number;
-  status: 'running' | 'completed' | 'interrupted' | 'released';
+  status: 'running' | 'completed' | 'failed' | 'interrupted' | 'released';
   owner?: string;
   leaseUntil: number;
   report?: unknown;
@@ -172,7 +172,7 @@ export class ExperimentRegistry {
     id: string,
     owner: string,
     report: unknown,
-    status: 'running' | 'completed' | 'interrupted' = 'running',
+    status: 'running' | 'completed' | 'failed' | 'interrupted' = 'running',
   ): boolean {
     return this.store.transaction(() => {
       const current = this.get(id);

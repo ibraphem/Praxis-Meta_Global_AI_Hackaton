@@ -176,6 +176,121 @@ export function SceneObjectPanel({
           </li>
         ))}
       </ul>
+      {!!graph.ambiguityClusters?.length && (
+        <section aria-label="Identity ambiguity clusters">
+          <h3>Identity ambiguities ({graph.ambiguityClusters.length})</h3>
+          <p>
+            These candidates may describe the same object. Cluster membership
+            does not merge objects, terminals or electrical relationships.
+          </p>
+          {graph.ambiguityClusters.map((cluster) => {
+            const review = graph.ambiguityReviews
+              ?.filter((r) => r.clusterId === cluster.id)
+              .at(-1);
+            const currentReview =
+              review &&
+              review.memberObjectIds.length ===
+                cluster.memberObjectIds.length &&
+              cluster.memberObjectIds.every((id) =>
+                review.memberObjectIds.includes(id),
+              );
+            return (
+              <details key={cluster.id}>
+                <summary>
+                  {cluster.memberObjectIds.length} competing identities ·{" "}
+                  {currentReview
+                    ? review.decision.replaceAll("_", " ")
+                    : review
+                      ? "new members need review"
+                      : "needs review"}
+                </summary>
+                <small style={{ overflowWrap: "anywhere" }}>
+                  Cluster {cluster.id}
+                </small>
+                {cluster.memberObjectIds.map((id) => (
+                  <div key={id}>
+                    <button
+                      type="button"
+                      className="button button-secondary"
+                      onClick={() => {
+                        onSelect(id);
+                        onModeChange("members");
+                      }}
+                    >
+                      Inspect{" "}
+                      {graph.objects.find((o) => o.id === id)?.proposedType}
+                    </button>
+                    <small
+                      style={{ display: "block", overflowWrap: "anywhere" }}
+                    >
+                      {id}
+                    </small>
+                  </div>
+                ))}
+                <p>
+                  {cluster.evidence.length} retained comparisons. Reviews record
+                  the current membership and do not automatically merge it.
+                </p>
+                <details>
+                  <summary>Matching evidence</summary>
+                  {cluster.evidence.map((e) => (
+                    <p
+                      key={`${e.observationId}:${e.candidateObjectId}`}
+                      style={{ overflowWrap: "anywhere" }}
+                    >
+                      {e.proposalObjectId} → {e.candidateObjectId}: overlap{" "}
+                      {e.iou.toFixed(2)}, description{" "}
+                      {e.semanticOverlap.toFixed(2)};{" "}
+                      {e.eligible
+                        ? "competing match"
+                        : "insufficient identity evidence"}
+                      {e.wireSafeguard ? "; conductor safeguard retained" : ""}.
+                      Observation {e.observationId}.
+                    </p>
+                  ))}
+                </details>
+                {!!cluster.relatedClusterIds.length && (
+                  <p>
+                    Related clusters: {cluster.relatedClusterIds.join(", ")}
+                  </p>
+                )}
+                {binding &&
+                  onAction &&
+                  (
+                    [
+                      ["same_object", "Review cluster as same object"],
+                      [
+                        "different_objects",
+                        "Review cluster as different objects",
+                      ],
+                      ["uncertain", "Keep cluster uncertain"],
+                    ] as const
+                  ).map(([decision, label]) => (
+                    <button
+                      key={decision}
+                      type="button"
+                      className="button button-secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        onAction("reconcile-scene", {
+                          snapshotId: binding.snapshotId,
+                          snapshotHash: binding.snapshotHash,
+                          ambiguityReview: {
+                            clusterId: cluster.id,
+                            memberObjectIds: cluster.memberObjectIds,
+                            decision,
+                          },
+                        })
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+              </details>
+            );
+          })}
+        </section>
+      )}
       {selected && (
         <section aria-label="Selected object evidence">
           <h3>{selected.name}</h3>

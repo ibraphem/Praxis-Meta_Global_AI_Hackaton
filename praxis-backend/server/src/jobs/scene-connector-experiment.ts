@@ -9,6 +9,7 @@ import {
   type BoundaryProfile,
 } from '../services/connector-boundary.js';
 import { buildWirePrompt } from '../services/sam.js';
+import { proposeAutomaticTargeting } from '../services/scene-automatic-targeting.js';
 import { prepareSceneCrop, segmentSceneTarget } from '../services/scene.js';
 import { getSceneSnapshot } from './scene-snapshots.js';
 import { SceneRequestRecorder, sha256 } from './scene-request-evidence.js';
@@ -36,7 +37,7 @@ export async function prepareConnectorExperiment(
   objectId: string,
   point: [number, number],
   negative: [number, number],
-  options?: { profile: BoundaryProfile },
+  options?: { profile?: BoundaryProfile; automatic?: boolean },
 ) {
   const job = store.get(analysisId),
     scene = job.scene;
@@ -88,17 +89,19 @@ export async function prepareConnectorExperiment(
     p[0] - wide[0],
     p[1] - wide[1],
   ];
-  const spatial = buildWirePrompt(
-    [
-      {
-        id: 0,
-        bbox: [x - wide[0], y - wide[1], w, h],
-        positivePoints: [relative(point)],
-        negativePoints: [relative(negative)],
-      },
-    ],
-    { width: wide[2], height: wide[3] },
-  );
+  const spatial = options?.automatic
+    ? ''
+    : buildWirePrompt(
+        [
+          {
+            id: 0,
+            bbox: [x - wide[0], y - wide[1], w, h],
+            positivePoints: [relative(point)],
+            negativePoints: [relative(negative)],
+          },
+        ],
+        { width: wide[2], height: wide[3] },
+      );
   let variants: Array<{
     name: string;
     prompt: string;
@@ -127,6 +130,32 @@ export async function prepareConnectorExperiment(
       );
     variants = buildBoundaryVariants(profile, wide);
   }
+  if (profile && options?.automatic)
+    throw new Error('Automatic targeting cannot consume a manual profile.');
+  const automaticTargeting = options?.automatic
+    ? proposeAutomaticTargeting(
+        saved.graph,
+        objectId,
+        wide,
+        store
+          .getSnapshot(samRef.samSnapshotId)
+          .snapshot.candidates.flatMap((candidate) => {
+            if (!candidate.encodedMask) return [];
+            return saved.graph.observations
+              .filter(
+                (o) =>
+                  o.sourceCandidateId === candidate.id &&
+                  o.samSnapshotId === samRef.samSnapshotId &&
+                  o.samSnapshotHash === samRef.samSnapshotHash,
+              )
+              .map((o) => ({
+                observationId: o.id,
+                encodedMask: candidate.encodedMask!,
+              }));
+          }),
+      )
+    : undefined;
+  if (automaticTargeting) variants = automaticTargeting.variants;
   const prepared = [];
   for (const v of variants) {
     if (v.crop[2] * v.crop[3] > 2000000)
@@ -150,9 +179,11 @@ export async function prepareConnectorExperiment(
       'Experiment exceeds six million input pixels.',
     );
   const spec = {
-    version: profile
-      ? 'connector-boundary-plan-v1'
-      : 'connector-experiment-plan-v1',
+    version: automaticTargeting
+      ? 'connector-automatic-plan-v1'
+      : profile
+        ? 'connector-boundary-plan-v1'
+        : 'connector-experiment-plan-v1',
     providerBaseUrl: store.config.META_BASE_URL,
     analysisId,
     objectId,
@@ -171,20 +202,35 @@ export async function prepareConnectorExperiment(
     museRequests: 0,
     totalPixels,
     spatialSeed: {
-      source: 'assistant_visual',
-      point,
-      negative,
+      source: automaticTargeting ? 'local_automatic' : 'assistant_visual',
+      point: automaticTargeting ? null : point,
+      negative: automaticTargeting ? null : negative,
       meaning:
         'Physical-object targeting only; not a terminal, polarity or electrical claim.',
     },
     variants: prepared,
     ...(profile ? { profile } : {}),
+    ...(automaticTargeting ? { automaticTargeting } : {}),
   };
   return { ...spec, planHash: sha256(JSON.stringify(spec)) };
 }
 export type ConnectorExperimentPlan = Awaited<
   ReturnType<typeof prepareConnectorExperiment>
 >;
+export function prepareAutomaticConnectorExperiment(
+  store: JobStore,
+  analysisId: string,
+  objectId: string,
+) {
+  return prepareConnectorExperiment(
+    store,
+    analysisId,
+    objectId,
+    [0, 0],
+    [0, 0],
+    { automatic: true },
+  );
+}
 export async function runConnectorExperiment(
   store: JobStore,
   plan: ConnectorExperimentPlan,
@@ -203,9 +249,13 @@ export async function runConnectorExperiment(
       store,
       plan.analysisId,
       plan.objectId,
-      plan.spatialSeed.point,
-      plan.spatialSeed.negative,
-      plan.profile ? { profile: plan.profile } : undefined,
+      plan.spatialSeed.point ?? [0, 0],
+      plan.spatialSeed.negative ?? [0, 0],
+      plan.automaticTargeting
+        ? { automatic: true }
+        : plan.profile
+          ? { profile: plan.profile }
+          : undefined,
     );
     if (current.planHash !== plan.planHash)
       throw new AppError(
@@ -235,14 +285,17 @@ export async function runConnectorExperiment(
   }, 3000);
   heartbeat.unref();
   const report = {
-    version: plan.profile
-      ? 'connector-boundary-experiment-v1'
-      : 'connector-experiment-v1',
+    version: plan.automaticTargeting
+      ? 'connector-automatic-experiment-v1'
+      : plan.profile
+        ? 'connector-boundary-experiment-v1'
+        : 'connector-experiment-v1',
     experimentId: reservation.experimentId,
     plan,
-    status: 'running' as 'running' | 'completed' | 'interrupted',
+    status: 'running' as 'running' | 'completed' | 'failed' | 'interrupted',
     startedAt: Date.now(),
     finishedAt: null as number | null,
+    errorCode: undefined as string | undefined,
     chargedRequests: 0,
     chargedPixels: 0,
     measurements: [] as Array<{
@@ -271,6 +324,16 @@ export async function runConnectorExperiment(
       )
     )
       throw new Error('Experiment ownership lost while persisting');
+  };
+  let finalized = false;
+  const finalize = (status: 'completed' | 'failed' | 'interrupted') => {
+    report.status = status;
+    report.finishedAt = Date.now();
+    // The report and final measurement are committed in one registry transaction.
+    // Terminal writes release ownership, so never write the report again afterward.
+    persist();
+    finalized = true;
+    return report;
   };
   try {
     await validate();
@@ -378,7 +441,7 @@ export async function runConnectorExperiment(
         measurement.native = result.native;
       } catch (error) {
         measurement.errorCode =
-          error instanceof AppError ? error.code : 'EXPERIMENT_INTERRUPTED';
+          error instanceof AppError ? error.code : 'EXPERIMENT_FAILED';
         const response = recorder?.record.response;
         const uncertain =
           [
@@ -401,12 +464,14 @@ export async function runConnectorExperiment(
                 : 'not_sent';
         measurement.status =
           measurement.upstreamOutcome === 'unknown' ? 'interrupted' : 'failed';
-        if (measurement.upstreamOutcome === 'unknown' || requestSignal.aborted)
-          report.status = 'interrupted';
         measurement.finishedAt = Date.now();
         measurement.diagnostics = trace.snapshot();
-        if (report.status === 'running') persist();
-        break;
+        report.errorCode = measurement.errorCode;
+        return finalize(
+          measurement.upstreamOutcome === 'unknown' || requestSignal.aborted
+            ? 'interrupted'
+            : 'failed',
+        );
       } finally {
         clearTimeout(timeout);
       }
@@ -414,18 +479,18 @@ export async function runConnectorExperiment(
       measurement.diagnostics = trace.snapshot();
       persist();
     }
-    if (report.status === 'running') report.status = 'completed';
-    report.finishedAt = Date.now();
-    persist();
-    return report;
+    return finalize('completed');
   } catch (error) {
-    report.status = report.measurements.some(
-      (m) => m.upstreamOutcome === 'unknown',
-    )
-      ? 'interrupted'
-      : 'completed';
-    report.finishedAt = Date.now();
-    persist();
+    if (!finalized) {
+      report.errorCode =
+        error instanceof AppError ? error.code : 'EXPERIMENT_FAILED';
+      finalize(
+        signal.aborted ||
+          report.measurements.some((m) => m.upstreamOutcome === 'unknown')
+          ? 'interrupted'
+          : 'failed',
+      );
+    }
     throw error;
   } finally {
     clearInterval(heartbeat);

@@ -14,6 +14,47 @@ export const identityReviewSchema = z
     reviewedAt: z.number().int().nonnegative(),
   })
   .strict();
+// Ambiguity preserves competing identities; membership never establishes same-object identity.
+export const ambiguityClusterSchema = z
+  .object({
+    id,
+    memberObjectIds: z.array(id).min(2).max(164),
+    evidence: z
+      .array(
+        z
+          .object({
+            proposalObjectId: id,
+            candidateObjectId: id,
+            observationId: id,
+            attemptId: id,
+            eligible: z.boolean(),
+            semanticOverlap: z.number().min(0).max(1),
+            iou: z.number().min(0).max(1),
+            containment: z.number().min(0).max(1),
+            ratio: z.number().min(1),
+            sharedBoardAnchor: id.nullable(),
+            sharedSegmentation: z.array(id).max(450),
+            wireSafeguard: z.boolean(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(800),
+    relatedClusterIds: z.array(id).max(164),
+  })
+  .strict();
+export const ambiguityReviewSchema = z
+  .object({
+    id,
+    clusterId: id,
+    memberObjectIds: z.array(id).min(2).max(164),
+    decision: z.enum(['same_object', 'different_objects', 'uncertain']),
+    source: z.literal('human_review'),
+    inputSnapshotId: id,
+    inputSnapshotHash: hash,
+    reviewedAt: z.number().int().nonnegative(),
+  })
+  .strict();
 export const maskIdentityReviewSchema = z
   .object({
     id,
@@ -229,6 +270,8 @@ export const sceneGraphSchema = z
     associations: z.array(observationAssociationSchema).max(800),
     relations: z.array(objectRelationSchema).max(400).optional(),
     identityReviews: z.array(identityReviewSchema).max(400).optional(),
+    ambiguityClusters: z.array(ambiguityClusterSchema).max(164).optional(),
+    ambiguityReviews: z.array(ambiguityReviewSchema).max(400).optional(),
     maskIdentityReviews: z.array(maskIdentityReviewSchema).max(400).optional(),
     terminals: z.array(terminalSchema).max(64).optional(),
     attachments: z.array(attachmentSchema).max(128).optional(),
@@ -245,6 +288,8 @@ export const sceneGraphSchema = z
       ...(graph.terminals ?? []),
       ...(graph.attachments ?? []),
       ...(graph.identityReviews ?? []),
+      ...(graph.ambiguityClusters ?? []),
+      ...(graph.ambiguityReviews ?? []),
       ...(graph.maskIdentityReviews ?? []),
     ]) {
       if (ids.has(entity.id))
@@ -274,6 +319,8 @@ export const sceneGraphSchema = z
         graph.attachments?.length ||
         graph.relations?.length ||
         graph.identityReviews?.length ||
+        graph.ambiguityClusters?.length ||
+        graph.ambiguityReviews?.length ||
         graph.maskIdentityReviews?.length)
     )
       ctx.addIssue({
@@ -283,6 +330,57 @@ export const sceneGraphSchema = z
     const terminals = new Map((graph.terminals ?? []).map((t) => [t.id, t]));
     const inside = (p: [number, number] | null) =>
       !p || (p[0] < graph.image.width && p[1] < graph.image.height);
+    const clusters = new Map(
+      (graph.ambiguityClusters ?? []).map((c) => [c.id, c]),
+    );
+    for (const cluster of graph.ambiguityClusters ?? []) {
+      const members = new Set(cluster.memberObjectIds);
+      if (
+        members.size !== cluster.memberObjectIds.length ||
+        cluster.memberObjectIds.some((o) => !objects.has(o)) ||
+        new Set(cluster.relatedClusterIds).size !==
+          cluster.relatedClusterIds.length ||
+        cluster.relatedClusterIds.some(
+          (c) => c === cluster.id || !clusters.has(c),
+        ) ||
+        cluster.evidence.some(
+          (e) =>
+            e.proposalObjectId === e.candidateObjectId ||
+            !members.has(e.proposalObjectId) ||
+            !members.has(e.candidateObjectId) ||
+            !graph.associations.some(
+              (a) =>
+                a.objectId === e.proposalObjectId &&
+                a.observationId === e.observationId &&
+                a.basis === 'inventory',
+            ) ||
+            e.sharedSegmentation.some((o) => !observations.has(o)) ||
+            (e.sharedBoardAnchor !== null &&
+              !graph.objects.some(
+                (o) => o.id === e.sharedBoardAnchor && o.category === 'board',
+              )),
+        )
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Invalid ambiguity cluster references.',
+        });
+    }
+    for (const review of graph.ambiguityReviews ?? []) {
+      const cluster = clusters.get(review.clusterId);
+      if (
+        !cluster ||
+        new Set(review.memberObjectIds).size !==
+          review.memberObjectIds.length ||
+        review.memberObjectIds.some(
+          (id) => !cluster.memberObjectIds.includes(id),
+        )
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: 'Invalid ambiguity review membership.',
+        });
+    }
     for (const review of graph.identityReviews ?? [])
       if (
         !graph.relations?.some(

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { SceneGraph, SceneObject } from '../schemas/scene.js';
 import { boxSupport, inventoryObjectIds } from './scene-reconciliation.js';
 
@@ -136,4 +137,67 @@ export function matchInventoryRediscoveries(
       candidates: candidates[index]!,
     };
   });
+}
+
+/** Retain evidence and stable candidate references without changing identity or wire eligibility. */
+export function recordIdentityAmbiguities(
+  graph: SceneGraph,
+  decisions: ReturnType<typeof matchInventoryRediscoveries>,
+  proposals: Array<{
+    objectId: string;
+    observationId: string;
+    attemptId: string;
+  }>,
+) {
+  for (const decision of decisions) {
+    if (decision.matchedObjectId || !decision.candidates.length) continue;
+    const proposal = proposals[decision.proposalIndex]!;
+    const members = [
+      proposal.objectId,
+      ...decision.candidates.map((c) => c.objectId),
+    ];
+    graph.ambiguityClusters ??= [];
+    const linked = graph.ambiguityClusters.filter((c) =>
+      c.memberObjectIds.some((id) => members.includes(id)),
+    );
+    let cluster = linked[0];
+    if (!cluster) {
+      cluster = {
+        id: randomUUID(),
+        memberObjectIds: [],
+        evidence: [],
+        relatedClusterIds: [],
+      };
+      graph.ambiguityClusters.push(cluster);
+    }
+    // Bridging clusters keep their original IDs and reviews; cross references expose the overlap.
+    for (const other of linked.slice(1)) {
+      if (!cluster.relatedClusterIds.includes(other.id))
+        cluster.relatedClusterIds.push(other.id);
+      if (!other.relatedClusterIds.includes(cluster.id))
+        other.relatedClusterIds.push(cluster.id);
+    }
+    cluster.memberObjectIds = [
+      ...new Set([...cluster.memberObjectIds, ...members]),
+    ];
+    for (const candidate of decision.candidates) {
+      if (
+        cluster.evidence.some(
+          (e) =>
+            e.observationId === proposal.observationId &&
+            e.candidateObjectId === candidate.objectId,
+        )
+      )
+        continue;
+      cluster.evidence.push({
+        proposalObjectId: proposal.objectId,
+        candidateObjectId: candidate.objectId,
+        observationId: proposal.observationId,
+        attemptId: proposal.attemptId,
+        eligible: candidate.eligible,
+        ...candidate.evidence,
+      });
+    }
+    graph.version = 'scene-v2';
+  }
 }

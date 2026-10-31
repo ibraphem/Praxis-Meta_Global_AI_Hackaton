@@ -414,3 +414,112 @@ test("guided segmentation submits the bounded targets and exposes independent ma
   expect(reviews).toBe(1);
   expect(graph.electricalConnectionStatus).toBe("unestablished");
 });
+
+test("ambiguity clusters expose stable members and retain checkpoint-bound reviews without merging", async ({
+  page,
+}) => {
+  const job = sceneJob(1426, 1008),
+    graph = job.scene!.graph!;
+  const original = graph.objects[0]!;
+  const copy = { ...structuredClone(original), id: randomUUID() };
+  graph.version = "scene-v2";
+  graph.objects.push(copy);
+  const observation = { ...graph.observations[0]!, id: randomUUID() };
+  graph.observations.push(observation);
+  graph.associations.push({
+    id: randomUUID(),
+    objectId: copy.id,
+    observationId: observation.id,
+    relation: "unknown",
+    basis: "inventory",
+    status: "proposed",
+    attemptId: observation.attemptId,
+  });
+  const cluster = {
+    id: randomUUID(),
+    memberObjectIds: [original.id, copy.id],
+    relatedClusterIds: [],
+    evidence: [
+      {
+        proposalObjectId: copy.id,
+        candidateObjectId: original.id,
+        observationId: observation.id,
+        attemptId: observation.attemptId,
+        eligible: true,
+        semanticOverlap: 1,
+        iou: 1,
+        containment: 1,
+        ratio: 1,
+        sharedBoardAnchor: null,
+        sharedSegmentation: [],
+        wireSafeguard: false,
+      },
+    ],
+  };
+  graph.ambiguityClusters = [cluster];
+  const originalCount = graph.objects.length;
+  const image = readFileSync(
+    resolve(
+      process.cwd(),
+      "test/fixtures/exact-hole-v1/jumper_wires_breadboard.png",
+    ),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}/image`, (route) =>
+    route.fulfill({ contentType: "image/png", body: image }),
+  );
+  let reviews = 0;
+  await page.route(
+    `**/api/analyses/${job.analysisId}/reconcile-scene`,
+    (route) => {
+      const body = route.request().postDataJSON();
+      expect(body.snapshotId).toBe(job.scene!.snapshotRef!.snapshotId);
+      expect(body.snapshotHash).toBe(job.scene!.snapshotRef!.snapshotHash);
+      expect(body.ambiguityReview).toEqual({
+        clusterId: cluster.id,
+        memberObjectIds: cluster.memberObjectIds,
+        decision: "uncertain",
+      });
+      graph.ambiguityReviews = [
+        {
+          id: randomUUID(),
+          ...body.ambiguityReview,
+          source: "human_review",
+          inputSnapshotId: body.snapshotId,
+          inputSnapshotHash: body.snapshotHash,
+          reviewedAt: Date.now(),
+        },
+      ];
+      job.scene!.snapshotRef!.snapshotId = randomUUID();
+      job.scene!.snapshotRef!.snapshotHash = "b".repeat(64);
+      reviews++;
+      return route.fulfill({ json: job });
+    },
+  );
+  await page.goto(`/?analysis=${job.analysisId}`);
+  const section = page.getByRole("region", {
+    name: "Identity ambiguity clusters",
+  });
+  await section
+    .getByText("2 competing identities · needs review", { exact: true })
+    .click();
+  await expect(section).toContainText(cluster.id);
+  await expect(section.getByRole("button", { name: /Inspect / })).toHaveCount(
+    2,
+  );
+  await section
+    .getByRole("button", { name: /Inspect / })
+    .last()
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Show separately", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await section.getByRole("button", { name: "Keep cluster uncertain" }).click();
+  await expect(section).toContainText("2 competing identities · uncertain");
+  expect(reviews).toBe(1);
+  expect(graph.objects.length).toBe(originalCount);
+  await page.reload();
+  await expect(section).toContainText("2 competing identities · uncertain");
+});

@@ -1569,3 +1569,25 @@ probe agreement is not full boundary accuracy, independent physical truth or aut
 acceptance. Composite targets are experimental scopes, not production identity merges.
 The existing separate reservation, three-request cap, six-million-pixel ceiling, zero
 Muse requests, raw capture and no-retry safeguards also apply to boundary plans.
+
+### Durable connector outcomes, ambiguity review and automatic targeting
+
+Connector reports use `completed` only when every planned arm finished, including valid empty outputs. Definitive pre-dispatch, HTTP, decoding and local processing errors are `failed`. Cancellation or uncertain dispatch is `interrupted`. Final status, final measurement and completion time are persisted together before returning; terminal ownership is released once. Interrupted reservations retain charged work and require explicit release. The CLI exports failed/interrupted request evidence and exits unsuccessfully. A lost process can leave an unfinished running report; lease recovery blocks replay rather than assuming its request did not execute.
+
+Inventory refresh retains duplicate-looking proposals in persistent `ambiguityClusters`, with stable object/observation references and comparison evidence. Subsequent refreshes extend an existing cluster when candidate identities overlap. Bridging clusters keep their IDs and cross references. `ambiguityReviews` record human decisions against the exact checkpoint and complete current membership; added members require another review. These records do not merge objects, terminals or conductor identities. The workspace exposes members and comparison evidence, and evaluation bundles include clusters and review history. Existing reciprocal matching and conductor safeguards remain unchanged. Evidence budgets still fail closed; clustering does not make repeated inventory refresh free or remove retained hypotheses.
+
+The manual connector runner remains a reference benchmark. A separate **experimental automatic targeting stage** consumes persisted inventory and original broad SAM evidence, never manual boundary profiles, manual points or guided masks:
+
+```sh
+npm run experiment:connector -- prepare-auto ANALYSIS_ID CONNECTOR_OBJECT_ID NEW_DIRECTORY
+```
+
+Preparation is offline and changes no production graph or request budget. The stage always proposes an approximate inventory-box arm. It adds one interior-point arm only when a linked baseline mask supplies foreground at least two pixels from its boundary, inside the target box and outside neighboring non-board boxes. Otherwise it explicitly abstains from points. Cues and observation IDs are frozen in the plan and recomputed before execution. Neither arm establishes a physical boundary. This initial generator does not synthesize negative points from approximate neighboring boxes.
+
+The existing `run PLAN.json NEW_DIRECTORY` command executes only the arms in the prepared plan, at most three requests and six million pixels, zero Muse and no retries. Sending saved photographs still requires a new, specific inference approval. After a permitted run, evaluate it offline against a profile frozen before execution:
+
+```sh
+npm run scene:score-targeting -- REPORT.json FROZEN_PROFILE.json NEW_OUTPUT.json
+```
+
+The scorer binds plan, photograph, object and native masks, retains empty/failed outcomes, and reports the same sparse probes and pixel extent measurements as the manual benchmark. Frozen assistant profiles are comparison baselines, not independent ground truth. Independent masks and additional photographs remain necessary before claiming autonomous targeting accuracy.
