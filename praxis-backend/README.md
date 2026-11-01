@@ -1660,3 +1660,63 @@ Every command above is offline and sends zero SAM/Muse requests. Save input is `
 Participating automatic connector analyses cannot initiate terminal discovery while any target connector gate is blocked. The server checks at queue admission, worker execution and immediately before provider transport; the UI shows the blocking reason. Gate validity requires current source evidence, the latest frozen reference/evaluation, unchanged prediction evidence, correct human physical identity and configured thresholds. Existing proposed terminal or electrical evidence is never promoted by these checks. Repeat connector inference is also blocked until independent annotation and offline evaluation are complete; each later request still requires its own bounded authorization.
 
 Browser bundles include `connectorValidation` with reference metadata, retrospective metrics, gate decisions and private evidence links. Private JSON exports and offline job archives contain the complete reference spans, prediction/native masks, original request/response records and hashes. `evidence:export` includes `connector-validation/evidence.json` in its SHA-256 manifest. When no human reference exists, exports explicitly retain an empty reference collection, unavailable metrics and a blocked gate. No assistant-created annotation is substituted for the missing human step.
+
+### Automatic targeting v2 (opt-in, experimental)
+
+The default and historical `automatic-targeting-v1` A/B protocol are preserved.
+Select the v2 targeting protocol in the workspace or prepare it offline with:
+
+```sh
+npm run scene:preview-targeting-v2 -- ANALYSIS_ID CONNECTOR_OBJECT_ID NEW_DIRECTORY
+npm run experiment:connector -- prepare-auto-v2 ANALYSIS_ID CONNECTOR_OBJECT_ID NEW_DIRECTORY [FROZEN_PIXEL_REFERENCE.json]
+```
+
+The preview writes an immutable plan/protocol and crop images without registering
+or spending a workflow. Registered v2 plans use the existing execution engine,
+exact-plan authorization, stale-plan rejection, crash-safe accounting and no-replay
+rules. Repeat connector spending still requires an independent reference evaluation;
+preparation does not satisfy that guard. Limits remain three SAM requests, six
+million pixels, two million pixels per crop, zero Muse calls and zero retries.
+
+V2 declares three strategies: inventory box, mask-aware baseline interior, and
+body-aware targeting. Per-observation diagnostics separate missing connector
+associations, unavailable/corrupt native masks, conflicting conductor identities,
+insufficient interior depth and pixel/uncertain-box exclusions. Only original broad
+SAM masks supply baseline points. Unambiguous human-reviewed neighbor masks supply
+pixel exclusions with a two-pixel margin; absent or uncertain masks retain box
+exclusions. Wire identity is never inferred from proximity or insulation color.
+Negative conductor points require reviewed native pixels and retain observation
+and review IDs. All available native evidence hashes are retained in the plan.
+
+The body proposal is a bounded `local_dark_core_v1` heuristic over the original RGB
+crop: low-luminance, low-chroma connected interior cores, with fixed policy/hash,
+minimum area/depth, ambiguity, boundary and thin-region rejection. It is intended
+for investigating dark connector bodies. It is not general connector recognition
+or a confirmed physical boundary. It may abstain, especially on occluded, bright,
+wire-contaminated or adjacent dark objects. It consumes no reference pixels,
+manual boundary profile or previous experiment predictions. The manual boundary
+benchmark and automatic workflow share only spatial-prompt serialization.
+
+`connector-comparison-protocol-v2` freezes algorithm/policy hashes, strategy names,
+required comparisons, thresholds and reference qualification into the plan hash.
+All three comparisons must finish; the body-aware arm must meet the configured
+quality/identity gates. A/B baseline quality need not pass to validate an improved
+C arm, but abstentions keep the comparison incomplete. Execution completion,
+individual accepted masks and comparison completeness remain distinct. The legacy
+`abComparison` export field denotes completeness of all declared arms in v2.
+
+V2 reference provenance records method, prior prediction exposure, original-only
+annotation, human attestation and reviewer. `independent: true` alone cannot qualify
+it. Assistant and non-blinded references can yield diagnostic scores but cannot
+unlock independent photographic acceptance. Retrospective v2 scoring uses the same
+strict frozen annotation workflow, defaults to the body-aware arm, and cannot pass
+the connector gate with incomplete comparisons. Synthetic passes never unlock it.
+Use held-out independently annotated photographs to assess generalization; no
+photographic improvement is established by synthetic fixtures or an offline plan.
+
+When both improved v2 strategies abstain, execution is additionally blocked with
+`TARGETING_EVIDENCE_REQUIRED`; an inventory-box-only preview cannot spend a repeated
+request. Body pixel diagnostics report dark foreground before exclusion, reviewed
+mask exclusions, uncertain-box exclusions, remaining pixels and interior cores.
+They distinguish missing visual support from uncertainty imposed by neighboring
+hypotheses without treating box overlap as physical contact.

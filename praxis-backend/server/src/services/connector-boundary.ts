@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { buildObjectPrompt, decodeMaskToRaster } from '@meta-sam/parser';
+import { decodeMaskToRaster } from '@meta-sam/parser';
+import { objectSpatialPrompt } from './object-spatial-prompt.js';
 import type { SceneObservation } from '../schemas/scene.js';
 import type { NativeSceneObservation } from './scene.js';
 
@@ -148,36 +149,7 @@ export function buildBoundaryVariants(
       throw new Error(
         'Positive points must lie inside their declared targeting box.',
       );
-    const prompt = buildObjectPrompt({
-      size: { width: crop[2], height: crop[3] },
-      objects: [
-        {
-          id: 0,
-          prompts: [
-            {
-              box: {
-                left: x - crop[0],
-                top: y - crop[1],
-                right: x + w - crop[0],
-                bottom: y + h - crop[1],
-              },
-              points: [
-                ...v.positive.map((p) => ({
-                  x: p[0] - crop[0],
-                  y: p[1] - crop[1],
-                  label: 'positive' as const,
-                })),
-                ...v.negative.map((p) => ({
-                  x: p[0] - crop[0],
-                  y: p[1] - crop[1],
-                  label: 'negative' as const,
-                })),
-              ],
-            },
-          ],
-        },
-      ],
-    });
+    const prompt = objectSpatialPrompt(crop, v.box, v.positive, v.negative);
     return { name: v.name, scope: v.scope, prompt, crop };
   });
 }

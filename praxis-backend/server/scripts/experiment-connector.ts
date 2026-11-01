@@ -17,14 +17,18 @@ async function main() {
   const args = process.argv.slice(2);
   const [mode, a, b, c, d, e] = args;
   if (
-    !['prepare', 'prepare-boundary', 'prepare-auto', 'run'].includes(
-      mode ?? '',
-    ) ||
+    ![
+      'prepare',
+      'prepare-boundary',
+      'prepare-auto',
+      'prepare-auto-v2',
+      'run',
+    ].includes(mode ?? '') ||
     (mode === 'prepare'
       ? args.length !== 6
       : mode === 'prepare-boundary'
         ? args.length !== 5
-        : mode === 'prepare-auto'
+        : mode === 'prepare-auto' || mode === 'prepare-auto-v2'
           ? args.length !== 4 && args.length !== 5
           : args.length !== 3) ||
     !a ||
@@ -32,7 +36,7 @@ async function main() {
     (mode === 'prepare' && (!c || !d || !e))
   )
     throw Error(
-      'Usage: npm run experiment:connector -- prepare ANALYSIS_ID OBJECT_ID X,Y NEG_X,NEG_Y NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-boundary ANALYSIS_ID OBJECT_ID PROFILE.json NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-auto ANALYSIS_ID OBJECT_ID NEW_DIRECTORY [FROZEN_REFERENCE.json]\nOr: npm run experiment:connector -- run PLAN.json NEW_DIRECTORY\nPrepare is offline. Run makes at most three SAM requests, zero Muse, no retries; requires approval to send image crops to configured Meta service.',
+      'Usage: npm run experiment:connector -- prepare ANALYSIS_ID OBJECT_ID X,Y NEG_X,NEG_Y NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-boundary ANALYSIS_ID OBJECT_ID PROFILE.json NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-auto ANALYSIS_ID OBJECT_ID NEW_DIRECTORY [FROZEN_REFERENCE.json]\nOr: npm run experiment:connector -- prepare-auto-v2 ANALYSIS_ID OBJECT_ID NEW_DIRECTORY [FROZEN_REFERENCE.json]\nOr: npm run experiment:connector -- run PLAN.json NEW_DIRECTORY\nPrepare is offline. Run makes at most three SAM requests, zero Muse, no retries; requires approval to send image crops to configured Meta service.',
     );
   const store = new JobStore(loadConfig());
   const workflowService = new ConnectorWorkflowService(store);
@@ -42,7 +46,7 @@ async function main() {
         ? e!
         : mode === 'prepare-boundary'
           ? d!
-          : mode === 'prepare-auto'
+          : mode === 'prepare-auto' || mode === 'prepare-auto-v2'
             ? c!
             : b;
     // Refuse to overwrite previous evidence before reserving or dispatching.
@@ -50,7 +54,8 @@ async function main() {
     if (
       mode === 'prepare' ||
       mode === 'prepare-boundary' ||
-      mode === 'prepare-auto'
+      mode === 'prepare-auto' ||
+      mode === 'prepare-auto-v2'
     ) {
       const point = (s: string) => {
         const p = s.split(',').map(Number);
@@ -64,16 +69,17 @@ async function main() {
           : undefined;
       const source = store.get(a);
       const workflow =
-        mode === 'prepare-auto'
+        mode === 'prepare-auto' || mode === 'prepare-auto-v2'
           ? await workflowService.prepare(a, {
               objectId: b,
+              ...(mode === 'prepare-auto-v2' ? { targetingVersion: 'v2' } : {}),
               snapshotId: source.scene?.snapshotRef?.snapshotId,
               snapshotHash: source.scene?.snapshotRef?.snapshotHash,
               ...(d ? { reference: JSON.parse(readFileSync(d, 'utf8')) } : {}),
             })
           : undefined;
       const plan =
-        mode === 'prepare-auto'
+        mode === 'prepare-auto' || mode === 'prepare-auto-v2'
           ? workflow!.contract.plan
           : await prepareConnectorExperiment(
               store,

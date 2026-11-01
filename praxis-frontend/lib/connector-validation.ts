@@ -50,7 +50,15 @@ export const retrospectiveResultSchema = z
     referenceHash: hash,
     evaluatedAt: z.number().int().nonnegative(),
     mode: z.literal("retrospective_diagnostic"),
-    strategy: z.enum(["A-auto-inventory-box", "B-auto-baseline-interior"]),
+    strategy: z.enum([
+      "A-auto-inventory-box",
+      "B-auto-baseline-interior",
+      "A-inventory-box-v2",
+      "B-mask-interior-v2",
+      "C-body-aware-v2",
+    ]),
+    protocolVersion: z.literal("connector-comparison-protocol-v2").optional(),
+    protocolHash: hash.optional(),
     thresholds: z
       .object({
         version: z.string(),

@@ -1,4 +1,5 @@
 import { connectorThresholds } from '../services/connector-pixel-evaluation.js';
+import { connectorProtocolV2 } from '../services/connector-protocol-v2.js';
 import { canonicalHash } from '../lib/canonical-json.js';
 import { AppError } from '../lib/errors.js';
 import type { JobStore, Job } from './store.js';
@@ -39,9 +40,22 @@ export function connectorGates(
       const e = JSON.parse(row.data as string),
         { evaluationId, ...payload } = e;
       if (e.objectId !== objectId) continue;
+      const workflow = workflows.find((w) => w.workflowId === e.workflowId);
+      const v2 =
+        workflow?.contract.plan.automaticTargeting?.version ===
+        'automatic-targeting-v2';
+      const thresholds = v2
+        ? connectorProtocolV2.thresholds
+        : connectorThresholds;
       if (
         canonicalHash(payload) !== evaluationId ||
-        e.configurationHash !== canonicalHash(connectorThresholds) ||
+        e.configurationHash !== canonicalHash(thresholds) ||
+        (v2 &&
+          (e.protocolHash !== connectorProtocolV2.protocolHash ||
+            e.abComparison !== 'complete' ||
+            !connectorProtocolV2.requiredAcceptedStrategies.includes(
+              e.strategy,
+            ))) ||
         e.status !== 'passed' ||
         !e.independentGroundTruth ||
         e.imageHash !== job.imageHash ||
@@ -62,7 +76,6 @@ export function connectorGates(
         r.content.source !== 'human_review'
       )
         continue;
-      const workflow = workflows.find((w) => w.workflowId === e.workflowId);
       if (
         !workflow ||
         canonicalHash(workflow.contract) !== workflow.workflowId ||

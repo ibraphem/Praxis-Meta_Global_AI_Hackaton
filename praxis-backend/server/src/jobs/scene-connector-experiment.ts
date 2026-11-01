@@ -10,6 +10,9 @@ import {
 } from '../services/connector-boundary.js';
 import { buildWirePrompt } from '../services/sam.js';
 import { proposeAutomaticTargeting } from '../services/scene-automatic-targeting.js';
+import { proposeAutomaticTargetingV2 } from '../services/scene-automatic-targeting-v2.js';
+import { connectorProtocolV2 } from '../services/connector-protocol-v2.js';
+import sharp from 'sharp';
 import { prepareSceneCrop, segmentSceneTarget } from '../services/scene.js';
 import { getSceneSnapshot } from './scene-snapshots.js';
 import { SceneRequestRecorder, sha256 } from './scene-request-evidence.js';
@@ -42,7 +45,11 @@ export async function prepareConnectorExperiment(
   objectId: string,
   point: [number, number],
   negative: [number, number],
-  options?: { profile?: BoundaryProfile; automatic?: boolean },
+  options?: {
+    profile?: BoundaryProfile;
+    automatic?: boolean;
+    automaticVersion?: 'v1' | 'v2';
+  },
 ) {
   const job = store.get(analysisId),
     scene = job.scene;
@@ -137,28 +144,46 @@ export async function prepareConnectorExperiment(
   }
   if (profile && options?.automatic)
     throw new Error('Automatic targeting cannot consume a manual profile.');
+  const native = options?.automatic
+    ? store
+        .getSnapshot(samRef.samSnapshotId)
+        .snapshot.candidates.flatMap((candidate) => {
+          if (!candidate.encodedMask) return [];
+          return saved.graph.observations
+            .filter(
+              (o) =>
+                o.sourceCandidateId === candidate.id &&
+                o.samSnapshotId === samRef.samSnapshotId &&
+                o.samSnapshotHash === samRef.samSnapshotHash,
+            )
+            .map((o) => ({
+              observationId: o.id,
+              encodedMask: candidate.encodedMask!,
+            }));
+        })
+    : [];
+  const v2 = options?.automatic && options.automaticVersion === 'v2';
+  if (v2 && wide[2] * wide[3] > 2000000)
+    throw new AppError(
+      400,
+      'CROP_BUDGET',
+      'Experiment crop exceeds two million pixels.',
+    );
+  const rgb = v2
+    ? await sharp(await prepareSceneCrop(image, wide))
+        .toColourspace('srgb')
+        .removeAlpha()
+        .raw()
+        .toBuffer()
+    : undefined;
   const automaticTargeting = options?.automatic
-    ? proposeAutomaticTargeting(
-        saved.graph,
-        objectId,
-        wide,
-        store
-          .getSnapshot(samRef.samSnapshotId)
-          .snapshot.candidates.flatMap((candidate) => {
-            if (!candidate.encodedMask) return [];
-            return saved.graph.observations
-              .filter(
-                (o) =>
-                  o.sourceCandidateId === candidate.id &&
-                  o.samSnapshotId === samRef.samSnapshotId &&
-                  o.samSnapshotHash === samRef.samSnapshotHash,
-              )
-              .map((o) => ({
-                observationId: o.id,
-                encodedMask: candidate.encodedMask!,
-              }));
-          }),
-      )
+    ? v2
+      ? proposeAutomaticTargetingV2(saved.graph, objectId, wide, native, {
+          width: wide[2],
+          height: wide[3],
+          rgb: rgb!,
+        })
+      : proposeAutomaticTargeting(saved.graph, objectId, wide, native)
     : undefined;
   if (automaticTargeting) variants = automaticTargeting.variants;
   const prepared = [];
@@ -184,11 +209,13 @@ export async function prepareConnectorExperiment(
       'Experiment exceeds six million input pixels.',
     );
   const spec = {
-    version: automaticTargeting
-      ? 'connector-automatic-plan-v1'
-      : profile
-        ? 'connector-boundary-plan-v1'
-        : 'connector-experiment-plan-v1',
+    version: v2
+      ? 'connector-automatic-plan-v2'
+      : automaticTargeting
+        ? 'connector-automatic-plan-v1'
+        : profile
+          ? 'connector-boundary-plan-v1'
+          : 'connector-experiment-plan-v1',
     providerBaseUrl: store.config.META_BASE_URL,
     analysisId,
     objectId,
@@ -216,6 +243,7 @@ export async function prepareConnectorExperiment(
     variants: prepared,
     ...(profile ? { profile } : {}),
     ...(automaticTargeting ? { automaticTargeting } : {}),
+    ...(v2 ? { evaluationProtocol: connectorProtocolV2 } : {}),
     ...(automaticTargeting
       ? {
           hashAlgorithm: 'canonical-json-sha256-v1',
@@ -255,6 +283,7 @@ export function prepareAutomaticConnectorExperiment(
   store: JobStore,
   analysisId: string,
   objectId: string,
+  version: 'v1' | 'v2' = 'v1',
 ) {
   return prepareConnectorExperiment(
     store,
@@ -262,7 +291,7 @@ export function prepareAutomaticConnectorExperiment(
     objectId,
     [0, 0],
     [0, 0],
-    { automatic: true },
+    { automatic: true, automaticVersion: version },
   );
 }
 export async function runConnectorExperiment(
@@ -300,7 +329,13 @@ export async function runConnectorExperiment(
       plan.spatialSeed.point ?? [0, 0],
       plan.spatialSeed.negative ?? [0, 0],
       plan.automaticTargeting
-        ? { automatic: true }
+        ? {
+            automatic: true,
+            automaticVersion:
+              plan.automaticTargeting.version === 'automatic-targeting-v2'
+                ? 'v2'
+                : 'v1',
+          }
         : plan.profile
           ? { profile: plan.profile }
           : undefined,
@@ -333,11 +368,14 @@ export async function runConnectorExperiment(
   }, 3000);
   heartbeat.unref();
   const report = {
-    version: plan.automaticTargeting
-      ? 'connector-automatic-experiment-v1'
-      : plan.profile
-        ? 'connector-boundary-experiment-v1'
-        : 'connector-experiment-v1',
+    version:
+      plan.automaticTargeting?.version === 'automatic-targeting-v2'
+        ? 'connector-automatic-experiment-v2'
+        : plan.automaticTargeting
+          ? 'connector-automatic-experiment-v1'
+          : plan.profile
+            ? 'connector-boundary-experiment-v1'
+            : 'connector-experiment-v1',
     experimentId: reservation.experimentId,
     plan,
     status: 'running' as 'running' | 'completed' | 'failed' | 'interrupted',

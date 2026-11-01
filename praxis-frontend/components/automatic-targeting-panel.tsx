@@ -2,6 +2,10 @@ import { useState } from "react";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
 import type { SceneGraph } from "@/lib/scene";
 import type { SceneAction } from "./scene-objects";
+import type { AutomaticTargetingRecord } from "@/lib/connector-workflow";
+const lacksImprovedCues = (r: AutomaticTargetingRecord) =>
+  r.algorithmVersion === "automatic-targeting-v2" &&
+  !r.arms.some((a) => a.name !== "A-inventory-box-v2" && a.prompt !== null);
 
 export function AutomaticTargetingPanel({
   job,
@@ -21,6 +25,7 @@ export function AutomaticTargetingPanel({
   >({});
   const [reference, setReference] = useState<unknown>(undefined);
   const [referenceError, setReferenceError] = useState("");
+  const [targetingVersion, setTargetingVersion] = useState<"v1" | "v2">("v1");
   const binding = job?.scene?.snapshotRef;
   const inventory = new Set(
     graph.associations
@@ -53,6 +58,17 @@ export function AutomaticTargetingPanel({
               {o.proposedType}
             </option>
           ))}
+        </select>
+      </label>
+      <label>
+        Targeting protocol{" "}
+        <select
+          aria-label="Targeting protocol"
+          value={targetingVersion}
+          onChange={(e) => setTargetingVersion(e.target.value as "v1" | "v2")}
+        >
+          <option value="v1">Original A/B protocol</option>
+          <option value="v2">V2 mask-aware and body-cue experiment</option>
         </select>
       </label>
       <details>
@@ -100,6 +116,7 @@ export function AutomaticTargetingPanel({
               objectId: selected,
               snapshotId: binding.snapshotId,
               snapshotHash: binding.snapshotHash,
+              ...(targetingVersion === "v2" ? { targetingVersion: "v2" } : {}),
               ...(reference !== undefined ? { reference } : {}),
             })
           }
@@ -135,6 +152,74 @@ export function AutomaticTargetingPanel({
               {r.referenceStatus?.replaceAll("_", " ")}.
             </p>
           )}
+          {r.targetingDiagnostics && (
+            <details>
+              <summary>V2 automatic cue diagnostics</summary>
+              <p>
+                Eligible baseline masks:{" "}
+                {r.targetingDiagnostics.eligibleBaselineMasks}. Body cue:{" "}
+                {r.targetingDiagnostics.bodyProposal.status} (
+                {r.targetingDiagnostics.bodyProposal.reason.replaceAll(
+                  "_",
+                  " ",
+                )}
+                ). The body box remains an unconfirmed proposal.
+              </p>
+              {r.targetingDiagnostics.bodyProposal.pixelDiagnostics && (
+                <p>
+                  Dark pixels in target:{" "}
+                  {
+                    r.targetingDiagnostics.bodyProposal.pixelDiagnostics
+                      .darkPixels
+                  }
+                  ; excluded by reviewed masks:{" "}
+                  {
+                    r.targetingDiagnostics.bodyProposal.pixelDiagnostics
+                      .excludedByNativeMasks
+                  }
+                  ; excluded by uncertain boxes:{" "}
+                  {
+                    r.targetingDiagnostics.bodyProposal.pixelDiagnostics
+                      .excludedByUncertainBoxes
+                  }
+                  ; remaining:{" "}
+                  {
+                    r.targetingDiagnostics.bodyProposal.pixelDiagnostics
+                      .remainingDarkPixels
+                  }
+                  .
+                </p>
+              )}
+              <p>
+                Reviewed conductor-negative points:{" "}
+                {r.targetingDiagnostics.negativeCues.length}. Uncertain
+                neighbor-box exclusions:{" "}
+                {
+                  r.targetingDiagnostics.exclusions.filter(
+                    (e) => e.mode === "uncertain_bbox",
+                  ).length
+                }
+                .
+              </p>
+              <ul>
+                {r.targetingDiagnostics.baseline.map((o) => (
+                  <li key={o.observationId}>
+                    Observation {o.observationId.slice(0, 8)}:{" "}
+                    {o.reasons.join(", ").replaceAll("_", " ") || "eligible"};{" "}
+                    {o.eligibleInteriorPixels} eligible interior pixels;{" "}
+                    {o.pixelRejections.uncertainNeighborBox} blocked by
+                    uncertain boxes.
+                  </li>
+                ))}
+              </ul>
+              <p>
+                V2 compares all three declared strategies; only the body-aware
+                arm is required to meet mask quality thresholds. Missing
+                comparisons remain incomplete. Provisional or non-blinded
+                references cannot establish independent acceptance.
+              </p>
+            </details>
+          )}
           <small style={{ overflowWrap: "anywhere" }}>
             Plan {r.workflowId}
           </small>
@@ -151,7 +236,8 @@ export function AutomaticTargetingPanel({
             billed cost: unavailable.
           </p>
           <p>
-            Interior point: {r.pointStatus}.{" "}
+            {r.algorithmVersion ? "Baseline interior point" : "Interior point"}:{" "}
+            {r.pointStatus}.{" "}
             {r.pointCues
               .map(
                 (p) =>
@@ -166,10 +252,18 @@ export function AutomaticTargetingPanel({
           ))}
           {r.status === "prepared" && onAction && (
             <>
+              {lacksImprovedCues(r) && (
+                <p>
+                  No improved targeting cue is supported. Execution is blocked;
+                  inspect the abstention diagnostics before spending another
+                  request.
+                </p>
+              )}
               <label>
                 <input
                   type="checkbox"
                   checked={approved[r.workflowId] ?? false}
+                  disabled={lacksImprovedCues(r)}
                   onChange={(e) =>
                     setApproved({
                       ...approved,
@@ -184,7 +278,9 @@ export function AutomaticTargetingPanel({
               <button
                 type="button"
                 className="button button-secondary"
-                disabled={busy || !approved[r.workflowId]}
+                disabled={
+                  busy || !approved[r.workflowId] || lacksImprovedCues(r)
+                }
                 onClick={() =>
                   onAction("run-automatic-targeting", {
                     workflowId: r.workflowId,
@@ -268,8 +364,10 @@ export function AutomaticTargetingPanel({
           )}
           {r.evaluation && (
             <p>
-              Evaluation: {r.evaluation.status}; A/B comparison{" "}
-              {r.evaluation.abComparison}; {r.evaluation.validMaskArms}/2
+              Evaluation: {r.evaluation.status};{" "}
+              {r.algorithmVersion ? "three-strategy" : "A/B"} comparison{" "}
+              {r.evaluation.abComparison}; {r.evaluation.validMaskArms}/
+              {r.evaluation.plannedStrategyCount}
               strategies returned masks. Pixel success rate:{" "}
               {r.evaluation.successRate === null
                 ? "unavailable"
@@ -326,7 +424,9 @@ export function AutomaticTargetingPanel({
                       })
                     }
                   >
-                    Evaluate saved A mask against reference
+                    {r.algorithmVersion
+                      ? "Evaluate saved body-aware mask against reference"
+                      : "Evaluate saved A mask against reference"}
                   </button>
                 )}
               </div>
@@ -335,7 +435,10 @@ export function AutomaticTargetingPanel({
             .filter((e) => e.workflowId === r.workflowId)
             .map((e) => (
               <p key={e.evaluationId}>
-                Retrospective A validation: {e.status}; A/B {e.abComparison}.{" "}
+                {e.protocolVersion
+                  ? "Retrospective v2 validation"
+                  : "Retrospective A validation"}
+                : {e.status}; comparison {e.abComparison}.{" "}
                 {e.metrics
                   .map(
                     (m) =>

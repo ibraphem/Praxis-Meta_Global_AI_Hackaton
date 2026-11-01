@@ -1,7 +1,10 @@
 import { test, expect } from "@playwright/test";
 import { resolve } from "node:path";
 import { readFileSync } from "node:fs";
-import { automaticWorkflowJob } from "../fixtures/automatic-targeting";
+import {
+  automaticWorkflowJob,
+  automaticV2PreparedJob,
+} from "../fixtures/automatic-targeting";
 
 test("workspace prepares, explicitly authorizes, reviews and exports the shared automatic experiment", async ({
   page,
@@ -144,5 +147,81 @@ test("workspace prepares, explicitly authorizes, reviews and exports the shared 
   await page.screenshot({
     path: testInfo.outputPath("automatic-targeting-workflow.png"),
     fullPage: true,
+  });
+});
+test("v2 preparation exposes missing evidence and exports its frozen three-strategy protocol without running inference", async ({
+  page,
+}, testInfo) => {
+  const prepared = automaticV2PreparedJob(),
+    job = structuredClone(prepared),
+    record = prepared.automaticTargeting![0]!;
+  job.automaticTargeting = [];
+  let preparations = 0,
+    runs = 0;
+  await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
+    route.fulfill({ json: job }),
+  );
+  await page.route(`**/api/analyses/${job.analysisId}/image`, (route) =>
+    route.fulfill({
+      contentType: "image/jpeg",
+      body: readFileSync(
+        resolve(process.cwd(), "test/fixtures/automatic-targeting.jpg"),
+      ),
+    }),
+  );
+  await page.route(
+    `**/api/analyses/${job.analysisId}/prepare-automatic-targeting`,
+    (route) => {
+      expect(route.request().postDataJSON().targetingVersion).toBe("v2");
+      preparations++;
+      job.automaticTargeting = prepared.automaticTargeting;
+      return route.fulfill({ json: job });
+    },
+  );
+  await page.route(
+    `**/api/analyses/${job.analysisId}/run-automatic-targeting`,
+    (route) => {
+      runs++;
+      return route.fulfill({ status: 409 });
+    },
+  );
+  await page.goto(`/?analysis=${job.analysisId}`);
+  const panel = page.getByRole("region", {
+    name: "Automatic connector targeting",
+  });
+  await panel.getByLabel("Targeting protocol").selectOption("v2");
+  await panel
+    .getByRole("button", {
+      name: "Prepare automatic connector test",
+      exact: true,
+    })
+    .click();
+  await expect(panel).toContainText("1 planned SAM request(s)");
+  await panel
+    .getByText("V2 automatic cue diagnostics", { exact: true })
+    .click();
+  await expect(panel).toContainText("no target baseline association");
+  await expect(panel).toContainText("no supported dark body core");
+  await expect(panel).toContainText("Connector boundary gate: blocked");
+  await expect(
+    panel.getByRole("button", {
+      name: "Run prepared connector test",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await expect(panel.getByRole("checkbox")).toBeDisabled();
+  const downloaded = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export evaluation bundle", exact: true })
+    .click();
+  const file = await downloaded,
+    bundle = JSON.parse(readFileSync((await file.path())!, "utf8"));
+  expect(bundle.sceneEvaluation.automaticTargeting.experiments[0]).toEqual(
+    record,
+  );
+  expect(preparations).toBe(1);
+  expect(runs).toBe(0);
+  await panel.screenshot({
+    path: testInfo.outputPath("automatic-targeting-v2.png"),
   });
 });

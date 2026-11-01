@@ -1,3 +1,4 @@
+import { validateProtocolV2 } from '../services/connector-protocol-v2.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { decodeMaskToRaster } from '@meta-sam/parser';
@@ -308,13 +309,34 @@ export class ConnectorValidationService {
     workflowId: string,
     analysisId: string,
     referenceHash: string,
-    strategy:
+    requestedStrategy?:
       | 'A-auto-inventory-box'
-      | 'B-auto-baseline-interior' = 'A-auto-inventory-box',
+      | 'B-auto-baseline-interior'
+      | 'A-inventory-box-v2'
+      | 'B-mask-interior-v2'
+      | 'C-body-aware-v2',
   ) {
     const { w } = this.context(workflowId, analysisId),
       r = this.reference(referenceHash, workflowId),
       e = this.workflows.evidence(workflowId, analysisId);
+    const v2 =
+      w.contract.plan.automaticTargeting?.version === 'automatic-targeting-v2';
+    const protocol = v2
+      ? validateProtocolV2(w.contract.plan.evaluationProtocol)
+      : undefined;
+    const thresholds = protocol?.thresholds ?? connectorThresholds;
+    const strategy =
+      requestedStrategy ?? (v2 ? 'C-body-aware-v2' : 'A-auto-inventory-box');
+    const arms: readonly string[] = protocol?.strategies ?? [
+      'A-auto-inventory-box',
+      'B-auto-baseline-interior',
+    ];
+    if (!arms.includes(strategy))
+      throw new AppError(
+        400,
+        'INVALID_STRATEGY',
+        'Choose a strategy declared by this frozen experiment.',
+      );
     if (
       !e.experiment ||
       !['completed', 'failed', 'interrupted', 'released'].includes(
@@ -391,10 +413,10 @@ export class ConnectorValidationService {
         identityCorrectness === 'correct' &&
         (review?.source === 'human_review' ||
           r.content.source === 'synthetic_fixture') &&
-        scores.iou >= connectorThresholds.minimumIoU &&
-        scores.recall >= connectorThresholds.minimumRecall &&
+        scores.iou >= thresholds.minimumIoU &&
+        scores.recall >= thresholds.minimumRecall &&
         scores.leakage !== null &&
-        scores.leakage <= connectorThresholds.maximumConductorLeakage &&
+        scores.leakage <= thresholds.maximumConductorLeakage &&
         audit.provenanceValid &&
         audit.previewAgreement;
       return { observationId: o.id, ...scores, identityCorrectness, accepted };
@@ -403,8 +425,19 @@ export class ConnectorValidationService {
       pending = metrics.some((m) =>
         ['unreviewed', 'uncertain'].includes(m.identityCorrectness),
       );
+    const comparisonComplete = arms.every((variant) =>
+      report.measurements.some(
+        (m) =>
+          m.variant === variant &&
+          ['candidates_returned', 'empty_output'].includes(m.status ?? ''),
+      ),
+    );
     const status =
-      !qualified || pending || !metrics.length || !audit.provenanceValid
+      (v2 && !comparisonComplete) ||
+      !qualified ||
+      pending ||
+      !metrics.length ||
+      !audit.provenanceValid
         ? 'incomplete'
         : metrics.filter((m) => m.accepted).length === 1
           ? r.content.source === 'synthetic_fixture'
@@ -423,26 +456,25 @@ export class ConnectorValidationService {
       evaluatedAt: Date.now(),
       mode: 'retrospective_diagnostic' as const,
       strategy,
-      thresholds: connectorThresholds,
-      configurationHash: canonicalHash(connectorThresholds),
+      thresholds,
+      ...(protocol
+        ? {
+            protocolVersion: protocol.version,
+            protocolHash: protocol.protocolHash,
+          }
+        : {}),
+      configurationHash: canonicalHash(thresholds),
       originalContractPreserved: true as const,
       independentGroundTruth: r.independent,
       blinded: r.content.predictionExposure === 'never_seen',
       status,
-      abComparison: ['A-auto-inventory-box', 'B-auto-baseline-interior'].every(
-        (variant) =>
-          report.measurements.some(
-            (m) =>
-              m.variant === variant &&
-              ['candidates_returned', 'empty_output'].includes(m.status ?? ''),
-          ),
-      )
-        ? 'complete'
-        : 'incomplete',
+      abComparison: comparisonComplete ? 'complete' : 'incomplete',
       metrics,
       provenanceValid: audit.provenanceValid,
       previewAgreement: audit.previewAgreement,
-      note: 'Retrospective validation of saved Strategy A pixels against a separately frozen reference. Original protocol and A/B status are unchanged. Candidate acceptance is separate from A/B completeness; synthetic or unblinded/provisional references cannot unlock the photographic gate.',
+      note: v2
+        ? 'Retrospective v2 diagnostic scoring. Candidate acceptance is separate from comparison completeness; all declared comparisons and independent human evidence are required before the v2 connector gate can pass.'
+        : 'Retrospective validation of saved Strategy A pixels against a separately frozen reference. Original protocol and A/B status are unchanged. Candidate acceptance is separate from A/B completeness; synthetic or unblinded/provisional references cannot unlock the photographic gate.',
     };
     const previous = this.store.db
       .prepare(
@@ -454,7 +486,7 @@ export class ConnectorValidationService {
         (row) =>
           row.referenceHash === r.referenceHash &&
           row.strategy === strategy &&
-          row.configurationHash === canonicalHash(connectorThresholds) &&
+          row.configurationHash === canonicalHash(thresholds) &&
           row.reportHash === audit.reportHash &&
           row.predictionHash === audit.predictionHash &&
           canonicalHash(row.metrics) === canonicalHash(metrics),
@@ -488,6 +520,32 @@ export class ConnectorValidationService {
   pointAudit(workflowId: string, analysisId: string) {
     const { w } = this.context(workflowId, analysisId),
       e = this.workflows.evidence(workflowId, analysisId);
+    const automatic = w.contract.plan.automaticTargeting;
+    if (automatic?.version === 'automatic-targeting-v2')
+      return {
+        workflowId,
+        sourceSnapshotHash: w.contract.plan.sceneSnapshotRef.snapshotHash,
+        auditVersion: 'automatic-point-audit-v2',
+        targetingAlgorithmVersion: automatic.version,
+        objectId: w.contract.plan.objectId,
+        eligibleEvidenceCount: automatic.diagnostics.eligibleBaselineMasks,
+        rejections: automatic.diagnostics.baseline,
+        predictionObservationIdsExcluded:
+          (
+            e.experiment?.report as
+              | {
+                  measurements?: Array<{
+                    observations?: Array<{ id: string }>;
+                  }>;
+                }
+              | undefined
+          )?.measurements?.flatMap(
+            (m) => m.observations?.map((o) => o.id) ?? [],
+          ) ?? [],
+        independentBaselinePreserved: true,
+        diagnostics: automatic.diagnostics,
+        note: 'Frozen v2 baseline, pixel-exclusion and original-image body-cue diagnostics. No reference or experiment prediction pixels are used for targeting; no inference is sent by this audit.',
+      };
     const sam = this.store.getSnapshot(
       w.contract.plan.samSnapshotRef.samSnapshotId,
     ).snapshot;

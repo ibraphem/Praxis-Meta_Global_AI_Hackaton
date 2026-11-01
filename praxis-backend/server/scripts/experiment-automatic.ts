@@ -26,6 +26,9 @@ if (
       mkdirSync(output!, { mode: 0o700 });
       const next = await service.prepare(source.analysisId, {
         objectId: prior.contract.plan.objectId,
+        ...(prior.contract.version === 'automatic-connector-workflow-v2'
+          ? { targetingVersion: 'v2' }
+          : {}),
         snapshotId: source.scene?.snapshotRef?.snapshotId,
         snapshotHash: source.scene?.snapshotRef?.snapshotHash,
         replacementOf: id,

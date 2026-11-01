@@ -1,3 +1,10 @@
+import { connectorThresholds } from './connector-thresholds.js';
+import {
+  connectorProtocolV2,
+  validateProtocolV2,
+  referenceProvenanceSchema,
+  qualifiedHumanReferenceV2,
+} from './connector-protocol-v2.js';
 import { z } from 'zod';
 import { decodeMaskToRaster } from '@meta-sam/parser';
 import { boxSchema } from '../schemas/geometry.js';
@@ -27,6 +34,7 @@ export const connectorReferenceSchema = z
       .strict(),
     source: z.enum(['human_review', 'assistant_visual', 'synthetic_fixture']),
     independent: z.boolean(),
+    provenance: referenceProvenanceSchema.optional(),
     reviewId: z.uuid(),
     reviewedAt: z.number().int().nonnegative(),
     frozenAt: z.number().int().nonnegative(),
@@ -59,16 +67,8 @@ export type ConnectorReference = z.infer<typeof connectorReferenceSchema>;
 export type ConnectorIdentityReview = z.infer<
   typeof connectorIdentityReviewSchema
 >;
-export const connectorThresholds = Object.freeze({
-  version: 'connector-release-gate-v1',
-  minimumIoU: 0.8,
-  minimumRecall: 0.9,
-  maximumConductorLeakage: 0.05,
-  requiredAcceptedIdentityCorrectness: 1,
-  maximumIncorrectConfirmedMerges: 0,
-  maximumBudgetOverage: 0,
-  maximumMissingProvenance: 0,
-});
+export { connectorThresholds } from './connector-thresholds.js';
+
 function canvas(r: z.infer<typeof region>, width: number, height: number) {
   const [x, y, w, h] = r.bbox;
   if (
@@ -112,12 +112,38 @@ export function validateConnectorReference(input: ConnectorReference) {
     );
   return r;
 }
-export function evaluateConnectorPixels(input: {
+interface EvaluationInput {
   report: Awaited<ReturnType<typeof runConnectorExperiment>>;
   reference?: ConnectorReference;
   registeredReferenceHash: string | null;
   reviews?: ConnectorIdentityReview[];
-}): ConnectorEvaluation {
+}
+export function evaluateConnectorPixels(
+  input: EvaluationInput,
+): ConnectorEvaluation {
+  if (
+    input.report.plan.automaticTargeting?.version === 'automatic-targeting-v2'
+  )
+    throw Error('V2 predictions require their versioned evaluation protocol.');
+  return evaluatePixels(input);
+}
+export function evaluateConnectorPixelsV2(
+  input: EvaluationInput & { protocol: unknown },
+): ConnectorEvaluation {
+  const protocol = validateProtocolV2(input.protocol);
+  if (
+    input.report.plan.automaticTargeting?.version !==
+      'automatic-targeting-v2' ||
+    canonicalHash(input.report.plan.evaluationProtocol) !==
+      canonicalHash(protocol)
+  )
+    throw Error('V2 protocol and prediction plan do not match.');
+  return evaluatePixels(input, protocol);
+}
+function evaluatePixels(
+  input: EvaluationInput,
+  protocol?: typeof connectorProtocolV2,
+): ConnectorEvaluation {
   const { report } = input;
   const reviews = z
     .array(connectorIdentityReviewSchema)
@@ -134,8 +160,15 @@ export function evaluateConnectorPixels(input: {
     reference.frozenAt <= report.startedAt &&
     reference.imageHash === report.plan.imageHash &&
     reference.objectId === report.plan.objectId &&
-    ((reference.source === 'human_review' && reference.independent) ||
+    (protocol ||
+      (reference.source === 'human_review' && reference.independent) ||
       reference.source === 'synthetic_fixture');
+  const provenance = reference?.provenance;
+  const qualified =
+    !!usable &&
+    (!protocol ||
+      reference?.source === 'synthetic_fixture' ||
+      (!!reference && qualifiedHumanReferenceV2(reference)));
   if (
     reference &&
     (reference.imageHash !== report.plan.imageHash ||
@@ -166,7 +199,12 @@ export function evaluateConnectorPixels(input: {
     throw new Error('Connector reference must contain evaluated foreground.');
   const observationsSeen = new Set<string>();
   const nonemptyMasks = new Set<string>();
-  const arms = ['A-auto-inventory-box', 'B-auto-baseline-interior'];
+  const arms: readonly string[] = protocol?.strategies ?? [
+    'A-auto-inventory-box',
+    'B-auto-baseline-interior',
+  ];
+  if (protocol && report.measurements.some((m) => !arms.includes(m.variant)))
+    throw Error('Prediction uses an undeclared strategy.');
   const results = arms.map((variant) => {
     const specification = report.plan.variants.find((v) => v.name === variant);
     const matches = report.measurements.filter((m) => m.variant === variant);
@@ -277,16 +315,18 @@ export function evaluateConnectorPixels(input: {
       variant,
       outcome: m.status,
       maskMetrics: metrics,
-      acceptedMaskCount: metrics.filter(
-        (p) =>
-          p.identityCorrectness === 'correct' &&
-          p.iou !== null &&
-          p.iou >= connectorThresholds.minimumIoU &&
-          p.recall !== null &&
-          p.recall >= connectorThresholds.minimumRecall &&
-          p.leakage !== null &&
-          p.leakage <= connectorThresholds.maximumConductorLeakage,
-      ).length,
+      acceptedMaskCount: qualified
+        ? metrics.filter(
+            (p) =>
+              p.identityCorrectness === 'correct' &&
+              p.iou !== null &&
+              p.iou >= connectorThresholds.minimumIoU &&
+              p.recall !== null &&
+              p.recall >= connectorThresholds.minimumRecall &&
+              p.leakage !== null &&
+              p.leakage <= connectorThresholds.maximumConductorLeakage,
+          ).length
+        : 0,
     };
   });
   if (reviews.some((r) => !observationsSeen.has(r.observationId)))
@@ -307,11 +347,16 @@ export function evaluateConnectorPixels(input: {
         m.identityCorrectness === 'uncertain',
     ),
   );
+  const requiredPassed = protocol
+    ? protocol.requiredAcceptedStrategies.every((name) =>
+        results.some((r) => r.variant === name && r.acceptedMaskCount === 1),
+      )
+    : passed === 2;
   const status = !usable
     ? 'unavailable'
-    : !complete || identityPending
+    : !complete || identityPending || !qualified
       ? 'incomplete'
-      : passed === 2 && budgetValid
+      : requiredPassed && budgetValid
         ? reference.source === 'synthetic_fixture'
           ? 'synthetic_pass'
           : 'passed'
@@ -320,11 +365,27 @@ export function evaluateConnectorPixels(input: {
     status,
     referenceHash: input.registeredReferenceHash,
     independentGroundTruth:
-      !!usable && reference.source === 'human_review' && reference.independent,
-    plannedStrategyCount: 2,
+      !!qualified &&
+      reference?.source === 'human_review' &&
+      reference.independent,
+    plannedStrategyCount: arms.length,
     validMaskArms,
     abComparison: complete ? 'complete' : 'incomplete',
-    successRate: usable ? passed / 2 : null,
+    successRate: usable ? passed / arms.length : null,
+    ...(protocol
+      ? {
+          protocolVersion: protocol.version,
+          protocolHash: protocol.protocolHash,
+          referenceQualification: qualified
+            ? reference?.source === 'synthetic_fixture'
+              ? ('synthetic' as const)
+              : ('blinded_independent_human' as const)
+            : ('provisional' as const),
+          declaredPredictionExposure:
+            provenance?.predictionExposure ?? 'unknown',
+          requiredAcceptedStrategies: protocol.requiredAcceptedStrategies,
+        }
+      : {}),
     armResults: results.map(
       ({ variant, outcome, acceptedMaskCount, maskMetrics, ...rest }) => ({
         variant,
@@ -334,6 +395,8 @@ export function evaluateConnectorPixels(input: {
         ...rest,
       }),
     ),
-    note: 'IoU=intersection/union; recall=intersection/reference; precision=intersection/prediction; leakage=conductor intersection/prediction. Zero predictions have recall/IoU 0 and undefined precision/leakage. Abstentions, empty responses and failures remain in the two-strategy success denominator. Assistant points/boxes never supply pixel truth; synthetic passes are not photographic readiness.',
+    note: protocol
+      ? 'Versioned three-strategy comparison. All declared arms must complete; body-aware C must pass quality and identity thresholds. Baseline A/B quality is reported separately. Provisional assistant or non-blinded references provide diagnostic scores only; a Boolean alone cannot qualify a human reference. No reference pixels are used for targeting.'
+      : 'IoU=intersection/union; recall=intersection/reference; precision=intersection/prediction; leakage=conductor intersection/prediction. Zero predictions have recall/IoU 0 and undefined precision/leakage. Abstentions, empty responses and failures remain in the two-strategy success denominator. Assistant points/boxes never supply pixel truth; synthetic passes are not photographic readiness.',
   };
 }

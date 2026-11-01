@@ -171,7 +171,7 @@ export function proposeAutomaticTargeting(
       prompt: prompt([cue.point]),
     });
   return {
-    version: 'automatic-targeting-v1',
+    version: 'automatic-targeting-v1' as const,
     objectId,
     source: 'persisted_inventory_and_baseline_sam',
     inventoryBox: object.bbox,

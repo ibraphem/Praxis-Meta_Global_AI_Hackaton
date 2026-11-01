@@ -1,4 +1,8 @@
 import { ensureConnectorValidationTables } from './connector-validation-gate.js';
+import {
+  connectorProtocolV2,
+  qualifiedHumanReferenceV2,
+} from '../services/connector-protocol-v2.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { canonicalHash } from '../lib/canonical-json.js';
@@ -13,6 +17,7 @@ import {
   connectorIdentityReviewSchema,
   connectorThresholds,
   evaluateConnectorPixels,
+  evaluateConnectorPixelsV2,
   validateConnectorReference,
   type ConnectorReference,
 } from '../services/connector-pixel-evaluation.js';
@@ -36,10 +41,12 @@ interface Workflow {
   startError?: string;
   evaluationFailure?: { at: number; code: string; inputHash: string };
   contract: {
-    version: 'automatic-connector-workflow-v1';
+    version:
+      'automatic-connector-workflow-v1' | 'automatic-connector-workflow-v2';
     plan: ConnectorExperimentPlan;
     protocol: {
-      thresholds: typeof connectorThresholds;
+      thresholds:
+        typeof connectorThresholds | typeof connectorProtocolV2.thresholds;
       referenceHash: string | null;
     };
     replacementOf: string | null;
@@ -131,6 +138,7 @@ export class ConnectorWorkflowService {
         snapshotId: z.uuid(),
         snapshotHash: z.string().regex(/^[a-f0-9]{64}$/),
         reference: connectorReferenceSchema.optional(),
+        targetingVersion: z.enum(['v1', 'v2']).optional(),
         replacementOf: z
           .string()
           .regex(/^[a-f0-9]{64}$/)
@@ -171,6 +179,7 @@ export class ConnectorWorkflowService {
       this.store,
       analysisId,
       input.objectId,
+      input.targetingVersion ?? 'v1',
     );
     if (
       plan.sceneSnapshotRef.snapshotId !== input.snapshotId ||
@@ -239,10 +248,16 @@ export class ConnectorWorkflowService {
         );
     }
     const contract: Workflow['contract'] = {
-      version: 'automatic-connector-workflow-v1',
+      version:
+        input.targetingVersion === 'v2'
+          ? 'automatic-connector-workflow-v2'
+          : 'automatic-connector-workflow-v1',
       plan,
       protocol: {
-        thresholds: connectorThresholds,
+        thresholds:
+          input.targetingVersion === 'v2'
+            ? connectorProtocolV2.thresholds
+            : connectorThresholds,
         referenceHash: input.reference ? canonicalHash(input.reference) : null,
       },
       replacementOf: input.replacementOf ?? null,
@@ -332,6 +347,17 @@ export class ConnectorWorkflowService {
           'Complete independent reference annotation and offline evaluation before spending another connector inference request.',
         );
     }
+    if (
+      current.contract.version === 'automatic-connector-workflow-v2' &&
+      !current.contract.plan.variants.some(
+        (v) => v.name === 'B-mask-interior-v2' || v.name === 'C-body-aware-v2',
+      )
+    )
+      throw new AppError(
+        409,
+        'TARGETING_EVIDENCE_REQUIRED',
+        'V2 has no supported improved strategy. Inspect abstention diagnostics before spending a repeated inventory-box request.',
+      );
   }
   async run(id: string, approval: unknown, signal?: AbortSignal) {
     const w = this.approve(id, approval);
@@ -440,12 +466,19 @@ export class ConnectorWorkflowService {
       );
     let result: ReturnType<typeof evaluateConnectorPixels>;
     try {
-      result = evaluateConnectorPixels({
+      const evaluationInput = {
         report,
         registeredReferenceHash: w.contract.protocol.referenceHash,
         ...(w.reference ? { reference: w.reference } : {}),
         reviews: input,
-      });
+      };
+      result =
+        w.contract.version === 'automatic-connector-workflow-v2'
+          ? evaluateConnectorPixelsV2({
+              ...evaluationInput,
+              protocol: w.contract.plan.evaluationProtocol,
+            })
+          : evaluateConnectorPixels(evaluationInput);
     } catch {
       if ((w.evaluationFailures?.length ?? 0) >= 20)
         throw new AppError(
@@ -567,7 +600,8 @@ export class ConnectorWorkflowService {
       }
     if (result.successRate !== null)
       result.successRate =
-        result.armResults.filter((a) => a.acceptedMaskCount === 1).length / 2;
+        result.armResults.filter((a) => a.acceptedMaskCount === 1).length /
+        result.plannedStrategyCount;
     result.invariants = {
       requestsBeyondBudget: Math.max(
         0,
@@ -686,23 +720,42 @@ export class ConnectorWorkflowService {
           }),
           events: m.events ?? [],
         }));
-        const arms = ['A-auto-inventory-box', 'B-auto-baseline-interior'].map(
-          (name) => {
-            const v = p.variants.find((v) => v.name === name),
-              m = measurements.find((m) => m.variant === name);
-            return {
-              name,
-              prompt: v?.prompt ?? null,
-              crop: v?.crop ?? null,
-              imageSha256: v?.imageSha256 ?? null,
-              status: m?.status ?? (v ? 'planned' : 'abstained'),
-              reason: v
-                ? 'Frozen automatic targeting proposal.'
+        const automatic = w.contract.plan.automaticTargeting;
+        const newer =
+          automatic?.version === 'automatic-targeting-v2'
+            ? automatic
+            : undefined;
+        const v2 = !!newer;
+        const arms = (
+          v2
+            ? connectorProtocolV2.strategies
+            : ['A-auto-inventory-box', 'B-auto-baseline-interior']
+        ).map((name) => {
+          const v = p.variants.find((v) => v.name === name),
+            m = measurements.find((m) => m.variant === name);
+          return {
+            name,
+            prompt: v?.prompt ?? null,
+            crop: v?.crop ?? null,
+            imageSha256: v?.imageSha256 ?? null,
+            status: m?.status ?? (v ? 'planned' : 'abstained'),
+            reason: v
+              ? 'Frozen automatic targeting proposal.'
+              : v2
+                ? name === 'C-body-aware-v2'
+                  ? newer?.diagnostics?.bodyProposal.reason
+                  : 'No defensible baseline interior point; inspect versioned stage diagnostics.'
                 : 'No defensible baseline interior point; no request specification was created.',
-            };
-          },
-        );
+          };
+        });
         return automaticTargetingRecordSchema.parse({
+          ...(v2
+            ? {
+                algorithmVersion: 'automatic-targeting-v2',
+                targetingDiagnostics: newer?.diagnostics,
+                evaluationProtocol: w.contract.plan.evaluationProtocol,
+              }
+            : {}),
           workflowId: w.workflowId,
           analysisId,
           imageHash: p.imageHash,
@@ -756,7 +809,12 @@ export class ConnectorWorkflowService {
             ? 'not_registered'
             : w.reference.source === 'synthetic_fixture'
               ? 'registered_synthetic'
-              : w.reference.independent && w.reference.source === 'human_review'
+              : (
+                    v2
+                      ? qualifiedHumanReferenceV2(w.reference)
+                      : w.reference.independent &&
+                        w.reference.source === 'human_review'
+                  )
                 ? 'registered_independent'
                 : 'registered_unqualified',
           executionError: w.startError ?? report?.errorCode ?? null,

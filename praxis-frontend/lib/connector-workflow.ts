@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { geometryBoxSchema as boxSchema, maskSchema } from "./geometry";
+import {
+  targetingV2DiagnosticsSchema,
+  targetingV2ProtocolSchema,
+} from "./targeting-v2";
 const hash = z.string().regex(/^[a-f0-9]{64}$/);
 export const connectorPhaseSchema = z.enum([
   "prepared",
@@ -44,8 +48,17 @@ export const connectorEvaluationSchema = z
     ]),
     referenceHash: hash.nullable(),
     independentGroundTruth: z.boolean(),
-    plannedStrategyCount: z.literal(2),
-    validMaskArms: z.number().int().min(0).max(2),
+    plannedStrategyCount: z.number().int().min(2).max(3),
+    validMaskArms: z.number().int().min(0).max(3),
+    protocolVersion: z.literal("connector-comparison-protocol-v2").optional(),
+    protocolHash: hash.optional(),
+    referenceQualification: z
+      .enum(["synthetic", "blinded_independent_human", "provisional"])
+      .optional(),
+    declaredPredictionExposure: z
+      .enum(["never_seen", "seen_before", "unknown"])
+      .optional(),
+    requiredAcceptedStrategies: z.array(z.string()).max(3).optional(),
     abComparison: z.enum(["complete", "incomplete"]),
     successRate: z.number().min(0).max(1).nullable(),
     armResults: z
@@ -86,13 +99,30 @@ export const connectorEvaluationSchema = z
           })
           .strict(),
       )
-      .max(2),
+      .max(3),
     note: z.string(),
   })
-  .strict();
+  .strict()
+  .superRefine((r, c) => {
+    if (
+      (r.plannedStrategyCount === 3) !==
+        (r.protocolVersion === "connector-comparison-protocol-v2") ||
+      (r.plannedStrategyCount === 3 &&
+        (!r.protocolHash ||
+          !r.referenceQualification ||
+          !r.requiredAcceptedStrategies))
+    )
+      c.addIssue({
+        code: "custom",
+        message: "Strategy count must match the versioned evaluation contract.",
+      });
+  });
 export const automaticTargetingRecordSchema = z
   .object({
     workflowId: hash,
+    algorithmVersion: z.literal("automatic-targeting-v2").optional(),
+    targetingDiagnostics: targetingV2DiagnosticsSchema.optional(),
+    evaluationProtocol: targetingV2ProtocolSchema.optional(),
     analysisId: z.uuid(),
     imageHash: hash,
     objectId: z.uuid(),
@@ -136,7 +166,8 @@ export const automaticTargetingRecordSchema = z
           })
           .strict(),
       )
-      .length(2),
+      .min(2)
+      .max(3),
     pointStatus: z.enum(["proposed", "abstained"]),
     pointCues: z
       .array(
@@ -227,7 +258,23 @@ export const automaticTargetingRecordSchema = z
     protocolHash: hash,
     note: z.string(),
   })
-  .strict();
+  .strict()
+  .superRefine((r, c) => {
+    const v2 = r.algorithmVersion === "automatic-targeting-v2";
+    if (
+      (v2 &&
+        (!r.targetingDiagnostics ||
+          !r.evaluationProtocol ||
+          r.arms.length !== 3)) ||
+      (!v2 &&
+        (r.targetingDiagnostics || r.evaluationProtocol || r.arms.length !== 2))
+    )
+      c.addIssue({
+        code: "custom",
+        message:
+          "Targeting diagnostics and declared arms must match the algorithm version.",
+      });
+  });
 export type AutomaticTargetingRecord = z.infer<
   typeof automaticTargetingRecordSchema
 >;

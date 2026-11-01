@@ -17,10 +17,11 @@ import type { ConnectorReference } from '../../src/services/connector-pixel-eval
 export async function syntheticConnectorFixture(
   directory = ':memory:',
   baselinePoints = true,
+  sourceBytes?: Buffer,
 ) {
   const config = testConfig(),
     store = new JobStore(config, directory),
-    bytes = await imageBytes(200, 160),
+    bytes = sourceBytes ?? (await imageBytes(200, 160)),
     image = await prepareImage(bytes, config),
     job = store.create(bytes, image);
   const mask = maskFixture('blob');
@@ -125,6 +126,7 @@ export function syntheticConnectorClient(
     'mask',
     'mask',
   ],
+  fixedCropPosition?: [number, number],
 ) {
   let calls = 0;
   const client = createMetaClient(config, async (_u, init) => {
@@ -145,8 +147,8 @@ export function syntheticConnectorClient(
     const x1 = Number(text.match(/x1=(\d+)/)![1]),
       y1 = Number(text.match(/y1=(\d+)/)![1]);
     // The frozen object starts at 70,30; reference starts at 80,40.
-    const x = x1 + 10,
-      y = y1 + 10,
+    const x = fixedCropPosition?.[0] ?? x1 + 10,
+      y = fixedCropPosition?.[1] ?? y1 + 10,
       mask = maskFixture('blob');
     return Response.json(
       samEnvelope(
