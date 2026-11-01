@@ -491,11 +491,16 @@ export function AutomaticTargetingPanel({
                   ? "Retrospective v2 validation"
                   : "Retrospective A validation"}
                 : {e.status}; comparison {e.abComparison}.{" "}
+                {e.refinement
+                  ? `Accepted ${e.refinement.version} (${e.refinement.scoredMask}, halo ${e.refinement.haloPx} px). `
+                  : ""}
                 {e.metrics
-                  .map(
-                    (m) =>
-                      `IoU ${m.iou.toFixed(3)}, recall ${m.recall.toFixed(3)}, precision ${m.precision?.toFixed(3) ?? "undefined"}, red leakage ${m.redWireLeakage?.toFixed(3) ?? "undefined"}, black leakage ${m.blackWireLeakage?.toFixed(3) ?? "undefined"}, identity ${m.identityCorrectness}.`,
-                  )
+                  .map((m) => {
+                    const accepted = `IoU ${m.iou.toFixed(3)}, recall ${m.recall.toFixed(3)}, precision ${m.precision?.toFixed(3) ?? "undefined"}, red leakage ${m.redWireLeakage?.toFixed(3) ?? "undefined"}, black leakage ${m.blackWireLeakage?.toFixed(3) ?? "undefined"}, identity ${m.identityCorrectness}`;
+                    return m.raw
+                      ? `${accepted}. Raw native: IoU ${m.raw.iou.toFixed(3)}, recall ${m.raw.recall.toFixed(3)}, precision ${m.raw.precision?.toFixed(3) ?? "undefined"}, red leakage ${m.raw.redWireLeakage?.toFixed(3) ?? "undefined"}, black leakage ${m.raw.blackWireLeakage?.toFixed(3) ?? "undefined"}.`
+                      : `${accepted}.`;
+                  })
                   .join(" ")}
               </p>
             ))}

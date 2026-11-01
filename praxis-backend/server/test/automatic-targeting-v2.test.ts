@@ -677,6 +677,12 @@ test('v2 uses the shared bounded execution engine and explicit three-arm evaluat
   assert.equal(retrospective.protocolHash, connectorProtocolV2.protocolHash);
   assert.equal(retrospective.metrics[0]!.iou, 1);
   assert.equal(retrospective.metrics[0]!.accepted, false);
+  assert.equal(retrospective.metrics[0]!.scoredMask, 'keep_dark_halo');
+  assert.equal(retrospective.metrics[0]!.raw?.iou, 1);
+  assert.equal(retrospective.refinement?.version, 'keep-dark-halo-v1');
+  assert.equal(retrospective.refinement?.scoredMask, 'keep_dark_halo');
+  assert.equal(retrospective.refinement?.haloPx, 1);
+  assert.ok(retrospective.refinement?.policyHash);
   assert.equal(retrospective.independentGroundTruth, false);
   assert.equal(
     validation.evidence(f.w.workflowId, f.job.analysisId).pointAudit

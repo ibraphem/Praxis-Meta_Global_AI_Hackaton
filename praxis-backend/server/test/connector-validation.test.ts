@@ -176,6 +176,9 @@ test('seen-before human reference receives scores but cannot claim blinded indep
   assert.equal(e.metrics[0]!.iou, 1);
   assert.equal(e.status, 'incomplete');
   assert.equal(e.metrics[0]!.accepted, false);
+  assert.equal(e.metrics[0]!.scoredMask, 'native');
+  assert.equal(e.metrics[0]!.raw, undefined);
+  assert.equal(e.refinement, undefined);
   assert.throws(
     () =>
       f.store.requestSceneUnderstanding(f.job.analysisId, 'terminals', {

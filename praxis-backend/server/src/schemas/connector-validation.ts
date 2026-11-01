@@ -98,10 +98,33 @@ export const retrospectiveResultSchema = z
             ]),
             accepted: z.boolean(),
             foregroundPixels: z.number().int().nonnegative(),
+            scoredMask: z.enum(['native', 'keep_dark_halo']).optional(),
+            raw: z
+              .object({
+                iou: z.number().min(0).max(1),
+                recall: z.number().min(0).max(1),
+                precision: z.number().min(0).max(1).nullable(),
+                leakage: z.number().min(0).max(1).nullable(),
+                redWireLeakage: z.number().min(0).max(1).nullable(),
+                blackWireLeakage: z.number().min(0).max(1).nullable(),
+                foregroundPixels: z.number().int().nonnegative(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
       )
       .max(32),
+    refinement: z
+      .object({
+        version: z.literal('keep-dark-halo-v1'),
+        scoredMask: z.literal('keep_dark_halo'),
+        haloPx: z.number().int().min(0).max(4),
+        policyHash: hash.optional(),
+        policyVersion: z.string().optional(),
+      })
+      .strict()
+      .optional(),
     provenanceValid: z.boolean(),
     previewAgreement: z.boolean(),
     note: z.string(),

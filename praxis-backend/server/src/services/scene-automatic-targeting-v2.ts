@@ -65,6 +65,11 @@ export const targetingV2Policy = Object.freeze({
   maskKeepDarkHaloPx: 1,
   maximumNegativePoints: 4,
 });
+/** Named scoring refinement. Acceptance may use this mask; native SAM bytes stay unchanged. */
+export const keepDarkHaloRefinement = Object.freeze({
+  version: 'keep-dark-halo-v1' as const,
+  scoredMask: 'keep_dark_halo' as const,
+});
 function boxCoverage(neighbor: BoundingBox, target: BoundingBox) {
   const w =
       Math.min(neighbor[0] + neighbor[2], target[0] + target[2]) -

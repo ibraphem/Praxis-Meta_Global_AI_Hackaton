@@ -19,7 +19,10 @@ import {
   validateAnnotation,
 } from '../services/pixel-reference.js';
 import { connectorThresholds } from '../services/connector-pixel-evaluation.js';
-import { applyKeepRing } from '../services/scene-automatic-targeting-v2.js';
+import {
+  applyKeepRing,
+  keepDarkHaloRefinement,
+} from '../services/scene-automatic-targeting-v2.js';
 import { auditAutomaticPoint } from '../services/automatic-point-audit.js';
 import { ConnectorWorkflowService } from './connector-workflow.js';
 import { auditConnectorEvidence } from './connector-evidence-audit.js';
@@ -410,6 +413,23 @@ export class ConnectorValidationService {
     const reviews = new Map(
       w.evaluations.flatMap((v) => v.reviews).map((v) => [v.observationId, v]),
     );
+    const targeting = w.contract.plan.automaticTargeting as
+      | {
+          policyHash?: string;
+          policy?: { version?: string };
+          diagnostics?: {
+            keepRing?: {
+              haloPx: number;
+              crop: [number, number, number, number];
+              runs: number[][];
+            };
+          };
+        }
+      | undefined;
+    const ring =
+      strategy === 'C-body-aware-v2'
+        ? targeting?.diagnostics?.keepRing
+        : undefined;
     const m = report.measurements.find((m) => m.variant === strategy);
     const metrics = (m?.native ?? []).map((n) => {
       const o = m?.observations?.find((o) => o.id === n.observationId);
@@ -437,29 +457,27 @@ export class ConnectorValidationService {
             ? 1
             : 0;
         }
-      const ring = (
-        w.contract.plan.automaticTargeting as
-          | {
-              diagnostics?: {
-                keepRing?: {
-                  crop: [number, number, number, number];
-                  runs: number[][];
-                };
-              };
-            }
-          | undefined
-      )?.diagnostics?.keepRing;
-      const scored =
-        strategy === 'C-body-aware-v2' && ring
-          ? applyKeepRing(prediction, r.image, ring)
-          : prediction;
-      const { excludedPixels: _excluded, ...scores } = pixelMetrics(
-        scored,
+      const rawScores = pixelMetrics(
+        prediction,
         checked.regions.connector,
         checked.regions.redWire,
         checked.regions.blackWire,
         checked.regions.uncertain,
       );
+      const scored = ring
+        ? applyKeepRing(prediction, r.image, ring)
+        : prediction;
+      const refinedScores = ring
+        ? pixelMetrics(
+            scored,
+            checked.regions.connector,
+            checked.regions.redWire,
+            checked.regions.blackWire,
+            checked.regions.uncertain,
+          )
+        : rawScores;
+      const { excludedPixels: _rawExcluded, ...raw } = rawScores;
+      const { excludedPixels: _excluded, ...scores } = refinedScores;
       const review = reviews.get(o.id),
         identityCorrectness = review?.decision ?? 'unreviewed';
       const accepted =
@@ -473,7 +491,16 @@ export class ConnectorValidationService {
         scores.leakage <= thresholds.maximumConductorLeakage &&
         audit.provenanceValid &&
         audit.previewAgreement;
-      return { observationId: o.id, ...scores, identityCorrectness, accepted };
+      return {
+        observationId: o.id,
+        ...scores,
+        identityCorrectness,
+        accepted,
+        scoredMask: ring
+          ? keepDarkHaloRefinement.scoredMask
+          : ('native' as const),
+        ...(ring ? { raw } : {}),
+      };
     });
     const qualified = r.independent || r.content.source === 'synthetic_fixture',
       pending = metrics.some((m) =>
@@ -526,10 +553,23 @@ export class ConnectorValidationService {
       status,
       abComparison: comparisonComplete ? 'complete' : 'incomplete',
       metrics,
+      ...(ring
+        ? {
+            refinement: {
+              version: keepDarkHaloRefinement.version,
+              scoredMask: keepDarkHaloRefinement.scoredMask,
+              haloPx: ring.haloPx,
+              policyHash: targeting?.policyHash,
+              policyVersion: targeting?.policy?.version,
+            },
+          }
+        : {}),
       provenanceValid: audit.provenanceValid,
       previewAgreement: audit.previewAgreement,
       note: v2
-        ? 'Retrospective v2 diagnostic scoring. Candidate acceptance is separate from comparison completeness; all declared comparisons and independent human evidence are required before the v2 connector gate can pass.'
+        ? ring
+          ? 'Retrospective v2 diagnostic scoring. Top-level IoU, recall and leakage are the keep-dark-halo refined mask; raw native SAM scores are on each metric. Acceptance uses the refined mask. Candidate acceptance is separate from comparison completeness.'
+          : 'Retrospective v2 diagnostic scoring. Candidate acceptance is separate from comparison completeness; all declared comparisons and independent human evidence are required before the v2 connector gate can pass.'
         : 'Retrospective validation of saved Strategy A pixels against a separately frozen reference. Original protocol and A/B status are unchanged. Candidate acceptance is separate from A/B completeness; synthetic or unblinded/provisional references cannot unlock the photographic gate.',
     };
     const previous = this.store.db
