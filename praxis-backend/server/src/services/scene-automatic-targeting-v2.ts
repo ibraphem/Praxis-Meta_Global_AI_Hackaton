@@ -19,7 +19,116 @@ export const targetingV2Policy = Object.freeze({
   maxDarkChroma: 48,
   minimumBodyCorePixels: 25,
   ambiguousComponentRatio: 0.6,
+  // An uncertain neighbour box that covers more than this share of the target
+  // box cannot separate body from neighbour (host surface or co-located
+  // hypothesis); it is reported but not stamped. Reviewed native pixels always stamp.
+  uncertainBoxCoverageLimit: 0.5,
+  // Compact dark fragments within this gap of the dominant core are body parts
+  // (e.g. shadowed hardware); sparse fragments are lead-like and fragments that
+  // touch the inventory boundary may belong to the host object, so both stay out.
+  componentMergeDistance: 6,
+  compactComponentFill: 0.25,
+  // Body box padding around the eroded core: at least 2 px, scaled with size so
+  // specular hardware at the core's edge (not dark) still lies inside the box.
+  bodyBoxPadRatio: 0.06,
+  // Positive cues are spread across the core by farthest-point sampling.
+  positivePointCount: 3,
+  positiveInterior: 4,
+  // Saturated-red lead pixels (hue within tolerance of 0°, HSV) supply one
+  // negative cue from the original crop. Dark leads are not separable by colour.
+  redHueTolerance: 12,
+  redMinimumSaturation: 0.75,
+  redMinimumValue: 0.45,
+  maximumNegativePoints: 2,
 });
+function boxCoverage(neighbor: BoundingBox, target: BoundingBox) {
+  const w =
+      Math.min(neighbor[0] + neighbor[2], target[0] + target[2]) -
+      Math.max(neighbor[0], target[0]),
+    h =
+      Math.min(neighbor[1] + neighbor[3], target[1] + target[3]) -
+      Math.max(neighbor[1], target[1]);
+  return w > 0 && h > 0 ? (w * h) / (target[2] * target[3]) : 0;
+}
+function boxGap(a: BoundingBox, b: BoundingBox) {
+  const dx = Math.max(a[0] - (b[0] + b[2]), b[0] - (a[0] + a[2]), 0),
+    dy = Math.max(a[1] - (b[1] + b[3]), b[1] - (a[1] + a[3]), 0);
+  return Math.max(dx, dy);
+}
+function pixelBox(pixels: number[], w: number): BoundingBox {
+  let left = Infinity,
+    top = Infinity,
+    right = -1,
+    bottom = -1;
+  for (const i of pixels) {
+    const x = i % w,
+      y = Math.floor(i / w);
+    left = Math.min(left, x);
+    top = Math.min(top, y);
+    right = Math.max(right, x);
+    bottom = Math.max(bottom, y);
+  }
+  return [left, top, right - left + 1, bottom - top + 1];
+}
+function isSaturatedRed(r: number, g: number, b: number) {
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  if (!max || max !== r || max === min) return false;
+  if (
+    (max - min) / max < targetingV2Policy.redMinimumSaturation ||
+    max / 255 < targetingV2Policy.redMinimumValue
+  )
+    return false;
+  let hue = (60 * (g - b)) / (max - min);
+  if (hue < 0) hue += 360;
+  return (
+    hue <= targetingV2Policy.redHueTolerance ||
+    hue >= 360 - targetingV2Policy.redHueTolerance
+  );
+}
+/** Four-connected components of interior pixels (distance >= minimumInterior). */
+function coreComponents(
+  distance: Uint32Array,
+  w: number,
+  h: number,
+  minimumPixels: number,
+) {
+  const visited = new Uint8Array(distance.length),
+    components: Array<{ pixels: number[]; best: number }> = [];
+  for (let start = 0; start < distance.length; start++) {
+    if (visited[start] || distance[start]! < targetingV2Policy.minimumInterior)
+      continue;
+    const pixels = [start];
+    visited[start] = 1;
+    let best = start;
+    for (let j = 0; j < pixels.length; j++) {
+      const i = pixels[j]!,
+        x = i % w,
+        y = Math.floor(i / w);
+      if (distance[i]! > distance[best]!) best = i;
+      for (const [nx, ny] of [
+        [x - 1, y],
+        [x + 1, y],
+        [x, y - 1],
+        [x, y + 1],
+      ]) {
+        if (nx! < 0 || ny! < 0 || nx! >= w || ny! >= h) continue;
+        const next = ny! * w + nx!;
+        if (
+          !visited[next] &&
+          distance[next]! >= targetingV2Policy.minimumInterior
+        ) {
+          visited[next] = 1;
+          pixels.push(next);
+        }
+      }
+    }
+    if (pixels.length >= minimumPixels) components.push({ pixels, best });
+  }
+  return components.sort(
+    (a, b) => b.pixels.length - a.pixels.length || a.best - b.best,
+  );
+}
 export interface OriginalCropPixels {
   width: number;
   height: number;
@@ -157,15 +266,23 @@ export function proposeAutomaticTargetingV2(
         ? [m]
         : [];
     });
+    const coverage = boxCoverage(o.bbox, object.bbox);
+    const mode = reliable.length
+      ? ('native_mask_with_margin' as const)
+      : coverage > targetingV2Policy.uncertainBoxCoverageLimit
+        ? ('colocated_box_not_stamped' as const)
+        : ('uncertain_bbox' as const);
     return {
       object: o,
       masks: reliable,
-      mode: reliable.length
-        ? ('native_mask_with_margin' as const)
-        : ('uncertain_bbox' as const),
-      reason: reliable.length
-        ? 'Human-reviewed broad-pass pixels; mask absence remains a proposal, not proof of free space.'
-        : 'Native pixels or unambiguous human identity review unavailable; box retained as uncertain exclusion.',
+      mode,
+      coverage: Math.round(coverage * 1000) / 1000,
+      reason:
+        mode === 'native_mask_with_margin'
+          ? 'Human-reviewed broad-pass pixels; mask absence remains a proposal, not proof of free space.'
+          : mode === 'colocated_box_not_stamped'
+            ? `Box covers ${Math.round(coverage * 100)}% of the target box (host surface or co-located hypothesis); it cannot separate body from neighbour and is not stamped. No pixel evidence is claimed.`
+            : 'Native pixels or unambiguous human identity review unavailable; box retained as uncertain exclusion.',
     };
   });
   // Stamp native pixels first, then uncertain boxes. Work scales with decoded mask
@@ -198,7 +315,7 @@ export function proposeAutomaticTargetingV2(
             );
         }
     }
-  for (const e of exclusions.filter((e) => !e.masks.length)) {
+  for (const e of exclusions.filter((e) => e.mode === 'uncertain_bbox')) {
     const l = Math.max(left, e.object.bbox[0]),
       r = Math.min(right, e.object.bbox[0] + e.object.bbox[2]);
     if (l >= r) continue;
@@ -297,7 +414,8 @@ export function proposeAutomaticTargetingV2(
       prompt: objectSpatialPrompt(crop, object.bbox, [cue.point]),
     });
   // Original-image heuristic: separated dark, low-chroma cores, not bbox-minus-wire "truth".
-  const foreground = new Uint8Array(crop[2] * crop[3]);
+  const foreground = new Uint8Array(crop[2] * crop[3]),
+    saturatedRed = new Uint8Array(crop[2] * crop[3]);
   const bodyPixels = {
     darkPixels: 0,
     excludedByNativeMasks: 0,
@@ -305,14 +423,15 @@ export function proposeAutomaticTargetingV2(
     remainingDarkPixels: 0,
     interiorCorePixels: 0,
   };
+  let saturatedRedPixels = 0;
   for (let y = 0; y < crop[3]; y++)
     for (let x = 0; x < crop[2]; x++) {
       const i = y * crop[2] + x,
         r = original.rgb[i * 3]!,
         g = original.rgb[i * 3 + 1]!,
         b = original.rgb[i * 3 + 2]!;
+      if (!containsPixel(object.bbox, x + crop[0], y + crop[1])) continue;
       if (
-        containsPixel(object.bbox, x + crop[0], y + crop[1]) &&
         (r * 299 + g * 587 + b * 114) / 1000 <= targetingV2Policy.maxDarkLuma &&
         Math.max(r, g, b) - Math.min(r, g, b) <= targetingV2Policy.maxDarkChroma
       ) {
@@ -323,94 +442,89 @@ export function proposeAutomaticTargetingV2(
           foreground[i] = 1;
           bodyPixels.remainingDarkPixels++;
         }
+      } else if (isSaturatedRed(r, g, b)) {
+        saturatedRed[i] = 1;
+        saturatedRedPixels++;
       }
     }
-  const distance = depth(foreground, crop[2], crop[3]),
-    visited = new Uint8Array(foreground.length);
-  const components: Array<{
-    pixels: number[];
-    best: number;
-    boundary: boolean;
-  }> = [];
+  const distance = depth(foreground, crop[2], crop[3]);
   bodyPixels.interiorCorePixels = distance.reduce(
     (n, d) => n + (d >= targetingV2Policy.minimumInterior ? 1 : 0),
     0,
   );
-  for (let start = 0; start < foreground.length; start++) {
-    if (visited[start] || distance[start]! < targetingV2Policy.minimumInterior)
-      continue;
-    const pixels = [start];
-    visited[start] = 1;
-    let best = start,
-      boundary = false;
-    for (let j = 0; j < pixels.length; j++) {
-      const i = pixels[j]!,
-        x = i % crop[2],
-        y = Math.floor(i / crop[2]);
-      if (distance[i]! > distance[best]!) best = i;
-      if (
-        x + crop[0] - object.bbox[0] < 3 ||
-        y + crop[1] - object.bbox[1] < 3 ||
-        object.bbox[0] + object.bbox[2] - 1 - x - crop[0] < 3 ||
-        object.bbox[1] + object.bbox[3] - 1 - y - crop[1] < 3
-      )
-        boundary = true;
-      for (const [nx, ny] of [
-        [x - 1, y],
-        [x + 1, y],
-        [x, y - 1],
-        [x, y + 1],
-      ]) {
-        if (nx! < 0 || ny! < 0 || nx! >= crop[2] || ny! >= crop[3]) continue;
-        const next = ny! * crop[2] + nx!;
-        if (
-          !visited[next] &&
-          distance[next]! >= targetingV2Policy.minimumInterior
-        ) {
-          visited[next] = 1;
-          pixels.push(next);
-        }
-      }
-    }
-    if (pixels.length >= targetingV2Policy.minimumBodyCorePixels)
-      components.push({ pixels, best, boundary });
-  }
-  components.sort(
-    (a, b) => b.pixels.length - a.pixels.length || a.best - b.best,
+  const touchesInventoryBoundary = (pixels: number[]) =>
+    pixels.some((i) => {
+      const x = (i % crop[2]) + crop[0],
+        y = Math.floor(i / crop[2]) + crop[1];
+      return (
+        x - object.bbox[0] < 3 ||
+        y - object.bbox[1] < 3 ||
+        object.bbox[0] + object.bbox[2] - 1 - x < 3 ||
+        object.bbox[1] + object.bbox[3] - 1 - y < 3
+      );
+    });
+  const components = coreComponents(
+    distance,
+    crop[2],
+    crop[3],
+    targetingV2Policy.minimumBodyCorePixels,
   );
   const body = components[0];
+  // Compact dark fragments adjacent to the dominant core (snap hardware, shadowed
+  // faces) belong to the body; sparse fragments are lead-like and stay separate.
+  const merged: number[] = [],
+    separate: Array<{ pixels: number[]; best: number }> = [];
+  let boundaryFragments = 0;
+  if (body) {
+    const mainBox = pixelBox(body.pixels, crop[2]);
+    for (const c of components.slice(1)) {
+      const box = pixelBox(c.pixels, crop[2]);
+      if (touchesInventoryBoundary(c.pixels)) {
+        boundaryFragments++;
+        separate.push(c);
+      } else if (
+        boxGap(mainBox, box) <= targetingV2Policy.componentMergeDistance &&
+        c.pixels.length / (box[2] * box[3]) >=
+          targetingV2Policy.compactComponentFill
+      )
+        merged.push(...c.pixels);
+      else separate.push(c);
+    }
+  }
+  const bodyCore = body ? [...body.pixels, ...merged] : [];
   let reason = !body
     ? bodyPixels.darkPixels > 0 && !bodyPixels.remainingDarkPixels
       ? bodyPixels.excludedByUncertainBoxes
         ? 'body_pixels_blocked_by_uncertain_boxes'
         : 'body_pixels_blocked_by_neighbor_masks'
       : 'no_supported_dark_body_core'
-    : body.boundary
+    : touchesInventoryBoundary(body.pixels)
       ? 'body_core_touches_inventory_boundary'
-      : components[1] &&
-          components[1].pixels.length >=
-            body.pixels.length * targetingV2Policy.ambiguousComponentRatio
+      : separate[0] &&
+          separate[0].pixels.length >=
+            bodyCore.length * targetingV2Policy.ambiguousComponentRatio
         ? 'ambiguous_dark_body_components'
         : 'proposed';
   let bodyBox: BoundingBox | null = null;
   const positives: PixelPoint[] = [];
   if (body && reason === 'proposed') {
-    let left = Infinity,
-      top = Infinity,
-      right = 0,
-      bottom = 0;
-    for (const i of body.pixels) {
-      const x = (i % crop[2]) + crop[0],
-        y = Math.floor(i / crop[2]) + crop[1];
-      left = Math.min(left, x);
-      top = Math.min(top, y);
-      right = Math.max(right, x);
-      bottom = Math.max(bottom, y);
-    }
-    const minX = Math.max(object.bbox[0], left - 2),
-      minY = Math.max(object.bbox[1], top - 2),
-      maxX = Math.min(object.bbox[0] + object.bbox[2] - 1, right + 2),
-      maxY = Math.min(object.bbox[1] + object.bbox[3] - 1, bottom + 2);
+    const extent = pixelBox(bodyCore, crop[2]),
+      pad = Math.max(
+        2,
+        Math.round(
+          targetingV2Policy.bodyBoxPadRatio * Math.max(extent[2], extent[3]),
+        ),
+      );
+    const minX = Math.max(object.bbox[0], extent[0] + crop[0] - pad),
+      minY = Math.max(object.bbox[1], extent[1] + crop[1] - pad),
+      maxX = Math.min(
+        object.bbox[0] + object.bbox[2] - 1,
+        extent[0] + extent[2] - 1 + crop[0] + pad,
+      ),
+      maxY = Math.min(
+        object.bbox[1] + object.bbox[3] - 1,
+        extent[1] + extent[3] - 1 + crop[1] + pad,
+      );
     bodyBox = [minX, minY, maxX - minX + 1, maxY - minY + 1];
     if (
       Math.min(bodyBox[2], bodyBox[3]) < 8 ||
@@ -418,18 +532,53 @@ export function proposeAutomaticTargetingV2(
     ) {
       reason = 'body_extent_too_thin';
       bodyBox = null;
-    } else
-      positives.push([
-        (body.best % crop[2]) + crop[0],
-        Math.floor(body.best / crop[2]) + crop[1],
-      ]);
+    } else {
+      // Farthest-point sampling spreads positives across every face of the core
+      // so a shading seam cannot be read as the object boundary.
+      const toPoint = (i: number): PixelPoint => [
+        (i % crop[2]) + crop[0],
+        Math.floor(i / crop[2]) + crop[1],
+      ];
+      const chosen = [body.best];
+      const deep = bodyCore.filter(
+        (i) => distance[i]! >= targetingV2Policy.positiveInterior,
+      );
+      while (chosen.length < targetingV2Policy.positivePointCount) {
+        let next = -1,
+          farthest = 0;
+        for (const i of deep) {
+          const [x, y] = toPoint(i);
+          let nearest = Infinity;
+          for (const c of chosen) {
+            const [cx, cy] = toPoint(c);
+            nearest = Math.min(nearest, Math.hypot(x - cx, y - cy));
+          }
+          if (nearest > farthest || (nearest === farthest && i < next)) {
+            farthest = nearest;
+            next = i;
+          }
+        }
+        if (next < 0 || farthest < targetingV2Policy.positiveInterior) break;
+        chosen.push(next);
+      }
+      positives.push(...chosen.map(toPoint));
+    }
   }
-  const negatives: Array<{
-    objectId: string;
-    observationId: string;
-    point: PixelPoint;
-    reviewId: string;
-  }> = [];
+  const negatives: Array<
+    | {
+        source: 'reviewed_conductor_mask';
+        objectId: string;
+        observationId: string;
+        point: PixelPoint;
+        reviewId: string;
+      }
+    | {
+        source: 'saturated_red_pixels';
+        point: PixelPoint;
+        componentPixels: number;
+        interiorDistance: number;
+      }
+  > = [];
   if (bodyBox)
     for (const e of exclusions.filter(
       (e) => e.object.category === 'conductor',
@@ -459,13 +608,51 @@ export function proposeAutomaticTargetingV2(
       }
       if (best)
         negatives.push({
+          source: 'reviewed_conductor_mask',
           objectId: e.object.id,
           observationId: best.mask.observationId,
           point: best.point,
           reviewId: review(e.object.id, best.mask.observationId)!.id,
         });
-      if (negatives.length === 2) break;
+      if (negatives.length === targetingV2Policy.maximumNegativePoints) break;
     }
+  // Chromatic lead cue: the deepest interior pixel of the largest saturated-red
+  // component inside the target box. Original pixels only; no reference or mask.
+  const redDistance = depth(saturatedRed, crop[2], crop[3]),
+    redComponents = coreComponents(
+      redDistance,
+      crop[2],
+      crop[3],
+      targetingV2Policy.minimumBodyCorePixels,
+    ),
+    redCore = redComponents[0];
+  const chromaticCue = {
+    source: 'saturated_red_v1' as const,
+    status: 'abstained' as 'proposed' | 'abstained',
+    reason: !bodyBox
+      ? 'no_body_box'
+      : !saturatedRedPixels
+        ? 'no_saturated_red_pixels'
+        : !redCore
+          ? 'no_saturated_red_core'
+          : negatives.length >= targetingV2Policy.maximumNegativePoints
+            ? 'negative_budget_spent_on_reviewed_masks'
+            : 'proposed',
+    saturatedRedPixels,
+    componentCount: redComponents.length,
+  };
+  if (chromaticCue.reason === 'proposed' && redCore) {
+    chromaticCue.status = 'proposed';
+    negatives.push({
+      source: 'saturated_red_pixels',
+      point: [
+        (redCore.best % crop[2]) + crop[0],
+        Math.floor(redCore.best / crop[2]) + crop[1],
+      ],
+      componentPixels: redCore.pixels.length,
+      interiorDistance: redDistance[redCore.best]!,
+    });
+  }
   if (bodyBox)
     variants.push({
       name: 'C-body-aware-v2',
@@ -508,19 +695,23 @@ export function proposeAutomaticTargetingV2(
       exclusions: exclusions.map((e) => ({
         objectId: e.object.id,
         mode: e.mode,
+        coverage: e.coverage,
         reason: e.reason,
         observationIds: e.masks.map((m) => m.observationId),
       })),
       bodyProposal: {
-        source: 'local_dark_core_v1',
+        source: 'local_dark_core_v2',
         status: bodyBox ? 'proposed' : 'abstained',
         reason,
         box: bodyBox,
         positivePoints: positives,
         componentCount: components.length,
+        mergedComponentPixels: merged.length,
+        boundaryFragmentsSkipped: boundaryFragments,
         pixelDiagnostics: bodyPixels,
         physicalBoundaryStatus: 'unconfirmed',
       },
+      chromaticCue,
       negativeCues: negatives,
     },
     note: 'Automatic proposals only. No reference, manual profile, Strategy A pixels, object identity merge, terminal or connectivity inference is consumed or established. Missing evidence and ambiguous bodies retain abstention.',

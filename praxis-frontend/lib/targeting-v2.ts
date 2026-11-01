@@ -44,7 +44,12 @@ export const targetingV2DiagnosticsSchema = z
         z
           .object({
             objectId: z.uuid(),
-            mode: z.enum(["native_mask_with_margin", "uncertain_bbox"]),
+            mode: z.enum([
+              "native_mask_with_margin",
+              "uncertain_bbox",
+              "colocated_box_not_stamped",
+            ]),
+            coverage: z.number().min(0).max(1).optional(),
             reason: z.string(),
             observationIds: z.array(z.uuid()).max(450),
           })
@@ -53,12 +58,14 @@ export const targetingV2DiagnosticsSchema = z
       .max(164),
     bodyProposal: z
       .object({
-        source: z.literal("local_dark_core_v1"),
+        source: z.enum(["local_dark_core_v1", "local_dark_core_v2"]),
         status: z.enum(["proposed", "abstained"]),
         reason: z.string(),
         box: boxSchema.nullable(),
-        positivePoints: z.array(point).max(2),
+        positivePoints: z.array(point).max(4),
         componentCount: count,
+        mergedComponentPixels: count.optional(),
+        boundaryFragmentsSkipped: count.optional(),
         pixelDiagnostics: z
           .object({
             darkPixels: count,
@@ -72,16 +79,37 @@ export const targetingV2DiagnosticsSchema = z
         physicalBoundaryStatus: z.literal("unconfirmed"),
       })
       .strict(),
+    chromaticCue: z
+      .object({
+        source: z.literal("saturated_red_v1"),
+        status: z.enum(["proposed", "abstained"]),
+        reason: z.string(),
+        saturatedRedPixels: count,
+        componentCount: count,
+      })
+      .strict()
+      .optional(),
     negativeCues: z
       .array(
-        z
-          .object({
-            objectId: z.uuid(),
-            observationId: z.uuid(),
-            point,
-            reviewId: z.uuid(),
-          })
-          .strict(),
+        z.union([
+          z
+            .object({
+              source: z.literal("reviewed_conductor_mask").optional(),
+              objectId: z.uuid(),
+              observationId: z.uuid(),
+              point,
+              reviewId: z.uuid(),
+            })
+            .strict(),
+          z
+            .object({
+              source: z.literal("saturated_red_pixels"),
+              point,
+              componentPixels: count,
+              interiorDistance: count,
+            })
+            .strict(),
+        ]),
       )
       .max(2),
   })
@@ -115,6 +143,8 @@ export const targetingV2ProtocolSchema = z
       })
       .strict(),
     referencePolicy: z.literal("blinded_original_only_attested_human_v2"),
+    referenceBoundaryBandPx: z.literal(2),
+    comparedWhen: z.literal("measured_or_recorded_abstention"),
     maxRequests: z.literal(3),
     maxPixels: z.literal(6000000),
     automaticRetries: z.literal(0),

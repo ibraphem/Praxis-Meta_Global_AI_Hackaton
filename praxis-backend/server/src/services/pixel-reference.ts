@@ -69,6 +69,92 @@ export function validateAnnotation(
     );
   return { content, regions, counts };
 }
+/** Deterministic uncertainty band applied at freeze: every pixel within this
+ * Chebyshev distance of a differently labelled pixel (background included) is
+ * moved to the uncertain class. Boundary pixels are where blinded annotators
+ * disagree most; excluding them makes the reference reproducible without
+ * touching the prediction. Same role as the void border in PASCAL VOC. */
+export const referenceBoundaryBandPx = 2;
+export function encodeRuns(raster: Uint8Array, width: number, height: number) {
+  const runs: [number, number, number][] = [];
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    for (let x = 0; x < width; ) {
+      if (!raster[row + x]) {
+        x++;
+        continue;
+      }
+      const start = x;
+      while (x < width && raster[row + x]) x++;
+      runs.push([y, start, x]);
+    }
+  }
+  if (runs.length > 120000)
+    throw new Error('Reference exceeds the run quota.');
+  return runs;
+}
+/** Returns new region runs with the boundary band moved to uncertain.
+ * Pure function of the annotation; the prediction is never consulted. */
+export function applyBoundaryBand(
+  regions: Record<keyof AnnotationContent['regions'], Uint8Array>,
+  width: number,
+  height: number,
+  band = referenceBoundaryBandPx,
+) {
+  const names = ['connector', 'redWire', 'blackWire'] as const;
+  const label = new Uint8Array(width * height);
+  for (let i = 0; i < label.length; i++)
+    label[i] = regions.uncertain[i]
+      ? 4
+      : regions.connector[i]
+        ? 1
+        : regions.redWire[i]
+          ? 2
+          : regions.blackWire[i]
+            ? 3
+            : 0;
+  const uncertain = new Uint8Array(regions.uncertain),
+    out = Object.fromEntries(
+      names.map((n) => [n, new Uint8Array(regions[n])]),
+    ) as Record<(typeof names)[number], Uint8Array>;
+  let moved = 0;
+  for (let y = 0; y < height; y++)
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x,
+        own = label[i]!;
+      if (own === 4) continue;
+      let edge = false;
+      for (let dy = -band; dy <= band && !edge; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (let dx = -band; dx <= band; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          const other = label[ny * width + nx]!;
+          // Background next to background is not an edge; labelled pixels next
+          // to anything different, and background next to any label, are.
+          if (other !== own && other !== 4 && (own !== 0 || other !== 0)) {
+            edge = true;
+            break;
+          }
+        }
+      }
+      if (!edge) continue;
+      uncertain[i] = 1;
+      moved++;
+      if (own) out[names[own - 1]!][i] = 0;
+    }
+  return {
+    regions: { ...out, uncertain },
+    runs: {
+      connector: encodeRuns(out.connector, width, height),
+      redWire: encodeRuns(out.redWire, width, height),
+      blackWire: encodeRuns(out.blackWire, width, height),
+      uncertain: encodeRuns(uncertain, width, height),
+    },
+    movedPixels: moved,
+  };
+}
 export function pixelMetrics(
   prediction: Uint8Array,
   body: Uint8Array,

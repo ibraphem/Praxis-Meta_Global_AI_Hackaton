@@ -1,4 +1,7 @@
-import { validateProtocolV2 } from '../services/connector-protocol-v2.js';
+import {
+  recordedAbstention,
+  validateProtocolV2,
+} from '../services/connector-protocol-v2.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { decodeMaskToRaster } from '@meta-sam/parser';
@@ -10,8 +13,10 @@ import {
   type AnnotationContent,
 } from '../schemas/connector-validation.js';
 import {
-  validateAnnotation,
+  applyBoundaryBand,
   pixelMetrics,
+  referenceBoundaryBandPx,
+  validateAnnotation,
 } from '../services/pixel-reference.js';
 import { connectorThresholds } from '../services/connector-pixel-evaluation.js';
 import { auditAutomaticPoint } from '../services/automatic-point-audit.js';
@@ -191,6 +196,31 @@ export class ConnectorValidationService {
           'Annotate the visible connector and both insulated wires before freezing.',
         );
       }
+      // Protocol band: class edges become uncertain at freeze so the frozen
+      // reference is reproducible across blinded annotators. Synthetic fixtures
+      // are exact by construction and keep their pixels.
+      let content: AnnotationContent = draft.content;
+      if (draft.content.source !== 'synthetic_fixture') {
+        const banded = applyBoundaryBand(
+          checked.regions,
+          draft.image.width,
+          draft.image.height,
+        );
+        content = {
+          ...draft.content,
+          regions: banded.runs,
+          boundaryBandPx: referenceBoundaryBandPx,
+        };
+        try {
+          checked = validateAnnotation(content, draft.image, true);
+        } catch {
+          throw new AppError(
+            400,
+            'INCOMPLETE_ANNOTATION',
+            `Each class must keep foreground after the ${referenceBoundaryBandPx} px boundary band. Paint the connector and both wires wider than ${2 * referenceBoundaryBandPx + 1} px.`,
+          );
+        }
+      }
       const previous = this.store.db
         .prepare(
           'SELECT data FROM connector_references WHERE workflow_id=? ORDER BY rowid DESC LIMIT 1',
@@ -200,7 +230,7 @@ export class ConnectorValidationService {
         const r = JSON.parse(
           previous.data as string,
         ) as FrozenConnectorReference;
-        if (canonicalHash(r.content) === canonicalHash(draft.content)) return r;
+        if (canonicalHash(r.content) === canonicalHash(content)) return r;
       }
       const annotationVersion =
         Number(
@@ -259,7 +289,7 @@ export class ConnectorValidationService {
         annotationVersion,
         completedAt: Date.now(),
         independent,
-        content: draft.content,
+        content,
         pixelCounts: checked.counts,
       };
       const reference = { referenceHash: canonicalHash(payload), ...payload };
@@ -425,12 +455,14 @@ export class ConnectorValidationService {
       pending = metrics.some((m) =>
         ['unreviewed', 'uncertain'].includes(m.identityCorrectness),
       );
-    const comparisonComplete = arms.every((variant) =>
-      report.measurements.some(
-        (m) =>
-          m.variant === variant &&
-          ['candidates_returned', 'empty_output'].includes(m.status ?? ''),
-      ),
+    const comparisonComplete = arms.every(
+      (variant) =>
+        report.measurements.some(
+          (m) =>
+            m.variant === variant &&
+            ['candidates_returned', 'empty_output'].includes(m.status ?? ''),
+        ) ||
+        (v2 && recordedAbstention(w.contract.plan, variant)),
     );
     const status =
       (v2 && !comparisonComplete) ||

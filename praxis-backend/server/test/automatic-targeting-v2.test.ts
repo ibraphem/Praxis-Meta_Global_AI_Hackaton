@@ -81,7 +81,8 @@ test('v2 diagnoses missing baseline association separately and never invents one
 test('v2 recovers an interior point when a reviewed conductor mask is disjoint despite overlapping boxes; v1 stays unchanged', async (t) => {
   const f = await scene(t),
     wire = f.graph.objects.find((o) => o.category === 'conductor')!;
-  wire.bbox = [70, 30, 50, 70];
+  // A partial competitor box (29% of the target) that overlaps the baseline mask.
+  wire.bbox = [78, 38, 24, 24];
   const wireObservation = {
     ...f.observation,
     id: randomUUID(),
@@ -135,7 +136,8 @@ test('v2 recovers an interior point when a reviewed conductor mask is disjoint d
     legacyHash,
   );
   assert.ok(p.pointCues[0]!.point[0] < 103);
-  // Missing or superseded uncertain review restores conservative box exclusion.
+  // Missing or superseded uncertain review restores conservative box exclusion
+  // for a partial competitor box; boxes covering most of the target are not stamped.
   f.graph.maskIdentityReviews.push({
     ...f.graph.maskIdentityReviews[0]!,
     id: randomUUID(),
@@ -213,7 +215,7 @@ test('original-image body cues can be proposed without a baseline mask but remai
   f.rgb.fill(20);
   assert.equal(f.proposal().diagnostics.bodyProposal.status, 'abstained');
 });
-test('conductor-negative points require unambiguous human-reviewed native pixels and cannot be inferred from wire color or boxes', async (t) => {
+test('reviewed conductor-negative points require unambiguous human-reviewed native pixels; boxes alone never produce one', async (t) => {
   const f = await scene(t, false);
   f.rectangle(80, 40, 20, 20);
   const wire = f.graph.objects.find((o) => o.category === 'conductor')!,
@@ -246,19 +248,125 @@ test('conductor-negative points require unambiguous human-reviewed native pixels
     reviewedAt: 1,
   };
   f.graph.maskIdentityReviews = [review];
-  const p = f.proposal();
+  const p = f.proposal(),
+    negative = p.diagnostics.negativeCues[0]!;
   assert.equal(p.diagnostics.negativeCues.length, 1);
-  assert.equal(p.diagnostics.negativeCues[0]!.reviewId, review.id);
+  assert.equal(negative.source, 'reviewed_conductor_mask');
+  assert.equal(
+    negative.source === 'reviewed_conductor_mask' && negative.reviewId,
+    review.id,
+  );
   assert.ok(
     p.variants
       .find((v) => v.name === 'C-body-aware-v2')!
       .prompt.includes('-<|point'),
   );
 });
+test('a saturated-red lead inside the target box yields one chromatic negative from original pixels; brown or dark leads do not', async (t) => {
+  const f = await scene(t, false),
+    target = f.graph.objects.find((o) => o.id === f.objectId)!;
+  f.rectangle(80, 40, 20, 20);
+  const none = f.proposal();
+  assert.equal(none.diagnostics.chromaticCue!.status, 'abstained');
+  assert.equal(none.diagnostics.chromaticCue!.reason, 'no_saturated_red_pixels');
+  // Reddish-brown (tabletop-like) pixels are below the saturation bound.
+  const paint = (x: number, y: number, w: number, h: number, rgb: number[]) => {
+    for (let py = y; py < y + h; py++)
+      for (let px = x; px < x + w; px++)
+        f.rgb.set(rgb, (py * 200 + px) * 3);
+  };
+  paint(target.bbox[0] + 2, target.bbox[1] + 2, 12, 12, [150, 80, 60]);
+  assert.equal(f.proposal().diagnostics.chromaticCue!.status, 'abstained');
+  paint(target.bbox[0] + 2, target.bbox[1] + 2, 12, 12, [220, 20, 30]);
+  const p = f.proposal(),
+    cue = p.diagnostics.negativeCues.find(
+      (n) => n.source === 'saturated_red_pixels',
+    );
+  assert.equal(p.diagnostics.chromaticCue!.status, 'proposed');
+  assert.ok(cue && cue.source === 'saturated_red_pixels');
+  assert.ok(cue.componentPixels >= 25);
+  assert.ok(
+    p.variants
+      .find((v) => v.name === 'C-body-aware-v2')!
+      .prompt.includes('-<|point'),
+  );
+  // The red pixels are never part of the dark body core (core extent + 2 px).
+  assert.equal(p.diagnostics.bodyProposal.box![2], 20);
+  targetingV2DiagnosticsSchema.parse(p.diagnostics);
+});
+test('neighbour boxes covering more than half of the target are reported but not stamped; compact adjacent fragments merge and sparse ones stay out', async (t) => {
+  const f = await scene(t, false),
+    target = f.graph.objects.find((o) => o.id === f.objectId)!;
+  // A host object whose box contains the whole target (battery under a snap).
+  f.graph.objects.push({
+    id: randomUUID(),
+    proposedType: 'host battery',
+    category: 'power_source',
+    bbox: [
+      target.bbox[0] - 5,
+      target.bbox[1] - 5,
+      target.bbox[2] + 10,
+      target.bbox[3] + 10,
+    ],
+    recognitionStatus: 'proposed',
+    segmentationStatus: 'not_attempted',
+    terminalIds: [],
+  });
+  f.rectangle(80, 40, 20, 20);
+  const p = f.proposal(),
+    host = p.diagnostics.exclusions.find((e) => e.mode === 'colocated_box_not_stamped');
+  assert.ok(host && host.coverage === 1);
+  assert.equal(p.diagnostics.bodyProposal.status, 'proposed');
+  assert.equal(p.diagnostics.bodyProposal.pixelDiagnostics!.excludedByUncertainBoxes, 0);
+  // A small competitor box still stamps.
+  f.graph.objects.at(-1)!.bbox = [80, 40, 6, 6];
+  assert.ok(
+    f.proposal().diagnostics.bodyProposal.pixelDiagnostics!
+      .excludedByUncertainBoxes > 0,
+  );
+  f.graph.objects.pop();
+  // A compact fragment one column to the right (shadowed hardware), clear of the
+  // inventory boundary, merges into the body box and three spread positives are proposed.
+  f.rgb.fill(255);
+  f.rectangle(80, 40, 16, 20);
+  f.rectangle(97, 42, 9, 15);
+  const merged = f.proposal();
+  assert.equal(merged.diagnostics.bodyProposal.status, 'proposed');
+  assert.ok(merged.diagnostics.bodyProposal.mergedComponentPixels! > 0);
+  assert.equal(merged.diagnostics.bodyProposal.box![2], 26);
+  assert.equal(merged.diagnostics.bodyProposal.positivePoints.length, 3);
+  assert.ok(
+    merged.diagnostics.bodyProposal.positivePoints.some(([x]) => x >= 100),
+  );
+  // A sparse L-shaped dark fragment (lead-like) at the same gap stays separate.
+  f.rgb.fill(255);
+  f.rectangle(80, 40, 20, 20);
+  f.rectangle(101, 32, 5, 45);
+  f.rectangle(72, 32, 34, 5);
+  const sparse = f.proposal();
+  assert.equal(sparse.diagnostics.bodyProposal.status, 'proposed');
+  assert.equal(sparse.diagnostics.bodyProposal.mergedComponentPixels, 0);
+  assert.equal(sparse.diagnostics.bodyProposal.box![2], 20);
+  // A compact fragment that touches the inventory boundary may belong to the
+  // host object (battery label edge); it is never merged or used as a positive.
+  f.rgb.fill(255);
+  f.rectangle(80, 40, 20, 20);
+  f.rectangle(101, 30, 9, 9);
+  const edge = f.proposal();
+  assert.equal(edge.diagnostics.bodyProposal.mergedComponentPixels, 0);
+  assert.equal(edge.diagnostics.bodyProposal.boundaryFragmentsSkipped, 1);
+  assert.equal(edge.diagnostics.bodyProposal.box![2], 20);
+  assert.ok(
+    edge.diagnostics.bodyProposal.positivePoints.every(([x]) => x < 100),
+  );
+});
 
-async function threeArmFixture(t: {
-  after: (f: () => void | Promise<void>) => void;
-}) {
+async function threeArmFixture(
+  t: {
+    after: (f: () => void | Promise<void>) => void;
+  },
+  baseline = true,
+) {
   const bytes = await sharp({
     create: { width: 200, height: 160, channels: 3, background: '#fff' },
   })
@@ -273,7 +381,7 @@ async function threeArmFixture(t: {
     ])
     .jpeg()
     .toBuffer();
-  const f = await syntheticConnectorFixture(':memory:', true, bytes),
+  const f = await syntheticConnectorFixture(':memory:', baseline, bytes),
     preview = await prepareAutomaticConnectorExperiment(
       f.store,
       f.job.analysisId,
@@ -283,7 +391,7 @@ async function threeArmFixture(t: {
     crop = preview.variants[0]!.crop,
     fake = syntheticConnectorClient(
       f.config,
-      ['mask', 'mask', 'mask'],
+      preview.variants.map(() => 'mask' as const),
       [80 - crop[0], 40 - crop[1]],
     ),
     service = new ConnectorWorkflowService(f.store, fake.client);
@@ -299,9 +407,55 @@ async function threeArmFixture(t: {
     ...f.prepareBody,
     targetingVersion: 'v2',
   });
-  assert.equal(w.contract.plan.variants.length, 3);
+  assert.equal(w.contract.plan.variants.length, baseline ? 3 : 2);
   return { ...f, fake, service, w, legacy, before };
 }
+test('a recorded B abstention counts as a compared arm so a body-aware pass is not blocked by a connector the broad pass never searched', async (t) => {
+  const f = await threeArmFixture(t, false);
+  assert.equal(f.w.contract.plan.automaticTargeting!.pointStatus, 'abstained');
+  assert.ok(
+    f.w.contract.plan.variants.some((v) => v.name === 'C-body-aware-v2'),
+  );
+  const report = await f.service.run(f.w.workflowId, workflowApproval(f.w));
+  assert.equal(report.chargedRequests, 2);
+  const reviews = report.measurements.flatMap((m) =>
+    (m.observations as Array<{ id: string }>).map((o) => ({
+      observationId: o.id,
+      decision: 'correct' as const,
+      source: 'synthetic_fixture' as const,
+      reviewedAt: Date.now(),
+    })),
+  );
+  const result = f.service.evaluate(f.w.workflowId, reviews);
+  assert.equal(
+    result.armResults.find((a) => a.variant === 'B-mask-interior-v2')!
+      .outcome,
+    'abstained',
+  );
+  assert.equal(result.abComparison, 'complete');
+  assert.equal(result.status, 'synthetic_pass');
+  // A planned arm that never produced a measurement is still incomplete.
+  const unrun = structuredClone(report);
+  unrun.measurements = unrun.measurements.filter(
+    (m) => m.variant !== 'A-inventory-box-v2',
+  );
+  assert.equal(
+    evaluateConnectorPixelsV2({
+      report: unrun,
+      reference: f.reference,
+      registeredReferenceHash: canonicalHash(f.reference),
+      reviews: reviews.filter((r) =>
+        unrun.measurements.some((m) =>
+          (m.observations as Array<{ id: string }>).some(
+            (o) => o.id === r.observationId,
+          ),
+        ),
+      ),
+      protocol: connectorProtocolV2,
+    }).abComparison,
+    'incomplete',
+  );
+});
 test('v2 uses the shared bounded execution engine and explicit three-arm evaluator while preserving historical v1 evidence', async (t) => {
   const f = await threeArmFixture(t),
     report = await f.service.run(f.w.workflowId, workflowApproval(f.w));
@@ -351,8 +505,12 @@ test('v2 uses the shared bounded execution engine and explicit three-arm evaluat
       originalImageOnly: true,
       regions: {
         connector: runs,
-        redWire: [[80, 120, 130]],
-        blackWire: [[100, 140, 150]],
+        redWire: [78, 79, 80, 81, 82, 83, 84].map(
+          (y) => [y, 120, 130] as [number, number, number],
+        ),
+        blackWire: [98, 99, 100, 101, 102, 103, 104].map(
+          (y) => [y, 140, 150] as [number, number, number],
+        ),
         uncertain: [],
       },
     },
@@ -367,6 +525,11 @@ test('v2 uses the shared bounded execution engine and explicit three-arm evaluat
       f.job.analysisId,
       referenceVersion.referenceHash,
     );
+  // Freeze applies the protocol boundary band: edges become uncertain and are
+  // excluded from scoring, so the exact mask still scores IoU 1.
+  assert.equal(referenceVersion.content.boundaryBandPx, 2);
+  assert.equal(referenceVersion.pixelCounts.connector, 16 * 16);
+  assert.ok(referenceVersion.pixelCounts.uncertain > 0);
   assert.equal(retrospective.strategy, 'C-body-aware-v2');
   assert.equal(retrospective.protocolHash, connectorProtocolV2.protocolHash);
   assert.equal(retrospective.metrics[0]!.iou, 1);

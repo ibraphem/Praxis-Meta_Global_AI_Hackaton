@@ -4,6 +4,7 @@ import {
   validateProtocolV2,
   referenceProvenanceSchema,
   qualifiedHumanReferenceV2,
+  recordedAbstention,
 } from './connector-protocol-v2.js';
 import { z } from 'zod';
 import { decodeMaskToRaster } from '@meta-sam/parser';
@@ -334,8 +335,12 @@ function evaluatePixels(
   const validMaskArms = results.filter((r) =>
     r.maskMetrics.some((m) => nonemptyMasks.has(m.observationId)),
   ).length;
-  const complete = results.every((r) =>
-    ['candidates_returned', 'empty_output'].includes(r.outcome),
+  const complete = results.every(
+    (r) =>
+      ['candidates_returned', 'empty_output'].includes(r.outcome) ||
+      (!!protocol &&
+        r.outcome === 'abstained' &&
+        recordedAbstention(report.plan, r.variant)),
   );
   const passed = results.filter((r) => r.acceptedMaskCount === 1).length;
   const budgetValid =

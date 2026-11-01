@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { canonicalHash } from '../lib/canonical-json.js';
 import { connectorThresholds } from './connector-thresholds.js';
 import { targetingV2Policy } from './scene-automatic-targeting-v2.js';
+import { referenceBoundaryBandPx } from './pixel-reference.js';
 export const v2Strategies = [
   'A-inventory-box-v2',
   'B-mask-interior-v2',
@@ -33,6 +34,11 @@ const definition = {
     version: 'connector-release-gate-v2' as const,
   },
   referencePolicy: 'blinded_original_only_attested_human_v2',
+  // Frozen references carry a deterministic uncertainty band at every class edge.
+  referenceBoundaryBandPx: referenceBoundaryBandPx,
+  // An arm is compared when it was measured or when the frozen plan records a
+  // reasoned abstention for it; a planned arm that never ran stays incomplete.
+  comparedWhen: 'measured_or_recorded_abstention',
   maxRequests: 3,
   maxPixels: 6000000,
   automaticRetries: 0,
@@ -49,6 +55,35 @@ export function validateProtocolV2(protocol: unknown) {
   )
     throw Error('Unknown or modified connector v2 evaluation contract.');
   return connectorProtocolV2;
+}
+/** A frozen v2 plan records a reasoned abstention for an arm it never specified.
+ * Such an arm is compared (its absence is explained and hashed into the plan);
+ * a specified arm that produced no measurement is not. */
+export function recordedAbstention(
+  plan: {
+    variants: Array<{ name: string }>;
+    automaticTargeting?:
+      | {
+          version: string;
+          pointStatus: string;
+          diagnostics?: { bodyProposal?: { status: string } };
+        }
+      | undefined;
+  },
+  variant: string,
+) {
+  const automatic = plan.automaticTargeting;
+  if (
+    !automatic ||
+    automatic.version !== 'automatic-targeting-v2' ||
+    plan.variants.some((v) => v.name === variant)
+  )
+    return false;
+  if (variant === 'B-mask-interior-v2')
+    return automatic.pointStatus === 'abstained';
+  if (variant === 'C-body-aware-v2')
+    return automatic.diagnostics?.bodyProposal?.status === 'abstained';
+  return false;
 }
 export function qualifiedHumanReferenceV2(reference: {
   source: string;

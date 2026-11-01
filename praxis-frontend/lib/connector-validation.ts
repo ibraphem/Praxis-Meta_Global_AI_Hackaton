@@ -29,6 +29,7 @@ export const annotationContentSchema = z
       })
       .strict(),
     boundaryDefinition: z.string().trim().min(20).max(1500),
+    boundaryBandPx: z.number().int().min(0).max(4).optional(),
     reviewer: z.string().trim().min(1).max(100),
     source: z.enum(["human_review", "assistant_visual", "synthetic_fixture"]),
     predictionExposure: z.enum(["never_seen", "seen_before", "unknown"]),

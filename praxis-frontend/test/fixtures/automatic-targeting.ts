@@ -92,6 +92,8 @@ export function automaticV2PreparedJob() {
       requiredAcceptedStrategies: ["C-body-aware-v2"],
       thresholds,
       referencePolicy: "blinded_original_only_attested_human_v2",
+      referenceBoundaryBandPx: 2,
+      comparedWhen: "measured_or_recorded_abstention",
       maxRequests: 3,
       maxPixels: 6000000,
       automaticRetries: 0,

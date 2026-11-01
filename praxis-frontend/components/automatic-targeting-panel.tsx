@@ -191,12 +191,37 @@ export function AutomaticTargetingPanel({
                 </p>
               )}
               <p>
-                Reviewed conductor-negative points:{" "}
-                {r.targetingDiagnostics.negativeCues.length}. Uncertain
-                neighbor-box exclusions:{" "}
+                Body positives: {r.targetingDiagnostics.bodyProposal.positivePoints.length}
+                {r.targetingDiagnostics.bodyProposal.mergedComponentPixels
+                  ? ` (merged ${r.targetingDiagnostics.bodyProposal.mergedComponentPixels} adjacent compact dark pixels)`
+                  : ""}
+                . Negative points:{" "}
+                {
+                  r.targetingDiagnostics.negativeCues.filter(
+                    (n) => n.source !== "saturated_red_pixels",
+                  ).length
+                }{" "}
+                from reviewed conductor masks,{" "}
+                {
+                  r.targetingDiagnostics.negativeCues.filter(
+                    (n) => n.source === "saturated_red_pixels",
+                  ).length
+                }{" "}
+                from saturated-red lead pixels
+                {r.targetingDiagnostics.chromaticCue &&
+                r.targetingDiagnostics.chromaticCue.status === "abstained"
+                  ? ` (red cue abstained: ${r.targetingDiagnostics.chromaticCue.reason.replaceAll("_", " ")})`
+                  : ""}
+                . Uncertain neighbor-box exclusions:{" "}
                 {
                   r.targetingDiagnostics.exclusions.filter(
                     (e) => e.mode === "uncertain_bbox",
+                  ).length
+                }
+                ; boxes covering most of the target, reported but not stamped:{" "}
+                {
+                  r.targetingDiagnostics.exclusions.filter(
+                    (e) => e.mode === "colocated_box_not_stamped",
                   ).length
                 }
                 .
@@ -214,8 +239,11 @@ export function AutomaticTargetingPanel({
               </ul>
               <p>
                 V2 compares all three declared strategies; only the body-aware
-                arm is required to meet mask quality thresholds. Missing
-                comparisons remain incomplete. Provisional or non-blinded
+                arm is required to meet mask quality thresholds. An arm counts
+                as compared when it was measured or when this frozen plan
+                records a reasoned abstention for it; a planned arm that never
+                ran remains incomplete. Frozen references carry a 2 px
+                boundary band moved to uncertain. Provisional or non-blinded
                 references cannot establish independent acceptance.
               </p>
             </details>

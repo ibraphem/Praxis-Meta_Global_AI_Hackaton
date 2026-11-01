@@ -68,8 +68,13 @@ async function fixture(t: { after: (fn: () => void | Promise<void>) => void }) {
     independentAttestation: true,
     regions: {
       connector: runs as [number, number, number][],
-      redWire: [[80, 120, 130]],
-      blackWire: [[100, 140, 150]],
+      // Wider than the 2 px freeze band so every class keeps foreground.
+      redWire: [78, 79, 80, 81, 82, 83, 84].map(
+        (y) => [y, 120, 130] as [number, number, number],
+      ),
+      blackWire: [98, 99, 100, 101, 102, 103, 104].map(
+        (y) => [y, 140, 150] as [number, number, number],
+      ),
       uncertain: [],
     },
   };
