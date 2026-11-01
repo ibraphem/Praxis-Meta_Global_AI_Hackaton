@@ -15,6 +15,7 @@ import {
 } from "./wire-recovery";
 import { geometryBoxSchema } from "./geometry";
 import { z } from "zod";
+import { connectorValidationSummarySchema } from "./connector-validation";
 import { automaticTargetingRecordSchema } from "./connector-workflow";
 import { analysisSchema } from "./vision";
 import { diagnosticsSchema } from "./diagnostics";
@@ -161,6 +162,7 @@ export const analysisJobSchema = z
       .optional(),
     sam: stageSchema.extend({ snapshotRef: snapshotRefSchema.optional() }),
     muse: stageSchema.extend({ resultAttemptId: z.uuid().optional() }),
+    connectorValidation: connectorValidationSummarySchema.optional(),
     automaticTargeting: z
       .array(automaticTargetingRecordSchema)
       .max(20)

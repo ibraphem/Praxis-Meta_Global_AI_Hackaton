@@ -63,6 +63,7 @@ export function buildSceneEvaluationEvidence(input: {
             "recorded_binding_not_recomputed_without_native_checkpoint",
         }
       : null,
+    connectorValidation: job?.connectorValidation ?? null,
     automaticTargeting: {
       availability: job?.automaticTargeting ? "recorded" : "not_recorded",
       experiments: job?.automaticTargeting ?? [],

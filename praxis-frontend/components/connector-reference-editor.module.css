@@ -1,0 +1,108 @@
+.workspace {
+  padding: 32px 24px 56px;
+  max-width: 1300px;
+  margin: auto;
+  line-height: 1.5;
+}
+
+.workspace h1 {
+  margin-bottom: 12px;
+  font-size: 32px;
+  letter-spacing: -1px;
+}
+.workspace > p {
+  margin-bottom: 16px;
+  max-width: 950px;
+}
+.workspace fieldset {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px 24px;
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.workspace legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+.workspace label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.workspace label:has(input[type="checkbox"]) {
+  flex: 1 1 100%;
+  flex-direction: row;
+  align-items: start;
+  gap: 10px;
+}
+.workspace input[type="checkbox"] {
+  margin-top: 5px;
+}
+.workspace input:not([type="checkbox"]),
+.workspace select,
+.workspace textarea {
+  border: 1px solid #b8bcb1;
+  border-radius: 5px;
+  padding: 8px 10px;
+  background: white;
+  color: var(--ink);
+  max-width: 100%;
+  font: inherit;
+}
+.workspace input[type="number"] {
+  width: 90px;
+}
+.workspace textarea {
+  width: 520px;
+  min-height: 90px;
+}
+.workspace fieldset > p {
+  width: 100%;
+  color: var(--muted);
+}
+.workspace fieldset:disabled {
+  color: var(--muted);
+}
+.workspace button {
+  margin: 4px 6px 4px 0;
+}
+.workspace ul {
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.workspace li {
+  margin-bottom: 8px;
+}
+.workspace > a {
+  display: inline-block;
+  text-decoration: underline;
+  margin-top: 12px;
+}
+.workspace [role="status"] {
+  margin-top: 12px;
+}
+.workspace [role="alert"] {
+  color: #9f301c;
+  margin-top: 12px;
+}
+.zoom {
+  width: 130px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 640px) {
+  .workspace {
+    padding: 24px 16px;
+  }
+  .workspace fieldset > label {
+    max-width: 100%;
+  }
+  .workspace h1 {
+    font-size: 27px;
+  }
+}

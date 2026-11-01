@@ -1633,3 +1633,30 @@ npm run experiment:synthetic -- NEW_DIRECTORY
 ```
 
 The synthetic suite exports source/checkpoint archives, full native request/response evidence, evaluation records, and SHA-256 manifests. It includes A/B success, point abstention, missing reference, valid empty output, parser failure, unknown dispatch and real SIGKILL recovery at admission, dispatch and response capture. It demonstrates workflow reliability; a real photographic test with independently reviewed masks and separately authorized inference is still required.
+
+### Human connector annotation and retrospective validation
+
+Open `/reference/ANALYSIS_ID/WORKFLOW_ID` in the workspace for a dedicated original-only annotation page. It fetches the orientation-corrected source photograph and the reviewer’s own draft; annotation GET, save and freeze responses contain no SAM prediction geometry. Brush labels are connector body, red insulation, black insulation and uncertain pixels. Erasing and undo are available, with 50–400% zoom. Coordinates remain original display pixels.
+
+Draft saves use revision checks. Freezing requires visible foreground for the connector and both wires and creates an immutable `connector-reference-annotation-v1` version with original image hash, object ID, reviewer, annotation method, exposure declaration, timestamp, canonical reference hash and pixel masks. Masks use sorted, merged, end-exclusive horizontal `[y, xStart, xEnd]` spans. Classes cannot overlap; disputed pixels belong in the uncertain region. Corrections create new reference versions. Uncertain pixels are excluded from scoring and their count is retained in the reference metadata.
+
+A human who has seen the prediction is recorded as **non-blinded human reference**. Such a reference can receive diagnostic metrics but cannot become blinded independent evidence or unlock the photographic connector gate. Independent qualification requires an assigned human reviewer, manual original-image annotation, never-seen prediction exposure and explicit attestation. Previously declared exposure cannot be erased by relabeling the same reviewer. These are recorded human attestations, not an automated claim that annotation accuracy has been independently certified. Automated tests simulate review metadata; they do not create real human ground truth.
+
+Retrospective evaluation reads the saved native mask; it never reruns SAM. It stores a separate immutable evaluation linked to reference hash, original experiment/report/prediction hashes, source checkpoint, observation identity and the configured threshold hash. IoU, recall, precision, combined conductor leakage, and separate red/black leakage are reported. The original frozen plan, its absent preregistered reference and its A/B comparison status are preserved. Candidate A boundary acceptance is separate from A/B completeness. A passed A mask can satisfy the object gate while B remains abstained; non-blinded, unknown, assistant and synthetic references cannot unlock the real gate.
+
+The audit replays the **recorded provider response locally**, checks native candidate/observation binding and deterministic public-preview agreement, and records Strategy B’s baseline eligibility rejection reasons. Audit version `automatic-point-audit-v1` describes the frozen `automatic-targeting-v1` filter; it does not substitute A output or reference pixels into B or silently change the targeting algorithm. If no eligible independent baseline evidence exists, B stays abstained. No new targeting algorithm or B request is introduced merely to eliminate abstention.
+
+```sh
+npm run connector:reference -- draft ANALYSIS_ID WORKFLOW_ID NEW_DRAFT.json
+npm run connector:reference -- save ANALYSIS_ID WORKFLOW_ID SAVED_DRAFT_INPUT.json NEW_RESULT.json
+npm run connector:reference -- freeze ANALYSIS_ID WORKFLOW_ID REVISION NEW_REFERENCE.json
+npm run connector:reference -- evaluate ANALYSIS_ID WORKFLOW_ID REFERENCE_HASH NEW_EVALUATION.json
+npm run connector:reference -- audit ANALYSIS_ID WORKFLOW_ID NEW_POINT_AUDIT.json
+npm run connector:reference -- export ANALYSIS_ID WORKFLOW_ID NEW_PRIVATE_EVIDENCE.json
+```
+
+Every command above is offline and sends zero SAM/Muse requests. Save input is `{ revision, content }`. The UI is the preferred drawing workflow. A frozen reference may be reused for another saved prediction only when analysis, photo and object identities match; its original provenance remains unchanged.
+
+Participating automatic connector analyses cannot initiate terminal discovery while any target connector gate is blocked. The server checks at queue admission, worker execution and immediately before provider transport; the UI shows the blocking reason. Gate validity requires current source evidence, the latest frozen reference/evaluation, unchanged prediction evidence, correct human physical identity and configured thresholds. Existing proposed terminal or electrical evidence is never promoted by these checks. Repeat connector inference is also blocked until independent annotation and offline evaluation are complete; each later request still requires its own bounded authorization.
+
+Browser bundles include `connectorValidation` with reference metadata, retrospective metrics, gate decisions and private evidence links. Private JSON exports and offline job archives contain the complete reference spans, prediction/native masks, original request/response records and hashes. `evidence:export` includes `connector-validation/evidence.json` in its SHA-256 manifest. When no human reference exists, exports explicitly retain an empty reference collection, unavailable metrics and a blocked gate. No assistant-created annotation is substituted for the missing human step.

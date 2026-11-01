@@ -1,3 +1,4 @@
+import { connectorValidationEvidence } from './connector-validation.js';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -22,6 +23,7 @@ export function exportJobEvidence(
     sceneRequests: sceneRequestEvidence(store, analysisId),
     experiments: store.experiments.forAnalysis(analysisId),
     automaticTargeting: savedConnectorWorkflows(store, analysisId),
+    connectorValidation: connectorValidationEvidence(store, analysisId),
   }));
   const extras: {
     path: string;
@@ -112,6 +114,11 @@ export function exportJobEvidence(
   mkdirSync(join(outputDirectory, 'automatic-targeting'), { mode: 0o700 });
   evidence.automaticTargeting.forEach((record, i) =>
     write(`automatic-targeting/${i + 1}.json`, json(record)),
+  );
+  mkdirSync(join(outputDirectory, 'connector-validation'), { mode: 0o700 });
+  write(
+    'connector-validation/evidence.json',
+    json(evidence.connectorValidation),
   );
   mkdirSync(join(outputDirectory, 'scene-requests'), { mode: 0o700 });
   evidence.sceneRequests.forEach((record, i) => {

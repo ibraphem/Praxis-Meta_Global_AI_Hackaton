@@ -12,6 +12,16 @@ export function automaticWorkflowJob() {
   );
   const job = analysisJobSchema.parse(fixture.job);
   job.status = "completed";
+  job.connectorValidation ??= {
+    references: [],
+    evaluations: [],
+    gates: job.automaticTargeting!.map((r) => ({
+      objectId: r.objectId,
+      status: "blocked",
+      evaluationId: null,
+      reason: "Independent connector validation is missing.",
+    })),
+  };
   job.result = completedJob({
     image: job.image,
     objects: [],

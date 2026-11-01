@@ -1,3 +1,4 @@
+import { connectorAnnotationViewSchema } from "../connector-validation";
 import { randomUUID } from "node:crypto";
 import { analysisJobSchema } from "../analysis-jobs";
 import { IMAGE_TYPES, MAX_FILE_BYTES } from "../vision";
@@ -9,6 +10,12 @@ type Action =
   | "evaluate-automatic-targeting"
   | "release-automatic-targeting"
   | "automatic-targeting-evidence"
+  | "connector-annotation"
+  | "connector-annotation-image"
+  | "connector-validation-evidence"
+  | "save-connector-reference"
+  | "freeze-connector-reference"
+  | "evaluate-connector-reference"
   | "create"
   | "get"
   | "image"
@@ -111,7 +118,14 @@ export function createAnalysisJobProxy(
           "Check the private backend connection settings.",
         );
       endpoint.pathname = `/api/analyses${id ? `/${id}` : ""}${!["create", "get", "delete"].includes(action) ? `/${action}` : ""}`;
-      if (action === "automatic-targeting-evidence") {
+      if (
+        [
+          "automatic-targeting-evidence",
+          "connector-validation-evidence",
+          "connector-annotation",
+          "connector-annotation-image",
+        ].includes(action)
+      ) {
         const workflowId = url.searchParams.get("workflowId");
         if (!workflowId || !/^[a-f0-9]{64}$/.test(workflowId))
           return fail(400, "INVALID_WORKFLOW", "Choose a saved experiment.");
@@ -155,6 +169,9 @@ export function createAnalysisJobProxy(
       phase = "backend.connect";
       if (
         [
+          "save-connector-reference",
+          "freeze-connector-reference",
+          "evaluate-connector-reference",
           "prepare-automatic-targeting",
           "run-automatic-targeting",
           "evaluate-automatic-targeting",
@@ -173,7 +190,8 @@ export function createAnalysisJobProxy(
         phase = "upload";
         body = await readBounded(
           request.body,
-          action === "prepare-automatic-targeting"
+          action === "prepare-automatic-targeting" ||
+            action === "save-connector-reference"
             ? 8 * 1024 * 1024
             : action === "evaluate-automatic-targeting"
               ? 65536
@@ -190,6 +208,9 @@ export function createAnalysisJobProxy(
           "get",
           "image",
           "automatic-targeting-evidence",
+          "connector-annotation",
+          "connector-annotation-image",
+          "connector-validation-evidence",
           "delete",
         ].includes(action)
           ? "POST"
@@ -237,7 +258,17 @@ export function createAnalysisJobProxy(
           ];
           errors[409] = [
             "AUTOMATIC_EXPERIMENT_CONFLICT",
-            "This plan is stale, spent or blocked by active work. Unknown usage requires release and a separately authorized replacement.",
+            "This plan is stale, spent, blocked by active work or awaiting independent reference validation. Unknown usage requires release and a separately authorized replacement.",
+          ];
+        }
+        if (action.endsWith("connector-reference")) {
+          errors[400] = [
+            "INVALID_REFERENCE",
+            "Check annotation regions, review provenance and the saved draft revision.",
+          ];
+          errors[409] = [
+            "REFERENCE_CONFLICT",
+            "The annotation or source evidence changed. Reload before saving or freezing another version.",
           ];
         }
         if (action === "retry-wire-crop") {
@@ -262,7 +293,7 @@ export function createAnalysisJobProxy(
           ];
           errors[409] = [
             "SCENE_CONFLICT",
-            "Scene evidence changed, work is active, a selected object was already attempted, or the terminal budget is exhausted. Refresh the inventory.",
+            "Scene evidence changed, work is active, a selected object was already attempted, the terminal budget is exhausted, or independent connector validation is incomplete. Refresh the inventory.",
           ];
         }
         if (action === "verify-wire-extension") {
@@ -291,7 +322,7 @@ export function createAnalysisJobProxy(
         await upstream.body?.cancel();
         return new Response(null, { status: 204, headers });
       }
-      if (action === "image") {
+      if (action === "image" || action === "connector-annotation-image") {
         const type = upstream.headers.get("content-type")?.split(";")[0] ?? "";
         if (!IMAGE_TYPES.includes(type)) {
           await upstream.body?.cancel();
@@ -307,6 +338,60 @@ export function createAnalysisJobProxy(
             ...headers,
             "Content-Type": type,
             "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+      if (
+        [
+          "connector-annotation",
+          "save-connector-reference",
+          "freeze-connector-reference",
+        ].includes(action)
+      ) {
+        const bytes = await readBounded(upstream.body, 8 * 1024 * 1024, signal),
+          view = connectorAnnotationViewSchema.parse(
+            JSON.parse(new TextDecoder().decode(bytes)),
+          );
+        const workflowId =
+          action === "connector-annotation"
+            ? url.searchParams.get("workflowId")
+            : JSON.parse(new TextDecoder().decode(body)).workflowId;
+        if (
+          view.analysisId !== id ||
+          view.workflowId !== workflowId ||
+          view.imageUrl !==
+            `/api/analyses/${id}/connector-annotation-image?workflowId=${workflowId}`
+        )
+          return fail(
+            502,
+            "INVALID_BACKEND_RESPONSE",
+            "Annotation view binding mismatch.",
+          );
+        return Response.json(view, { headers });
+      }
+      if (action === "connector-validation-evidence") {
+        const bytes = await readBounded(
+            upstream.body,
+            48 * 1024 * 1024,
+            signal,
+          ),
+          e = JSON.parse(new TextDecoder().decode(bytes));
+        if (
+          e.schemaVersion !== "praxis-connector-validation-evidence-v1" ||
+          e.analysisId !== id ||
+          e.workflowId !== url.searchParams.get("workflowId")
+        )
+          return fail(
+            502,
+            "INVALID_BACKEND_RESPONSE",
+            "Reference evidence binding mismatch.",
+          );
+        return new Response(bytes, {
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Content-Disposition":
+              'attachment; filename="praxis-connector-validation-evidence.json"',
           },
         });
       }

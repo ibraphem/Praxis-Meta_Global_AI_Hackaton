@@ -1,3 +1,4 @@
+import { assertConnectorTerminalGate } from './connector-validation-gate.js';
 import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.js';
 import type { MetaClient } from '../lib/meta-client.js';
@@ -39,6 +40,7 @@ export async function runTerminalStage(
       'SCENE_HASH_MISMATCH',
       'Terminal input evidence changed.',
     );
+  assertConnectorTerminalGate(store, job, attempt.sceneSnapshotHash);
   const image = attempt.samSnapshotId
     ? store.getSnapshot(attempt.samSnapshotId).snapshot.image
     : job.sam.snapshot!.image;
@@ -62,7 +64,18 @@ export async function runTerminalStage(
         'Terminal worker ownership was lost.',
       );
   };
+  const gatedClient: MetaClient = {
+    post: (...args) => {
+      assertConnectorTerminalGate(
+        store,
+        store.get(job.analysisId),
+        attempt.sceneSnapshotHash,
+      );
+      return client.post(...args);
+    },
+  };
   for (const objectId of attempt.terminalObjectIds) {
+    assertConnectorTerminalGate(store, job, attempt.sceneSnapshotHash);
     const current = store.get(job.analysisId).scene!;
     const crop = terminalCrop(graph, objectId),
       pixels = crop[2] * crop[3];
@@ -101,7 +114,7 @@ export async function runTerminalStage(
     try {
       graph = await discoverTerminals({
         config,
-        client,
+        client: gatedClient,
         image,
         graph,
         objectId,

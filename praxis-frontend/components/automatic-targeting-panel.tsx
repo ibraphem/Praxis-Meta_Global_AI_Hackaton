@@ -277,9 +277,79 @@ export function AutomaticTargetingPanel({
               .{" "}
               {r.evaluation.independentGroundTruth
                 ? "Independent reviewed reference registered."
-                : "No independently validated photographic result."}
+                : "No independently validated photographic result in the original frozen protocol; retrospective results are shown separately below."}
             </p>
           )}
+          <p>
+            Connector boundary gate:{" "}
+            {job?.connectorValidation?.gates.find(
+              (g) => g.objectId === r.objectId,
+            )?.status ?? "not recorded"}
+            .
+          </p>
+          <p>
+            <a
+              href={`/reference/${r.analysisId}/${r.workflowId}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Annotate original photograph without prediction overlays
+            </a>
+          </p>
+          <p>
+            Declare prior prediction exposure. Non-blinded human references
+            receive diagnostic scores but cannot unlock independent validation.
+          </p>
+          {job?.connectorValidation?.references
+            .filter((ref) => ref.objectId === r.objectId)
+            .map((ref) => (
+              <div key={ref.referenceHash}>
+                <p>
+                  Reference version {ref.annotationVersion}:{" "}
+                  {ref.independent
+                    ? "blinded independent human reference"
+                    : ref.source === "human_review" &&
+                        ref.predictionExposure === "seen_before"
+                      ? "non-blinded human reference"
+                      : "provisional reference"}
+                  .
+                </p>
+                {onAction && (
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    disabled={busy}
+                    onClick={() =>
+                      onAction("evaluate-connector-reference", {
+                        workflowId: r.workflowId,
+                        referenceHash: ref.referenceHash,
+                      })
+                    }
+                  >
+                    Evaluate saved A mask against reference
+                  </button>
+                )}
+              </div>
+            ))}
+          {job?.connectorValidation?.evaluations
+            .filter((e) => e.workflowId === r.workflowId)
+            .map((e) => (
+              <p key={e.evaluationId}>
+                Retrospective A validation: {e.status}; A/B {e.abComparison}.{" "}
+                {e.metrics
+                  .map(
+                    (m) =>
+                      `IoU ${m.iou.toFixed(3)}, recall ${m.recall.toFixed(3)}, precision ${m.precision?.toFixed(3) ?? "undefined"}, red leakage ${m.redWireLeakage?.toFixed(3) ?? "undefined"}, black leakage ${m.blackWireLeakage?.toFixed(3) ?? "undefined"}, identity ${m.identityCorrectness}.`,
+                  )
+                  .join(" ")}
+              </p>
+            ))}
+          <a
+            href={`/api/analyses/${r.analysisId}/connector-validation-evidence?workflowId=${r.workflowId}`}
+            download
+          >
+            Download reference and prediction evidence
+          </a>
           {r.measurements.map((m) => (
             <div key={m.requestId}>
               <p>

@@ -4,6 +4,7 @@ import { AppError } from '../lib/errors.js';
 import { JobStore, publicJob } from '../jobs/store.js';
 import { z } from 'zod';
 import { prepareImage } from '../services/image.js';
+import { ConnectorValidationService } from '../jobs/connector-validation.js';
 import { ConnectorWorkflowService } from '../jobs/connector-workflow.js';
 
 const idPattern =
@@ -15,9 +16,11 @@ export function registerAnalysisRoutes(
   kick: () => void,
   workflow: ConnectorWorkflowService = new ConnectorWorkflowService(store),
 ) {
+  const validation = new ConnectorValidationService(store);
   const view = (analysisId: string) => ({
     ...publicJob(store.get(analysisId)),
     automaticTargeting: workflow.publicForAnalysis(analysisId),
+    connectorValidation: validation.summary(analysisId),
   });
   let uploads = 0;
   app.post('/api/analyses', async (request, reply) => {
@@ -142,6 +145,103 @@ export function registerAnalysisRoutes(
           'attachment; filename="praxis-automatic-targeting-evidence.json"',
         )
         .send(workflow.evidence(query.data.workflowId, analysisId));
+    },
+  );
+  const annotationView = (workflowId: string, analysisId: string) => {
+    const { w } = validation.context(workflowId, analysisId);
+    return {
+      schemaVersion: 'praxis-connector-annotation-view-v1',
+      analysisId,
+      workflowId,
+      imageHash: w.contract.plan.imageHash,
+      imageUrl: `/api/analyses/${analysisId}/connector-annotation-image?workflowId=${workflowId}`,
+      draft: validation.draft(workflowId, analysisId),
+      references: validation
+        .summary(analysisId)
+        .references.filter((r) => r.workflowId === workflowId),
+      note: 'Original orientation-corrected photograph and your annotations only. No prediction mask is included.',
+    };
+  };
+  app.get('/api/analyses/:id/connector-annotation', async (request) => {
+    const query = z
+      .object({ workflowId: z.string().regex(/^[a-f0-9]{64}$/) })
+      .strict()
+      .parse(request.query);
+    return annotationView(query.workflowId, id(request.params));
+  });
+  app.get(
+    '/api/analyses/:id/connector-annotation-image',
+    async (request, reply) => {
+      const analysisId = id(request.params),
+        query = z
+          .object({ workflowId: z.string().regex(/^[a-f0-9]{64}$/) })
+          .strict()
+          .parse(request.query),
+        { w } = validation.context(query.workflowId, analysisId);
+      const image = store.getSnapshot(
+        w.contract.plan.samSnapshotRef.samSnapshotId,
+      ).snapshot.image;
+      return reply
+        .type('image/jpeg')
+        .send(Buffer.from(image.dataUrl.split(',')[1]!, 'base64'));
+    },
+  );
+  for (const action of ['save', 'freeze', 'evaluate'] as const)
+    app.post(
+      `/api/analyses/:id/${action}-connector-reference`,
+      async (request) => {
+        const analysisId = id(request.params),
+          input = z
+            .object({
+              workflowId: z.string().regex(/^[a-f0-9]{64}$/),
+              revision: z.number().int().nonnegative().optional(),
+              content: z.unknown().optional(),
+              referenceHash: z
+                .string()
+                .regex(/^[a-f0-9]{64}$/)
+                .optional(),
+            })
+            .strict()
+            .safeParse(request.body);
+        if (!input.success)
+          throw new AppError(
+            400,
+            'INVALID_ANNOTATION',
+            'Provide the workflow and annotation revision or frozen reference hash.',
+          );
+        const body = input.data;
+        validation.context(body.workflowId, analysisId);
+        if (action === 'save')
+          validation.saveDraft(body.workflowId, analysisId, {
+            revision: body.revision,
+            content: body.content,
+          });
+        else if (action === 'freeze')
+          validation.freeze(body.workflowId, analysisId, body.revision ?? -1);
+        else
+          validation.evaluate(
+            body.workflowId,
+            analysisId,
+            body.referenceHash ?? '',
+          );
+        return action === 'evaluate'
+          ? view(analysisId)
+          : annotationView(body.workflowId, analysisId);
+      },
+    );
+  app.get(
+    '/api/analyses/:id/connector-validation-evidence',
+    async (request, reply) => {
+      const query = z
+        .object({ workflowId: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .parse(request.query);
+      return reply
+        .header(
+          'Content-Disposition',
+          'attachment; filename="praxis-connector-validation-evidence.json"',
+        )
+        .send(validation.evidence(query.workflowId, id(request.params)));
     },
   );
   app.get('/api/analyses/:id/image', async (request, reply) => {

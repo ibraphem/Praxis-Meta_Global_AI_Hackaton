@@ -13,6 +13,7 @@ import {
 
 export type SceneMode = "objects" | "members" | "evidence";
 export type SceneAction =
+  | "evaluate-connector-reference"
   | "prepare-automatic-targeting"
   | "run-automatic-targeting"
   | "evaluate-automatic-targeting"
@@ -122,6 +123,9 @@ export function SceneObjectPanel({
   const binding = job?.scene?.snapshotRef;
   const terminalBudget = job?.scene?.settings?.maxTerminalRequests ?? 2;
   const remaining = terminalBudget - (job?.scene?.budget.terminalRequests ?? 0);
+  const connectorGateBlocked =
+    job?.connectorValidation?.gates.some((g) => g.status === "blocked") ??
+    false;
   const targetIds = targets.slice(0, Math.max(0, remaining));
   const guidedTargets = planSceneTargets(
     graph,
@@ -580,6 +584,12 @@ export function SceneObjectPanel({
         onAction={onAction}
       />
       <h3>Selective terminal discovery</h3>
+      {connectorGateBlocked && (
+        <p role="status">
+          Terminal discovery is blocked until independent connector pixel
+          validation passes for this scene.
+        </p>
+      )}
       <p>
         Suggested coverage prioritizes battery snap connectors and LED
         assemblies, at most two objects within the request budget. Other
@@ -710,7 +720,7 @@ export function SceneObjectPanel({
           <button
             type="button"
             className="button button-secondary"
-            disabled={busy || !targetIds.length}
+            disabled={busy || !targetIds.length || connectorGateBlocked}
             onClick={() =>
               onAction("discover-terminals", {
                 snapshotId: binding.snapshotId,

@@ -5,9 +5,26 @@ export async function GET(
   context: RouteContext<"/api/analyses/[id]/[action]">,
 ) {
   const { id, action } = await context.params;
-  if (action !== "image" && action !== "automatic-targeting-evidence")
+  if (
+    ![
+      "image",
+      "automatic-targeting-evidence",
+      "connector-annotation",
+      "connector-annotation-image",
+      "connector-validation-evidence",
+    ].includes(action)
+  )
     return new Response(null, { status: 404 });
-  return proxy(request, action, id);
+  return proxy(
+    request,
+    action as
+      | "image"
+      | "automatic-targeting-evidence"
+      | "connector-annotation"
+      | "connector-annotation-image"
+      | "connector-validation-evidence",
+    id,
+  );
 }
 export async function POST(
   request: Request,
@@ -16,6 +33,9 @@ export async function POST(
   const { id, action } = await context.params;
   if (
     ![
+      "save-connector-reference",
+      "freeze-connector-reference",
+      "evaluate-connector-reference",
       "prepare-automatic-targeting",
       "run-automatic-targeting",
       "evaluate-automatic-targeting",
@@ -42,6 +62,9 @@ export async function POST(
   return proxy(
     request,
     action as
+      | "save-connector-reference"
+      | "freeze-connector-reference"
+      | "evaluate-connector-reference"
       | "prepare-automatic-targeting"
       | "run-automatic-targeting"
       | "evaluate-automatic-targeting"

@@ -1,3 +1,7 @@
+import {
+  assertConnectorTerminalGate,
+  ensureConnectorValidationTables,
+} from './connector-validation-gate.js';
 import { planSceneTargets } from '../services/scene-guidance.js';
 import { retryCropWork } from '../services/crop-retry.js';
 import { RUNTIME } from '../lib/runtime.js';
@@ -236,6 +240,7 @@ export class JobStore {
       'CREATE TABLE IF NOT EXISTS connector_workflows (id TEXT PRIMARY KEY,analysis_id TEXT NOT NULL,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS scene_requests (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_requests_analysis ON scene_requests(analysis_id)',
     );
     this.experiments = new ExperimentRegistry(this);
+    ensureConnectorValidationTables(this);
     this.transaction(() => {
       for (const row of this.db
         .prepare(
@@ -933,6 +938,7 @@ export class JobStore {
             'INVALID_TERMINAL_TARGETS',
             'Choose up to two inventory objects for terminal discovery.',
           );
+        assertConnectorTerminalGate(this, job);
         const capacity = reconcileSceneGraph(job.scene.graph),
           count = objectIds.length;
         if (
@@ -1382,6 +1388,16 @@ export class JobStore {
   }
   private recoverWithinTransaction(now = Date.now()) {
     this.experiments.recover(now);
+    for (const table of [
+      'connector_annotation_drafts',
+      'connector_references',
+      'connector_retrospective_evaluations',
+    ])
+      this.db
+        .prepare(
+          `DELETE FROM ${table} WHERE analysis_id NOT IN (SELECT id FROM jobs)`,
+        )
+        .run();
     this.db
       .prepare(
         'DELETE FROM connector_workflows WHERE analysis_id NOT IN (SELECT id FROM jobs)',
@@ -1559,6 +1575,12 @@ export class JobStore {
         .run(id);
       this.db.prepare('DELETE FROM experiments WHERE analysis_id=?').run(id);
       this.db.prepare('DELETE FROM scene_requests WHERE analysis_id=?').run(id);
+      for (const table of [
+        'connector_annotation_drafts',
+        'connector_references',
+        'connector_retrospective_evaluations',
+      ])
+        this.db.prepare(`DELETE FROM ${table} WHERE analysis_id=?`).run(id);
       this.db
         .prepare('DELETE FROM connector_workflows WHERE analysis_id=?')
         .run(id);

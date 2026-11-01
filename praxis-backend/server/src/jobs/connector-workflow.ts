@@ -1,3 +1,4 @@
+import { ensureConnectorValidationTables } from './connector-validation-gate.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { canonicalHash } from '../lib/canonical-json.js';
@@ -293,6 +294,45 @@ export class ConnectorWorkflowService {
       );
     return w;
   }
+  private assertCostControl(current: Workflow) {
+    const id = current.workflowId;
+    const prior = savedConnectorWorkflows(
+      this.store,
+      current.contract.plan.analysisId,
+    ).some(
+      (other) =>
+        other.workflowId !== id &&
+        other.contract.plan.objectId === current.contract.plan.objectId &&
+        other.startingAt !== null,
+    );
+    if (prior) {
+      ensureConnectorValidationTables(this.store);
+      const complete = this.store.db
+        .prepare(
+          'SELECT data FROM connector_retrospective_evaluations WHERE analysis_id=?',
+        )
+        .all(current.contract.plan.analysisId)
+        .map((row) => JSON.parse(row.data as string))
+        .some((e) => {
+          const { evaluationId, ...payload } = e;
+          return (
+            canonicalHash(payload) === evaluationId &&
+            e.sourceSnapshotHash ===
+              current.contract.plan.sceneSnapshotRef.snapshotHash &&
+            e.objectId === current.contract.plan.objectId &&
+            e.imageHash === current.contract.plan.imageHash &&
+            e.independentGroundTruth &&
+            ['passed', 'failed'].includes(e.status)
+          );
+        });
+      if (!complete)
+        throw new AppError(
+          409,
+          'REFERENCE_VALIDATION_REQUIRED',
+          'Complete independent reference annotation and offline evaluation before spending another connector inference request.',
+        );
+    }
+  }
   async run(id: string, approval: unknown, signal?: AbortSignal) {
     const w = this.approve(id, approval);
     this.store.transaction(() => {
@@ -303,6 +343,7 @@ export class ConnectorWorkflowService {
           'WORKFLOW_ALREADY_SPENT',
           'This plan was already admitted. It cannot be replayed, including after release.',
         );
+      this.assertCostControl(current);
       current.startingAt = Date.now();
       this.save(current);
     });
@@ -333,7 +374,7 @@ export class ConnectorWorkflowService {
     }
   }
   start(id: string, approval: unknown) {
-    this.approve(id, approval);
+    this.assertCostControl(this.approve(id, approval));
     if (this.get(id).startingAt !== null)
       throw new AppError(
         409,
