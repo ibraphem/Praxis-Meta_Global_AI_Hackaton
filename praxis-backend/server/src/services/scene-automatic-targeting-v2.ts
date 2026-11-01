@@ -3,6 +3,7 @@ import type { SceneGraph } from '../schemas/scene.js';
 import type { BoundingBox } from '../schemas/vision.js';
 import type { TargetingMask } from './scene-automatic-targeting.js';
 import { canonicalHash } from '../lib/canonical-json.js';
+import { encodeRuns, rasterizeRuns } from './pixel-reference.js';
 import { createHash } from 'node:crypto';
 import {
   containsPixel,
@@ -28,18 +29,41 @@ export const targetingV2Policy = Object.freeze({
   // touch the inventory boundary may belong to the host object, so both stay out.
   componentMergeDistance: 6,
   compactComponentFill: 0.25,
-  // Body box padding around the eroded core: at least 2 px, scaled with size so
-  // specular hardware at the core's edge (not dark) still lies inside the box.
-  bodyBoxPadRatio: 0.06,
+  // Body box padding around the eroded core. Fixed: a proportional pad on a
+  // 150 px housing reached 9 px and invited the terminal and host area below
+  // the plastic; 2 px keeps specular hardware at the core's edge inside the box.
+  bodyBoxPad: 2,
   // Positive cues are spread across the core by farthest-point sampling.
   positivePointCount: 3,
   positiveInterior: 4,
+  // The bottom of a connector box is where terminals and leads attach. Drop
+  // that band from the positive pool so FPS cannot put a cue on the terminal
+  // face and leave the mid-housing uncovered.
+  positiveBottomMarginRatio: 0.15,
   // Saturated-red lead pixels (hue within tolerance of 0°, HSV) supply one
   // negative cue from the original crop. Dark leads are not separable by colour.
   redHueTolerance: 12,
   redMinimumSaturation: 0.75,
   redMinimumValue: 0.45,
-  maximumNegativePoints: 2,
+  // Neighbouring surfaces supply one negative each, from the original crop:
+  // a bright low-saturation surface (host label, paper, metal case) and a
+  // chromatic non-red surface (wood, coloured bench). Low-saturation mid tones
+  // are not used: next to a dark body they are usually its own shading.
+  neutralMinimumValue: 0.6,
+  neutralMaximumSaturation: 0.2,
+  hostMinimumSaturation: 0.25,
+  hostMinimumValue: 0.35,
+  minimumSurfacePixels: 200,
+  surfaceInterior: 3,
+  // A surface negative is the surface pixel nearest the body that still keeps
+  // this clearance from every dark pixel and from the body box. Clearance from
+  // dark alone can sit on brighter housing that the box already includes.
+  negativeClearance: 8,
+  // After SAM returns C, scoring keeps only prediction pixels that are dark or
+  // within this Chebyshev distance of a dark crop pixel. Native bytes stay the
+  // provider mask; the ring is a frozen original-image prior, not a reference.
+  maskKeepDarkHaloPx: 1,
+  maximumNegativePoints: 4,
 });
 function boxCoverage(neighbor: BoundingBox, target: BoundingBox) {
   const w =
@@ -86,18 +110,40 @@ function isSaturatedRed(r: number, g: number, b: number) {
     hue >= 360 - targetingV2Policy.redHueTolerance
   );
 }
+function hsv(r: number, g: number, b: number) {
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  return { value: max / 255, saturation: max ? (max - min) / max : 0 };
+}
+/** Bright, nearly grey surface: host labels, paper, bare metal cases. */
+function isBrightNeutral(r: number, g: number, b: number) {
+  const { value, saturation } = hsv(r, g, b);
+  return (
+    value >= targetingV2Policy.neutralMinimumValue &&
+    saturation <= targetingV2Policy.neutralMaximumSaturation
+  );
+}
+/** Clearly coloured, non-red surface: wood or a coloured bench. */
+function isChromaticHost(r: number, g: number, b: number) {
+  const { value, saturation } = hsv(r, g, b);
+  return (
+    value >= targetingV2Policy.hostMinimumValue &&
+    saturation >= targetingV2Policy.hostMinimumSaturation &&
+    !isSaturatedRed(r, g, b)
+  );
+}
 /** Four-connected components of interior pixels (distance >= minimumInterior). */
 function coreComponents(
   distance: Uint32Array,
   w: number,
   h: number,
   minimumPixels: number,
+  minimumInterior = targetingV2Policy.minimumInterior,
 ) {
   const visited = new Uint8Array(distance.length),
     components: Array<{ pixels: number[]; best: number }> = [];
   for (let start = 0; start < distance.length; start++) {
-    if (visited[start] || distance[start]! < targetingV2Policy.minimumInterior)
-      continue;
+    if (visited[start] || distance[start]! < minimumInterior) continue;
     const pixels = [start];
     visited[start] = 1;
     let best = start;
@@ -114,10 +160,7 @@ function coreComponents(
       ]) {
         if (nx! < 0 || ny! < 0 || nx! >= w || ny! >= h) continue;
         const next = ny! * w + nx!;
-        if (
-          !visited[next] &&
-          distance[next]! >= targetingV2Policy.minimumInterior
-        ) {
+        if (!visited[next] && distance[next]! >= minimumInterior) {
           visited[next] = 1;
           pixels.push(next);
         }
@@ -155,6 +198,109 @@ function depth(raster: Uint8Array, w: number, h: number) {
           1 + Math.min(x + 1 < w ? d[i + 1]! : 0, y + 1 < h ? d[i + w]! : 0),
         );
     }
+  return d;
+}
+/** Chessboard (8-neighbour) distance to the nearest zero pixel or crop edge, so a
+ * clearance of n means no dark pixel within n px along either axis. */
+function chessboardDepth(raster: Uint8Array, w: number, h: number) {
+  const d = new Uint32Array(raster.length);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!raster[i]) continue;
+      d[i] =
+        1 +
+        Math.min(
+          x ? d[i - 1]! : 0,
+          y ? d[i - w]! : 0,
+          x && y ? d[i - w - 1]! : 0,
+          y && x + 1 < w ? d[i - w + 1]! : 0,
+        );
+    }
+  for (let y = h - 1; y >= 0; y--)
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (!raster[i]) continue;
+      d[i] = Math.min(
+        d[i]!,
+        1 +
+          Math.min(
+            x + 1 < w ? d[i + 1]! : 0,
+            y + 1 < h ? d[i + w]! : 0,
+            x + 1 < w && y + 1 < h ? d[i + w + 1]! : 0,
+            x && y + 1 < h ? d[i + w - 1]! : 0,
+          ),
+      );
+    }
+  return d;
+}
+/** Chebyshev distance from a point to a box. Zero when the point is inside. */
+export function boxChebyshev(x: number, y: number, box: BoundingBox) {
+  const dx = x < box[0] ? box[0] - x : x >= box[0] + box[2] ? x - (box[0] + box[2] - 1) : 0,
+    dy = y < box[1] ? box[1] - y : y >= box[1] + box[3] ? y - (box[1] + box[3] - 1) : 0;
+  return Math.max(dx, dy);
+}
+function dilateChebyshev(src: Uint8Array, w: number, h: number, radius: number) {
+  if (radius <= 0) return src;
+  const out = new Uint8Array(src);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      if (!src[y * w + x]) continue;
+      for (let dy = -radius; dy <= radius; dy++)
+        for (let dx = -radius; dx <= radius; dx++) {
+          const nx = x + dx,
+            ny = y + dy;
+          if (nx >= 0 && ny >= 0 && nx < w && ny < h) out[ny * w + nx] = 1;
+        }
+    }
+  return out;
+}
+export function applyKeepRing(
+  prediction: Uint8Array,
+  image: { width: number; height: number },
+  ring: { crop: BoundingBox; runs: number[][] },
+) {
+  const [cx, cy, cw, ch] = ring.crop,
+    keep = rasterizeRuns(ring.runs, cw, ch),
+    out = new Uint8Array(prediction);
+  for (let y = 0; y < ch; y++)
+    for (let x = 0; x < cw; x++) {
+      const px = cx + x,
+        py = cy + y;
+      if (px >= image.width || py >= image.height) continue;
+      const i = py * image.width + px;
+      if (out[i] && !keep[y * cw + x]) out[i] = 0;
+    }
+  return out;
+}
+/** Chebyshev distance to the given seeds. Crop edges are not treated as seeds. */
+function distanceFromSeeds(seeds: number[], w: number, h: number) {
+  const d = new Uint32Array(w * h).fill(0xffffffff),
+    q = seeds.slice();
+  for (const i of q) d[i] = 0;
+  for (let qi = 0; qi < q.length; qi++) {
+    const i = q[qi]!,
+      x = i % w,
+      y = Math.floor(i / w),
+      next = d[i]! + 1;
+    for (const [nx, ny] of [
+      [x - 1, y],
+      [x + 1, y],
+      [x, y - 1],
+      [x, y + 1],
+      [x - 1, y - 1],
+      [x + 1, y - 1],
+      [x - 1, y + 1],
+      [x + 1, y + 1],
+    ]) {
+      if (nx! < 0 || ny! < 0 || nx! >= w || ny! >= h) continue;
+      const j = ny! * w + nx!;
+      if (next < d[j]!) {
+        d[j] = next;
+        q.push(j);
+      }
+    }
+  }
   return d;
 }
 /** Independent inputs only: original RGB crop and original broad-pass native masks.
@@ -415,7 +561,10 @@ export function proposeAutomaticTargetingV2(
     });
   // Original-image heuristic: separated dark, low-chroma cores, not bbox-minus-wire "truth".
   const foreground = new Uint8Array(crop[2] * crop[3]),
-    saturatedRed = new Uint8Array(crop[2] * crop[3]);
+    notDark = new Uint8Array(crop[2] * crop[3]),
+    saturatedRed = new Uint8Array(crop[2] * crop[3]),
+    brightNeutral = new Uint8Array(crop[2] * crop[3]),
+    chromaticHost = new Uint8Array(crop[2] * crop[3]);
   const bodyPixels = {
     darkPixels: 0,
     excludedByNativeMasks: 0,
@@ -423,18 +572,23 @@ export function proposeAutomaticTargetingV2(
     remainingDarkPixels: 0,
     interiorCorePixels: 0,
   };
-  let saturatedRedPixels = 0;
+  let saturatedRedPixels = 0,
+    brightNeutralPixels = 0,
+    chromaticHostPixels = 0;
   for (let y = 0; y < crop[3]; y++)
     for (let x = 0; x < crop[2]; x++) {
       const i = y * crop[2] + x,
         r = original.rgb[i * 3]!,
         g = original.rgb[i * 3 + 1]!,
         b = original.rgb[i * 3 + 2]!;
-      if (!containsPixel(object.bbox, x + crop[0], y + crop[1])) continue;
-      if (
+      const dark =
         (r * 299 + g * 587 + b * 114) / 1000 <= targetingV2Policy.maxDarkLuma &&
-        Math.max(r, g, b) - Math.min(r, g, b) <= targetingV2Policy.maxDarkChroma
-      ) {
+        Math.max(r, g, b) - Math.min(r, g, b) <= targetingV2Policy.maxDarkChroma;
+      // Clearance is measured from every dark pixel in the crop, including
+      // leads and shadows outside the inventory box.
+      if (!dark) notDark[i] = 1;
+      if (!containsPixel(object.bbox, x + crop[0], y + crop[1])) continue;
+      if (dark) {
         bodyPixels.darkPixels++;
         if (blocked[i] === 2) bodyPixels.excludedByUncertainBoxes++;
         else if (blocked[i] === 1) bodyPixels.excludedByNativeMasks++;
@@ -445,6 +599,12 @@ export function proposeAutomaticTargetingV2(
       } else if (isSaturatedRed(r, g, b)) {
         saturatedRed[i] = 1;
         saturatedRedPixels++;
+      } else if (isBrightNeutral(r, g, b)) {
+        brightNeutral[i] = 1;
+        brightNeutralPixels++;
+      } else if (isChromaticHost(r, g, b)) {
+        chromaticHost[i] = 1;
+        chromaticHostPixels++;
       }
     }
   const distance = depth(foreground, crop[2], crop[3]);
@@ -509,12 +669,7 @@ export function proposeAutomaticTargetingV2(
   const positives: PixelPoint[] = [];
   if (body && reason === 'proposed') {
     const extent = pixelBox(bodyCore, crop[2]),
-      pad = Math.max(
-        2,
-        Math.round(
-          targetingV2Policy.bodyBoxPadRatio * Math.max(extent[2], extent[3]),
-        ),
-      );
+      pad = targetingV2Policy.bodyBoxPad;
     const minX = Math.max(object.bbox[0], extent[0] + crop[0] - pad),
       minY = Math.max(object.bbox[1], extent[1] + crop[1] - pad),
       maxX = Math.min(
@@ -539,14 +694,28 @@ export function proposeAutomaticTargetingV2(
         (i % crop[2]) + crop[0],
         Math.floor(i / crop[2]) + crop[1],
       ];
-      const chosen = [body.best];
       const deep = bodyCore.filter(
         (i) => distance[i]! >= targetingV2Policy.positiveInterior,
       );
-      while (chosen.length < targetingV2Policy.positivePointCount) {
+      const bottomMargin = Math.max(
+        targetingV2Policy.positiveInterior,
+        Math.round(
+          bodyBox[3] * targetingV2Policy.positiveBottomMarginRatio,
+        ),
+      );
+      const bottomLimit = bodyBox[1] + bodyBox[3] - bottomMargin;
+      const raised = deep.filter((i) => {
+        const y = Math.floor(i / crop[2]) + crop[1];
+        return y < bottomLimit;
+      });
+      const pool =
+        raised.length >= targetingV2Policy.positivePointCount ? raised : deep;
+      const seed = pool.includes(body.best) ? body.best : pool[0]!;
+      const chosen = [seed];
+      const pickFarthest = (candidates: number[]) => {
         let next = -1,
           farthest = 0;
-        for (const i of deep) {
+        for (const i of candidates) {
           const [x, y] = toPoint(i);
           let nearest = Infinity;
           for (const c of chosen) {
@@ -558,8 +727,25 @@ export function proposeAutomaticTargetingV2(
             next = i;
           }
         }
-        if (next < 0 || farthest < targetingV2Policy.positiveInterior) break;
+        return farthest >= targetingV2Policy.positiveInterior ? next : -1;
+      };
+      while (chosen.length < targetingV2Policy.positivePointCount - 1) {
+        const next = pickFarthest(pool);
+        if (next < 0) break;
         chosen.push(next);
+      }
+      // Last cue covers the right-middle face so a surface negative beside the
+      // housing cannot erase that side. Ordinary FPS if that band is empty.
+      if (chosen.length < targetingV2Policy.positivePointCount) {
+        const midX = bodyBox[0] + bodyBox[2] / 2,
+          midTop = bodyBox[1] + Math.round(bodyBox[3] * 0.25),
+          midBot = bodyBox[1] + Math.round(bodyBox[3] * 0.75);
+        const rightMiddle = pool.filter((i) => {
+          const [x, y] = toPoint(i);
+          return x >= midX && y >= midTop && y < midBot;
+        });
+        const next = pickFarthest(rightMiddle.length ? rightMiddle : pool);
+        if (next >= 0) chosen.push(next);
       }
       positives.push(...chosen.map(toPoint));
     }
@@ -577,6 +763,12 @@ export function proposeAutomaticTargetingV2(
         point: PixelPoint;
         componentPixels: number;
         interiorDistance: number;
+      }
+    | {
+        source: 'bright_neutral_surface' | 'chromatic_host_surface';
+        point: PixelPoint;
+        componentPixels: number;
+        clearance: number;
       }
   > = [];
   if (bodyBox)
@@ -653,6 +845,74 @@ export function proposeAutomaticTargetingV2(
       interiorDistance: redDistance[redCore.best]!,
     });
   }
+  // Surface cues: for each neighbouring surface class, the pixel of its largest
+  // component that lies nearest the body core while keeping the clearance from
+  // every dark pixel and from the body box. Placed beside the body, where SAM
+  // has to decide where the plastic ends. Original pixels only; no reference
+  // or prediction is consulted.
+  const clearance = chessboardDepth(notDark, crop[2], crop[3]);
+  const coreDistance = distanceFromSeeds(bodyCore, crop[2], crop[3]);
+  const surfaceCues = (
+    [
+      ['bright_neutral_surface', brightNeutral, brightNeutralPixels],
+      ['chromatic_host_surface', chromaticHost, chromaticHostPixels],
+    ] as const
+  ).map(([source, raster, pixels]) => {
+    const surfaceDepth = depth(raster, crop[2], crop[3]),
+      components = coreComponents(
+        surfaceDepth,
+        crop[2],
+        crop[3],
+        targetingV2Policy.minimumSurfacePixels,
+        targetingV2Policy.surfaceInterior,
+      ),
+      component = components[0];
+    let chosen = -1;
+    if (bodyBox && component)
+      for (const i of component.pixels) {
+        const x = (i % crop[2]) + crop[0],
+          y = Math.floor(i / crop[2]) + crop[1];
+        if (
+          clearance[i]! < targetingV2Policy.negativeClearance ||
+          boxChebyshev(x, y, bodyBox) < targetingV2Policy.negativeClearance
+        )
+          continue;
+        if (
+          chosen < 0 ||
+          coreDistance[i]! < coreDistance[chosen]! ||
+          (coreDistance[i] === coreDistance[chosen] && i < chosen)
+        )
+          chosen = i;
+      }
+    const reason = !bodyBox
+      ? 'no_body_box'
+      : !pixels
+        ? 'no_surface_pixels'
+        : !component
+          ? 'no_surface_core'
+          : chosen < 0
+            ? 'no_pixel_clear_of_body_and_dark'
+            : negatives.length >= targetingV2Policy.maximumNegativePoints
+              ? 'negative_budget_spent'
+              : 'proposed';
+    if (reason === 'proposed' && component)
+      negatives.push({
+        source,
+        point: [
+          (chosen % crop[2]) + crop[0],
+          Math.floor(chosen / crop[2]) + crop[1],
+        ],
+        componentPixels: component.pixels.length,
+        clearance: clearance[chosen]!,
+      });
+    return {
+      source,
+      status: reason === 'proposed' ? ('proposed' as const) : ('abstained' as const),
+      reason,
+      surfacePixels: pixels,
+      componentCount: components.length,
+    };
+  });
   if (bodyBox)
     variants.push({
       name: 'C-body-aware-v2',
@@ -712,7 +972,26 @@ export function proposeAutomaticTargetingV2(
         physicalBoundaryStatus: 'unconfirmed',
       },
       chromaticCue,
+      surfaceCues,
       negativeCues: negatives,
+      ...(bodyBox && targetingV2Policy.maskKeepDarkHaloPx > 0
+        ? {
+            keepRing: {
+              haloPx: targetingV2Policy.maskKeepDarkHaloPx,
+              crop,
+              runs: encodeRuns(
+                dilateChebyshev(
+                  Uint8Array.from(notDark, (v) => (v ? 0 : 1)),
+                  crop[2],
+                  crop[3],
+                  targetingV2Policy.maskKeepDarkHaloPx,
+                ),
+                crop[2],
+                crop[3],
+              ),
+            },
+          }
+        : {}),
     },
     note: 'Automatic proposals only. No reference, manual profile, Strategy A pixels, object identity merge, terminal or connectivity inference is consumed or established. Missing evidence and ambiguous bodies retain abstention.',
   };

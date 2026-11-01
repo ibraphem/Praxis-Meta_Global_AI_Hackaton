@@ -198,7 +198,8 @@ export function AutomaticTargetingPanel({
                 . Negative points:{" "}
                 {
                   r.targetingDiagnostics.negativeCues.filter(
-                    (n) => n.source !== "saturated_red_pixels",
+                    (n) =>
+                      !n.source || n.source === "reviewed_conductor_mask",
                   ).length
                 }{" "}
                 from reviewed conductor masks,{" "}
@@ -211,6 +212,29 @@ export function AutomaticTargetingPanel({
                 {r.targetingDiagnostics.chromaticCue &&
                 r.targetingDiagnostics.chromaticCue.status === "abstained"
                   ? ` (red cue abstained: ${r.targetingDiagnostics.chromaticCue.reason.replaceAll("_", " ")})`
+                  : ""}
+                ,{" "}
+                {
+                  r.targetingDiagnostics.negativeCues.filter(
+                    (n) =>
+                      n.source === "bright_neutral_surface" ||
+                      n.source === "chromatic_host_surface",
+                  ).length
+                }{" "}
+                from neighbouring surfaces beside the body
+                {r.targetingDiagnostics.keepRing
+                  ? `. Scoring keep-ring: dark crop pixels plus ${r.targetingDiagnostics.keepRing.haloPx} px`
+                  : ""}
+                {r.targetingDiagnostics.surfaceCues?.some(
+                  (c) => c.status === "abstained",
+                )
+                  ? ` (abstained: ${r.targetingDiagnostics.surfaceCues
+                      .filter((c) => c.status === "abstained")
+                      .map(
+                        (c) =>
+                          `${c.source.replace("_surface", "").replaceAll("_", " ")} ${c.reason.replaceAll("_", " ")}`,
+                      )
+                      .join("; ")})`
                   : ""}
                 . Uncertain neighbor-box exclusions:{" "}
                 {

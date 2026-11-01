@@ -19,6 +19,7 @@ import {
   validateAnnotation,
 } from '../services/pixel-reference.js';
 import { connectorThresholds } from '../services/connector-pixel-evaluation.js';
+import { applyKeepRing } from '../services/scene-automatic-targeting-v2.js';
 import { auditAutomaticPoint } from '../services/automatic-point-audit.js';
 import { ConnectorWorkflowService } from './connector-workflow.js';
 import { auditConnectorEvidence } from './connector-evidence-audit.js';
@@ -189,11 +190,13 @@ export class ConnectorValidationService {
       let checked: ReturnType<typeof validateAnnotation>;
       try {
         checked = validateAnnotation(draft.content, draft.image, true);
-      } catch {
+      } catch (cause) {
         throw new AppError(
           400,
           'INCOMPLETE_ANNOTATION',
-          'Annotate the visible connector and both insulated wires before freezing.',
+          cause instanceof Error
+            ? cause.message
+            : 'Annotate the visible connector and both insulated wires before freezing.',
         );
       }
       // Protocol band: class edges become uncertain at freeze so the frozen
@@ -214,10 +217,15 @@ export class ConnectorValidationService {
         try {
           checked = validateAnnotation(content, draft.image, true);
         } catch {
+          const vanished = (
+            ['connector', 'redWire', 'blackWire'] as const
+          ).filter((name) => !banded.runs[name].length);
           throw new AppError(
             400,
             'INCOMPLETE_ANNOTATION',
-            `Each class must keep foreground after the ${referenceBoundaryBandPx} px boundary band. Paint the connector and both wires wider than ${2 * referenceBoundaryBandPx + 1} px.`,
+            vanished.length
+              ? `${vanished.join(', ')} would be erased by the ${referenceBoundaryBandPx} px boundary band. Paint ${vanished.join(' and ')} wider than ${2 * referenceBoundaryBandPx + 1} px.`
+              : `Each class must keep foreground after the ${referenceBoundaryBandPx} px boundary band. Paint the connector and both wires wider than ${2 * referenceBoundaryBandPx + 1} px.`,
           );
         }
       }
@@ -429,8 +437,24 @@ export class ConnectorValidationService {
             ? 1
             : 0;
         }
+      const ring = (
+        w.contract.plan.automaticTargeting as
+          | {
+              diagnostics?: {
+                keepRing?: {
+                  crop: [number, number, number, number];
+                  runs: number[][];
+                };
+              };
+            }
+          | undefined
+      )?.diagnostics?.keepRing;
+      const scored =
+        strategy === 'C-body-aware-v2' && ring
+          ? applyKeepRing(prediction, r.image, ring)
+          : prediction;
       const { excludedPixels: _excluded, ...scores } = pixelMetrics(
-        prediction,
+        scored,
         checked.regions.connector,
         checked.regions.redWire,
         checked.regions.blackWire,

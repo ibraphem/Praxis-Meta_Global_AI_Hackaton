@@ -264,7 +264,7 @@ export function createAnalysisJobProxy(
         if (action.endsWith("connector-reference")) {
           errors[400] = [
             "INVALID_REFERENCE",
-            "Check annotation regions, review provenance and the saved draft revision.",
+            "Save the draft first. Connector, red wire and black wire must each keep pixels after the 2 px boundary band.",
           ];
           errors[409] = [
             "REFERENCE_CONFLICT",

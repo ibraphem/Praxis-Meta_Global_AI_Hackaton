@@ -50,7 +50,11 @@ export function ConnectorReferenceEditor({
   const [tool, setTool] = useState(1),
     [brush, setBrush] = useState(3),
     [zoom, setZoom] = useState(1),
-    [pixels, setPixels] = useState(0);
+    [pixels, setPixels] = useState(0),
+    [bandCounts, setBandCounts] = useState<{
+      painted: Record<(typeof names)[number], number>;
+      kept: Record<(typeof names)[number], number>;
+    } | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null),
     raster = useRef<Uint8Array>(new Uint8Array()),
     previous = useRef<[number, number] | null>(null),
@@ -98,6 +102,7 @@ export function ConnectorReferenceEditor({
         setView(next);
         setContent(next.draft.content);
         setPixels(data.reduce((n, v) => n + (v ? 1 : 0), 0));
+        recount(data, width, height);
         setLocked(
           next.references.some((r) => r.frozenAt >= next.draft.updatedAt),
         );
@@ -176,6 +181,42 @@ export function ConnectorReferenceEditor({
     setPixels(raster.current.reduce((n, v) => n + (v ? 1 : 0), 0));
     render();
   }
+  function recount(data = raster.current, width?: number, height?: number) {
+    const w = width ?? view?.draft.image.width,
+      h = height ?? view?.draft.image.height;
+    if (!w || !h) return;
+    const painted = { connector: 0, redWire: 0, blackWire: 0, uncertain: 0 },
+      kept = { connector: 0, redWire: 0, blackWire: 0, uncertain: 0 },
+      band = 2;
+    for (let i = 0; i < data.length; i++)
+      if (data[i]) painted[names[data[i]! - 1]!]++;
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x,
+          own = data[i]!;
+        if (own === 4) {
+          kept.uncertain++;
+          continue;
+        }
+        let edge = false;
+        for (let dy = -band; dy <= band && !edge; dy++) {
+          const ny = y + dy;
+          if (ny < 0 || ny >= h) continue;
+          for (let dx = -band; dx <= band; dx++) {
+            const nx = x + dx;
+            if (nx < 0 || nx >= w) continue;
+            const other = data[ny * w + nx]!;
+            if (other !== own && other !== 4 && (own !== 0 || other !== 0)) {
+              edge = true;
+              break;
+            }
+          }
+        }
+        if (edge) kept.uncertain++;
+        else if (own) kept[names[own - 1]!]++;
+      }
+    setBandCounts({ painted, kept });
+  }
   function encodedContent() {
     const regions: AnnotationContent["regions"] = {
         connector: [],
@@ -211,18 +252,23 @@ export function ConnectorReferenceEditor({
           ...(kind === "save" ? { content: encodedContent() } : {}),
         }),
       });
-      if (!response.ok)
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
         throw Error(
-          kind === "save"
-            ? "Save rejected. Reload if another reviewer changed the draft."
-            : "Freeze rejected. Save first and label the connector and both visible wires.",
+          typeof body?.error?.message === "string"
+            ? body.error.message
+            : kind === "save"
+              ? "Save rejected. Reload if another reviewer changed the draft."
+              : "Freeze rejected. Save first. Connector, red wire and black wire must each keep pixels after the 2 px band.",
         );
+      }
       const next = connectorAnnotationViewSchema.parse(
         await response.json(),
       ) as View;
       setView(next);
       setContent(next.draft.content);
       setDirty(false);
+      recount();
       if (kind === "freeze") setLocked(true);
       setStatus(
         kind === "save"
@@ -263,6 +309,16 @@ export function ConnectorReferenceEditor({
         original display pixels. Draft revision {view.draft.revision}. Painted
         pixels: {pixels}.
       </p>
+      {bandCounts && (
+        <p>
+          After the 2 px freeze band — connector {bandCounts.kept.connector} kept
+          / {bandCounts.painted.connector} painted, red{" "}
+          {bandCounts.kept.redWire} / {bandCounts.painted.redWire}, black{" "}
+          {bandCounts.kept.blackWire} / {bandCounts.painted.blackWire}. Freeze
+          needs every class to keep pixels; strokes thinner than 5 px can
+          disappear.
+        </p>
+      )}
       <fieldset disabled={busy || locked}>
         <legend>Paint reference pixels</legend>
         <label>
@@ -356,9 +412,11 @@ export function ConnectorReferenceEditor({
           }}
           onPointerUp={() => {
             previous.current = null;
+            recount();
           }}
           onPointerCancel={() => {
             previous.current = null;
+            recount();
           }}
         />
       </div>
@@ -434,7 +492,15 @@ export function ConnectorReferenceEditor({
       <button
         type="button"
         className="button button-primary"
-        disabled={busy || locked || dirty || !view.draft.revision}
+        disabled={
+          busy ||
+          locked ||
+          dirty ||
+          !view.draft.revision ||
+          !bandCounts?.kept.connector ||
+          !bandCounts.kept.redWire ||
+          !bandCounts.kept.blackWire
+        }
         onClick={() => void action("freeze")}
       >
         Freeze reference version

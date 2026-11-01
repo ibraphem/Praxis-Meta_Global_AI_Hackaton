@@ -60,13 +60,15 @@ export function validateAnnotation(
         'Reference classes overlap. Label disputed pixels uncertain instead.',
       );
   }
-  if (
-    requireComplete &&
-    (!counts.connector || !counts.redWire || !counts.blackWire)
-  )
-    throw new Error(
-      'Freeze requires connector, red-wire and black-wire foreground.',
-    );
+  if (requireComplete) {
+    const missing = (
+      ['connector', 'redWire', 'blackWire'] as const
+    ).filter((name) => !counts[name]);
+    if (missing.length)
+      throw new Error(
+        `Freeze requires ${missing.join(', ')} foreground after the saved labels.`,
+      );
+  }
   return { content, regions, counts };
 }
 /** Deterministic uncertainty band applied at freeze: every pixel within this

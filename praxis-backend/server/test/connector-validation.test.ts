@@ -256,7 +256,7 @@ test('invalid overlapping or incomplete pixel references are rejected before eva
   });
   assert.throws(
     () => f.service.freeze(f.w.workflowId, f.job.analysisId, draft.revision),
-    /both insulated wires/,
+    /blackWire foreground/,
   );
 });
 test('native masks, recorded provider response and public preview must agree; stale scene evidence blocks the gate', async (t) => {

@@ -89,6 +89,20 @@ export const targetingV2DiagnosticsSchema = z
       })
       .strict()
       .optional(),
+    surfaceCues: z
+      .array(
+        z
+          .object({
+            source: z.enum(['bright_neutral_surface', 'chromatic_host_surface']),
+            status: z.enum(['proposed', 'abstained']),
+            reason: z.string(),
+            surfacePixels: count,
+            componentCount: count,
+          })
+          .strict(),
+      )
+      .max(2)
+      .optional(),
     negativeCues: z
       .array(
         z.union([
@@ -109,9 +123,36 @@ export const targetingV2DiagnosticsSchema = z
               interiorDistance: count,
             })
             .strict(),
+          z
+            .object({
+              source: z.enum([
+                'bright_neutral_surface',
+                'chromatic_host_surface',
+              ]),
+              point,
+              componentPixels: count,
+              clearance: count,
+            })
+            .strict(),
         ]),
       )
-      .max(2),
+      .max(4),
+    keepRing: z
+      .object({
+        haloPx: z.number().int().min(0).max(4),
+        crop: boxSchema,
+        runs: z
+          .array(
+            z.tuple([
+              count,
+              count,
+              z.number().int().positive(),
+            ]),
+          )
+          .max(120000),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export const targetingV2ProtocolSchema = z
