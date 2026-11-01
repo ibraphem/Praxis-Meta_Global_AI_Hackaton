@@ -25,6 +25,8 @@
     "check": "npm run typecheck && npm test && npm run build && npm run format:check",
     "scene:freeze-truth": "node --import tsx scripts/freeze-scene-truth.ts",
     "scene:replay-identities": "node --import tsx scripts/replay-scene-identities.ts",
+    "experiment:synthetic": "node --import tsx scripts/synthetic-connector-workflow.ts",
+    "experiment:automatic": "node --env-file-if-exists=.env --import tsx scripts/experiment-automatic.ts",
     "experiment:connector": "node --env-file-if-exists=.env --import tsx scripts/experiment-connector.ts"
   },
   "dependencies": {

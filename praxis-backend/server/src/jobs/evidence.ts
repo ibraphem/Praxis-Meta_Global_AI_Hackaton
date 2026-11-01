@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { AppError } from '../lib/errors.js';
 import type { JobStore } from './store.js';
 import { sceneRequestEvidence } from './scene-request-evidence.js';
+import { savedConnectorWorkflows } from './connector-workflow.js';
 import { sceneSnapshots } from './scene-snapshots.js';
 
 /** Offline evidence archive, distinct from the browser's calibration/review evaluation bundle. */
@@ -20,6 +21,7 @@ export function exportJobEvidence(
     sceneSnapshots: sceneSnapshots(store, analysisId),
     sceneRequests: sceneRequestEvidence(store, analysisId),
     experiments: store.experiments.forAnalysis(analysisId),
+    automaticTargeting: savedConnectorWorkflows(store, analysisId),
   }));
   const extras: {
     path: string;
@@ -106,6 +108,10 @@ export function exportJobEvidence(
   mkdirSync(join(outputDirectory, 'experiments'), { mode: 0o700 });
   evidence.experiments.forEach((record, i) =>
     write(`experiments/${i + 1}.json`, json(record)),
+  );
+  mkdirSync(join(outputDirectory, 'automatic-targeting'), { mode: 0o700 });
+  evidence.automaticTargeting.forEach((record, i) =>
+    write(`automatic-targeting/${i + 1}.json`, json(record)),
   );
   mkdirSync(join(outputDirectory, 'scene-requests'), { mode: 0o700 });
   evidence.sceneRequests.forEach((record, i) => {

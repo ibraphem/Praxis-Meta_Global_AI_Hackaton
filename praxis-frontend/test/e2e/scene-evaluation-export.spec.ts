@@ -65,9 +65,15 @@ test("download includes complete scene evidence and latency before calibration, 
     job.scene!.graph!.terminals,
   );
   expect(evidence.attachmentEvidence).toEqual(job.scene!.graph!.attachments);
-  expect(evidence.verificationStatus.objectIdentity[0].status).toBe(
-    "human_confirmed_same_object",
+  const reviewedRelation = job.scene!.graph!.relations!.find(
+    (relation) => relation.type === "same_object",
+  )!;
+  const reviewedIdentity = evidence.verificationStatus.objectIdentity.find(
+    (identity: { memberObjectIds: string[] }) =>
+      identity.memberObjectIds.includes(reviewedRelation.fromObjectId) &&
+      identity.memberObjectIds.includes(reviewedRelation.toObjectId),
   );
+  expect(reviewedIdentity?.status).toBe("human_confirmed_same_object");
   expect(evidence.verificationStatus.terminals[0].verification).toBe(
     "unverified",
   );

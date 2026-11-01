@@ -1,16 +1,17 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { loadConfig } from '../src/config.js';
 import { JobStore } from '../src/jobs/store.js';
 import {
   prepareConnectorExperiment,
-  prepareAutomaticConnectorExperiment,
   runConnectorExperiment,
   type ConnectorExperimentPlan,
 } from '../src/jobs/scene-connector-experiment.js';
 import { prepareSceneCrop } from '../src/services/scene.js';
 import { sceneRequestEvidence } from '../src/jobs/scene-request-evidence.js';
 import { boundaryProfileSchema } from '../src/services/connector-boundary.js';
+import { ConnectorWorkflowService } from '../src/jobs/connector-workflow.js';
+import { canonicalHash } from '../src/lib/canonical-json.js';
 import { AppError } from '../src/lib/errors.js';
 async function main() {
   const args = process.argv.slice(2);
@@ -24,16 +25,17 @@ async function main() {
       : mode === 'prepare-boundary'
         ? args.length !== 5
         : mode === 'prepare-auto'
-          ? args.length !== 4
+          ? args.length !== 4 && args.length !== 5
           : args.length !== 3) ||
     !a ||
     !b ||
     (mode === 'prepare' && (!c || !d || !e))
   )
     throw Error(
-      'Usage: npm run experiment:connector -- prepare ANALYSIS_ID OBJECT_ID X,Y NEG_X,NEG_Y NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-boundary ANALYSIS_ID OBJECT_ID PROFILE.json NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-auto ANALYSIS_ID OBJECT_ID NEW_DIRECTORY\nOr: npm run experiment:connector -- run PLAN.json NEW_DIRECTORY\nPrepare is offline. Run makes at most three SAM requests, zero Muse, no retries; requires approval to send image crops to configured Meta service.',
+      'Usage: npm run experiment:connector -- prepare ANALYSIS_ID OBJECT_ID X,Y NEG_X,NEG_Y NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-boundary ANALYSIS_ID OBJECT_ID PROFILE.json NEW_DIRECTORY\nOr: npm run experiment:connector -- prepare-auto ANALYSIS_ID OBJECT_ID NEW_DIRECTORY [FROZEN_REFERENCE.json]\nOr: npm run experiment:connector -- run PLAN.json NEW_DIRECTORY\nPrepare is offline. Run makes at most three SAM requests, zero Muse, no retries; requires approval to send image crops to configured Meta service.',
     );
   const store = new JobStore(loadConfig());
+  const workflowService = new ConnectorWorkflowService(store);
   try {
     const directory =
       mode === 'prepare'
@@ -60,9 +62,19 @@ async function main() {
         mode === 'prepare-boundary'
           ? boundaryProfileSchema.parse(JSON.parse(readFileSync(c!, 'utf8')))
           : undefined;
+      const source = store.get(a);
+      const workflow =
+        mode === 'prepare-auto'
+          ? await workflowService.prepare(a, {
+              objectId: b,
+              snapshotId: source.scene?.snapshotRef?.snapshotId,
+              snapshotHash: source.scene?.snapshotRef?.snapshotHash,
+              ...(d ? { reference: JSON.parse(readFileSync(d, 'utf8')) } : {}),
+            })
+          : undefined;
       const plan =
         mode === 'prepare-auto'
-          ? await prepareAutomaticConnectorExperiment(store, a, b)
+          ? workflow!.contract.plan
           : await prepareConnectorExperiment(
               store,
               a,
@@ -71,6 +83,12 @@ async function main() {
               profile ? profile.exclusion.battery : point(d!),
               profile ? { profile } : undefined,
             );
+      if (workflow)
+        writeFileSync(
+          join(directory, 'workflow.json'),
+          JSON.stringify({ workflowId: workflow.workflowId }, null, 2) + '\n',
+          { flag: 'wx', mode: 0o600 },
+        );
       const image = store.getSnapshot(plan.samSnapshotRef.samSnapshotId)
         .snapshot.image;
       for (const v of plan.variants)
@@ -108,9 +126,51 @@ async function main() {
       process.once('SIGINT', stop);
       process.once('SIGTERM', stop);
       try {
-        const report = await runConnectorExperiment(store, plan, store.config, {
-          signal: controller.signal,
-        });
+        let workflowId: string | undefined;
+        if (plan.automaticTargeting) {
+          if (!existsSync(join(dirname(a), 'workflow.json')))
+            throw new AppError(
+              409,
+              'WORKFLOW_REQUIRED',
+              'Prepare a registered automatic workflow before running this older plan.',
+            );
+          workflowId = JSON.parse(
+            readFileSync(join(dirname(a), 'workflow.json'), 'utf8'),
+          ).workflowId;
+          if (
+            !workflowId ||
+            canonicalHash(workflowService.get(workflowId).contract.plan) !==
+              canonicalHash(plan)
+          )
+            throw Error('Automatic plan must match its registered workflow.');
+        }
+        const report = workflowId
+          ? await workflowService.run(
+              workflowId,
+              {
+                workflowId,
+                authorizeInference: true,
+                providerBaseUrl: plan.providerBaseUrl,
+                requests: plan.variants.length,
+                pixels: plan.totalPixels,
+              },
+              controller.signal,
+            )
+          : await runConnectorExperiment(store, plan, store.config, {
+              signal: controller.signal,
+            });
+        if (workflowId) {
+          workflowService.evaluate(workflowId);
+          writeFileSync(
+            join(directory, 'automatic-targeting-evidence.json'),
+            JSON.stringify(
+              workflowService.evidence(workflowId, plan.analysisId),
+              null,
+              2,
+            ) + '\n',
+            { flag: 'wx', mode: 0o600 },
+          );
+        }
         writeFileSync(
           join(directory, 'report.json'),
           JSON.stringify(report, null, 2) + '\n',
@@ -165,6 +225,7 @@ async function main() {
       }
     }
   } finally {
+    await workflowService.close();
     store.close();
   }
 }

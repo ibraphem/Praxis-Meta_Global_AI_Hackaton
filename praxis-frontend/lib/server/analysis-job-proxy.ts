@@ -4,6 +4,11 @@ import { IMAGE_TYPES, MAX_FILE_BYTES } from "../vision";
 import { readBounded, BoundedReadError } from "./bounded-body";
 
 type Action =
+  | "prepare-automatic-targeting"
+  | "run-automatic-targeting"
+  | "evaluate-automatic-targeting"
+  | "release-automatic-targeting"
+  | "automatic-targeting-evidence"
   | "create"
   | "get"
   | "image"
@@ -106,6 +111,12 @@ export function createAnalysisJobProxy(
           "Check the private backend connection settings.",
         );
       endpoint.pathname = `/api/analyses${id ? `/${id}` : ""}${!["create", "get", "delete"].includes(action) ? `/${action}` : ""}`;
+      if (action === "automatic-targeting-evidence") {
+        const workflowId = url.searchParams.get("workflowId");
+        if (!workflowId || !/^[a-f0-9]{64}$/.test(workflowId))
+          return fail(400, "INVALID_WORKFLOW", "Choose a saved experiment.");
+        endpoint.searchParams.set("workflowId", workflowId);
+      }
       const upstreamHeaders: Record<string, string> = {
         "X-Request-Id": requestId,
       };
@@ -143,6 +154,12 @@ export function createAnalysisJobProxy(
       }
       phase = "backend.connect";
       if (
+        [
+          "prepare-automatic-targeting",
+          "run-automatic-targeting",
+          "evaluate-automatic-targeting",
+          "release-automatic-targeting",
+        ].includes(action) ||
         action === "verify-wire" ||
         action === "reconcile-scene" ||
         action === "discover-terminals" ||
@@ -156,14 +173,25 @@ export function createAnalysisJobProxy(
         phase = "upload";
         body = await readBounded(
           request.body,
-          action === "recover-short-wires" ? 65536 : 8192,
+          action === "prepare-automatic-targeting"
+            ? 8 * 1024 * 1024
+            : action === "evaluate-automatic-targeting"
+              ? 65536
+              : action === "recover-short-wires"
+                ? 65536
+                : 8192,
           signal,
         );
         upstreamHeaders["Content-Type"] = "application/json";
         phase = "backend.connect";
       }
       const upstream = await fetcher(endpoint, {
-        method: !["get", "image", "delete"].includes(action)
+        method: ![
+          "get",
+          "image",
+          "automatic-targeting-evidence",
+          "delete",
+        ].includes(action)
           ? "POST"
           : action === "delete"
             ? "DELETE"
@@ -202,6 +230,16 @@ export function createAnalysisJobProxy(
             "The backend is busy or saved analysis capacity is full. Try again shortly.",
           ],
         };
+        if (action.includes("automatic-targeting")) {
+          errors[400] = [
+            "INVALID_AUTOMATIC_EXPERIMENT",
+            "Choose the exact connector checkpoint, a valid frozen reference and the prepared request authorization.",
+          ];
+          errors[409] = [
+            "AUTOMATIC_EXPERIMENT_CONFLICT",
+            "This plan is stale, spent or blocked by active work. Unknown usage requires release and a separately authorized replacement.",
+          ];
+        }
         if (action === "retry-wire-crop") {
           errors[400] = [
             "INVALID_CROP_RETRY",
@@ -272,6 +310,32 @@ export function createAnalysisJobProxy(
           },
         });
       }
+      if (action === "automatic-targeting-evidence") {
+        const bytes = await readBounded(
+          upstream.body,
+          48 * 1024 * 1024,
+          signal,
+        );
+        const evidence = JSON.parse(new TextDecoder().decode(bytes));
+        if (
+          evidence.schemaVersion !== "praxis-automatic-targeting-evidence-v1" ||
+          evidence.workflow?.contract?.plan?.analysisId !== id ||
+          evidence.workflow?.workflowId !== url.searchParams.get("workflowId")
+        )
+          return fail(
+            502,
+            "INVALID_BACKEND_RESPONSE",
+            "Experiment evidence binding mismatch.",
+          );
+        return new Response(bytes, {
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Content-Disposition":
+              'attachment; filename="praxis-automatic-targeting-evidence.json"',
+          },
+        });
+      }
       const bytes = await readBounded(upstream.body, 2 * 1024 * 1024, signal);
       const parsed = analysisJobSchema.safeParse(
         JSON.parse(new TextDecoder().decode(bytes)),
@@ -299,14 +363,13 @@ export function createAnalysisJobProxy(
         );
       }
       return Response.json(parsed.data, {
-        status: ![
-          "get",
-          "image",
-          "wire-identities",
-          "reconcile-scene",
-        ].includes(action)
-          ? 202
-          : 200,
+        status: action.includes("automatic-targeting")
+          ? upstream.status
+          : !["get", "image", "wire-identities", "reconcile-scene"].includes(
+                action,
+              )
+            ? 202
+            : 200,
         headers,
       });
     } catch (e) {

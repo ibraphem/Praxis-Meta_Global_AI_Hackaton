@@ -1,3 +1,4 @@
+import { AutomaticTargetingPanel } from "./automatic-targeting-panel";
 import { useState } from "react";
 import { planSceneTargets } from "@/lib/scene-guidance";
 import type { Analysis } from "@/lib/vision";
@@ -12,7 +13,14 @@ import {
 
 export type SceneMode = "objects" | "members" | "evidence";
 export type SceneAction =
-  "reconcile-scene" | "discover-terminals" | "guide-scene" | "refresh-scene";
+  | "prepare-automatic-targeting"
+  | "run-automatic-targeting"
+  | "evaluate-automatic-targeting"
+  | "release-automatic-targeting"
+  | "reconcile-scene"
+  | "discover-terminals"
+  | "guide-scene"
+  | "refresh-scene";
 export function SceneModeControl({
   mode,
   onChange,
@@ -565,6 +573,12 @@ export function SceneObjectPanel({
           </button>
         ))}
       </details>
+      <AutomaticTargetingPanel
+        job={job}
+        graph={graph}
+        busy={busy}
+        onAction={onAction}
+      />
       <h3>Selective terminal discovery</h3>
       <p>
         Suggested coverage prioritizes battery snap connectors and LED

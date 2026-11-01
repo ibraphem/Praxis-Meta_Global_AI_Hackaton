@@ -13,6 +13,8 @@ import { registerVisionRoute, type AnalyzeImage } from './routes/vision.js';
 import { createVisionService } from './services/vision.js';
 import { createEndpointProposalService } from './services/endpoint-proposals.js';
 import { logTrace, type TraceLogger } from './lib/diagnostics.js';
+import { ConnectorWorkflowService } from './jobs/connector-workflow.js';
+import type { MetaClient } from './lib/meta-client.js';
 
 /** Build separately from listen(), so HTTP behavior can be tested without ports. */
 export async function buildApp(
@@ -22,7 +24,11 @@ export async function buildApp(
     ? () => undefined
     : logTrace,
   proposeEndpoints?: ReturnType<typeof createEndpointProposalService>,
-  jobOptions?: { store: JobStore; stages?: VisionStages },
+  jobOptions?: {
+    store: JobStore;
+    stages?: VisionStages;
+    experimentClient?: MetaClient;
+  },
 ) {
   const app = Fastify({
     logger: false,
@@ -107,11 +113,22 @@ export async function buildApp(
     traceLogger,
     jobOptions?.stages,
   );
-  registerAnalysisRoutes(app, config, jobStore, () => worker.tick());
+  const connectorWorkflow = new ConnectorWorkflowService(
+    jobStore,
+    jobOptions?.experimentClient,
+  );
+  registerAnalysisRoutes(
+    app,
+    config,
+    jobStore,
+    () => worker.tick(),
+    connectorWorkflow,
+  );
   app.addHook('onReady', async () => {
     worker.start();
   });
   app.addHook('onClose', async () => {
+    await connectorWorkflow.close();
     await worker.close();
     if (!jobOptions?.store) jobStore.close();
   });

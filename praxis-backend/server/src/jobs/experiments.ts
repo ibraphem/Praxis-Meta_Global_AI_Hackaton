@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { AppError } from '../lib/errors.js';
 import type { JobStore } from './store.js';
 import type { SnapshotRef } from './snapshots.js';
+import { recoverConnectorReport } from './connector-lifecycle.js';
 
 export interface ExperimentRecord {
   experimentId: string;
@@ -39,6 +40,7 @@ export class ExperimentRegistry {
     else delete record.owner;
     if (record.status === 'running' && record.leaseUntil <= Date.now()) {
       record.status = 'interrupted';
+      record.report = recoverConnectorReport(record.report, Date.now());
       delete record.owner;
     }
     return record;
@@ -53,6 +55,19 @@ export class ExperimentRegistry {
   }
   /** Called inside the caller's transaction; interrupted upstream work is never assumed stopped. */
   recover(now = Date.now()) {
+    for (const row of this.store.db
+      .prepare(
+        "SELECT id,data FROM experiments WHERE status='running' AND lease_until<=?",
+      )
+      .all(now)) {
+      const record = JSON.parse(row.data as string) as ExperimentRecord;
+      record.status = 'interrupted';
+      delete record.owner;
+      record.report = recoverConnectorReport(record.report, now);
+      this.store.db
+        .prepare('UPDATE experiments SET data=? WHERE id=?')
+        .run(JSON.stringify(record), row.id as string);
+    }
     this.store.db
       .prepare(
         "UPDATE experiments SET status='interrupted',owner=NULL WHERE status='running' AND lease_until<=?",
@@ -174,7 +189,7 @@ export class ExperimentRegistry {
     report: unknown,
     status: 'running' | 'completed' | 'failed' | 'interrupted' = 'running',
   ): boolean {
-    return this.store.transaction(() => {
+    const write = () => {
       const current = this.get(id);
       if (
         current.owner !== owner ||
@@ -202,7 +217,8 @@ export class ExperimentRegistry {
             Date.now(),
           ).changes === 1
       );
-    });
+    };
+    return this.store.inTransaction ? write() : this.store.transaction(write);
   }
   releaseInterrupted(id: string) {
     return this.store.transaction(() => {

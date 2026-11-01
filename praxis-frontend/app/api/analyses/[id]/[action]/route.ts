@@ -5,8 +5,9 @@ export async function GET(
   context: RouteContext<"/api/analyses/[id]/[action]">,
 ) {
   const { id, action } = await context.params;
-  if (action !== "image") return new Response(null, { status: 404 });
-  return proxy(request, "image", id);
+  if (action !== "image" && action !== "automatic-targeting-evidence")
+    return new Response(null, { status: 404 });
+  return proxy(request, action, id);
 }
 export async function POST(
   request: Request,
@@ -15,6 +16,10 @@ export async function POST(
   const { id, action } = await context.params;
   if (
     ![
+      "prepare-automatic-targeting",
+      "run-automatic-targeting",
+      "evaluate-automatic-targeting",
+      "release-automatic-targeting",
       "retry-muse",
       "retry-scene",
       "start-scene",
@@ -37,6 +42,10 @@ export async function POST(
   return proxy(
     request,
     action as
+      | "prepare-automatic-targeting"
+      | "run-automatic-targeting"
+      | "evaluate-automatic-targeting"
+      | "release-automatic-targeting"
       | "retry-muse"
       | "retry-scene"
       | "start-scene"

@@ -1591,3 +1591,45 @@ npm run scene:score-targeting -- REPORT.json FROZEN_PROFILE.json NEW_OUTPUT.json
 ```
 
 The scorer binds plan, photograph, object and native masks, retains empty/failed outcomes, and reports the same sparse probes and pixel extent measurements as the manual benchmark. Frozen assistant profiles are comparison baselines, not independent ground truth. Independent masks and additional photographs remain necessary before claiming autonomous targeting accuracy.
+
+### Shared automatic connector workflow
+
+The workspace and automatic CLI use `ConnectorWorkflowService` for preparation, execution, evaluation and export. Neither interface calculates cues, budgets or mask quality. The manual reference runner remains separate. Preparing a workflow sends no inference and does not change production scene settings, identities, observations, terminals or connectivity.
+
+Each immutable contract contains the runner plan, canonical SHA-256 hash, exact A/B request specifications, provider/model identifier, original-image dimensions, crop pixel coordinate system, JPEG hashes, snapshot/object evidence, timeout and budget policy, and the frozen evaluation protocol. Hosted provider version resolution remains explicitly unknown when unavailable. B has no request specification when baseline foreground cannot support an interior point; the A/B comparison remains incomplete. Manual references and identity reviews never enter cue generation.
+
+The workspace exposes **Prepare automatic connector test**, an exact provider/request/pixel authorization, **Run prepared connector test**, candidate mask overlays, physical identity review, local evaluation and a private evidence download. The browser evaluation bundle includes `sceneEvaluation.automaticTargeting`, preserving plans, effective isolated budgets, cues, abstentions, accounting, outcomes, latency, previews, frozen thresholds and evaluation provenance. Public previews have a shared size budget; the private JSON download and offline archive retain raw crop bytes, requests, provider responses and every native mask. These experiments do not consume or silently enable the production guided budget.
+
+```sh
+# Offline preparation; an independently reviewed pixel reference is optional.
+npm run experiment:connector -- prepare-auto ANALYSIS_ID OBJECT_ID NEW_DIRECTORY [FROZEN_REFERENCE.json]
+# After destination-specific approval, execute the registered plan exactly once.
+npm run experiment:connector -- run NEW_DIRECTORY/plan.json NEW_RESULT_DIRECTORY
+# Offline human mask identity reviews and evidence export.
+npm run experiment:automatic -- evaluate WORKFLOW_ID NEW_EVALUATION.json IDENTITY_REVIEWS.json
+npm run experiment:automatic -- export WORKFLOW_ID NEW_EVIDENCE.json
+```
+
+A workflow is permanently spent once admitted. Dispatch intent and its reservation are committed before transport; raw response bytes and response-recorded state are committed together before parsing. Failed transactions roll back both database and in-memory evidence fields. Execution state, provider outcome and evaluation status remain separate. Evaluation errors preserve successful execution and earlier evaluations. Concurrent writes use revision checks rather than silently overwriting history.
+
+Process loss is recovered conservatively: admitted-but-unsent work retains its reservation, uncertain dispatch becomes `outcome_unknown`, and recorded responses retain their bytes even if decoding never finished. Accounting distinguishes reserved requests/pixels, dispatch attempts, recorded responses and unknown usage. Dispatch intent may overcount actual network packets; provider-confirmed usage and billed cost remain null without independent billing evidence. No provider idempotency or result-retrieval capability is assumed. No automatic retry occurs.
+
+```sh
+# Explicitly release global ownership; retained charges and unknown usage do not disappear.
+npm run experiment:automatic -- release WORKFLOW_ID
+# Prepare a new, explicitly linked authorization; this does not dispatch it.
+npm run experiment:automatic -- prepare-replacement ORIGINAL_WORKFLOW_ID NEW_DIRECTORY [FROZEN_REFERENCE.json]
+```
+
+The original workflow remains non-runnable after release. Replacement plans reference it, obtain a new authorization identity, and require their own exact run approval. A previously registered reference is retained when a replacement does not supply another one.
+
+Pixel references use `connector-pixel-reference-v1`: exact photograph hash, object ID, image dimensions, review identity/timestamps, provenance, and original-image `bbox` plus native `mask` regions for connector and conductors. `validRegion` can exclude uncertain/occluded pixels. Regions must be valid, the evaluated connector must be nonempty, and connector/conductor references cannot overlap within the valid region. References are validated and hash-registered before execution. Independently reviewed human masks enable photographic metrics; assistant boxes/points cannot. Synthetic fixtures are explicitly labeled and can only produce `synthetic_pass`, never photographic readiness.
+
+On the valid region, IoU is intersection/union, connector recall is intersection/reference, precision is intersection/prediction, and conductor leakage is conductor intersection/prediction. Empty predictions have zero IoU/recall and undefined precision/leakage. Abstention, no-match, failures and unreviewed identities remain visible in the two-strategy denominator. Missing provenance disqualifies the affected arm. The provisional frozen gate requires correct identity for accepted masks, IoU ≥ 0.80, recall ≥ 0.90, leakage ≤ 5%, and zero request overage or missing provenance. Experiment execution performs zero identity merges; separate identity replay tests cover proposal permutation, jitter, conductor conflicts and immutable underlying SAM observations. These are engineering targets, not established recognition performance.
+
+```sh
+# Isolated generated source pixels and in-process fake provider; no .env or external inference.
+npm run experiment:synthetic -- NEW_DIRECTORY
+```
+
+The synthetic suite exports source/checkpoint archives, full native request/response evidence, evaluation records, and SHA-256 manifests. It includes A/B success, point abstention, missing reference, valid empty output, parser failure, unknown dispatch and real SIGKILL recovery at admission, dispatch and response capture. It demonstrates workflow reliability; a real photographic test with independently reviewed masks and separately authorized inference is still required.

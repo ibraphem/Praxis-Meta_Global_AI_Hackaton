@@ -50,6 +50,9 @@ export class SceneRequestRecorder {
   constructor(
     private readonly store: JobStore,
     readonly record: SceneRequestEvidence,
+    private readonly transition?: (
+      phase: 'dispatching' | 'response_recorded',
+    ) => void,
   ) {
     store.db
       .prepare('INSERT INTO scene_requests VALUES (?,?,?)')
@@ -60,27 +63,48 @@ export class SceneRequestRecorder {
       .prepare('UPDATE scene_requests SET data=? WHERE id=?')
       .run(JSON.stringify(this.record), this.record.requestId);
   }
+  private change(
+    phase: 'dispatching' | 'response_recorded',
+    update: () => void,
+  ) {
+    const previous = structuredClone(this.record);
+    try {
+      this.store.transaction(() => {
+        update();
+        this.save();
+        this.transition?.(phase);
+      });
+    } catch (error) {
+      // Failed transactions must not leak uncommitted intent/body fields through failed().
+      for (const key of Object.keys(this.record))
+        delete (this.record as unknown as Record<string, unknown>)[key];
+      Object.assign(this.record, previous);
+      throw error;
+    }
+  }
   readonly transport: NonNullable<ProviderOperation['evidence']> = {
     request: (payload) => {
       if (this.record.request)
         throw new Error('Scene request evidence cannot be dispatched twice.');
-      this.record.request = {
-        path: 'responses',
-        payload,
-        sha256: sha256(payload),
-      };
-      this.record.dispatchStartedAt = Date.now();
-      this.save();
+      this.change('dispatching', () => {
+        this.record.request = {
+          path: 'responses',
+          payload,
+          sha256: sha256(payload),
+        };
+        this.record.dispatchStartedAt = Date.now();
+      });
     },
     response: ({ bytes, ...metadata }) => {
-      this.record.response = {
-        ...metadata,
-        base64: bytes.toString('base64'),
-        sha256: sha256(bytes),
-        bytes: bytes.length,
-        receivedAt: Date.now(),
-      };
-      this.save();
+      this.change('response_recorded', () => {
+        this.record.response = {
+          ...metadata,
+          base64: bytes.toString('base64'),
+          sha256: sha256(bytes),
+          bytes: bytes.length,
+          receivedAt: Date.now(),
+        };
+      });
     },
   };
   decoded(value: NonNullable<SceneRequestEvidence['decoded']>) {

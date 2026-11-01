@@ -63,6 +63,11 @@ export function buildSceneEvaluationEvidence(input: {
             "recorded_binding_not_recomputed_without_native_checkpoint",
         }
       : null,
+    automaticTargeting: {
+      availability: job?.automaticTargeting ? "recorded" : "not_recorded",
+      experiments: job?.automaticTargeting ?? [],
+      note: "Isolated experiment accounting; independent of the production guided segmentation budget. Raw evidence is available through each experiment evidence URL.",
+    },
     graph,
     inventory: {
       attempts: attempts.filter((a) => a.sceneOperation === "inventory"),

@@ -4,6 +4,7 @@ import { AppError } from '../lib/errors.js';
 import { JobStore, publicJob } from '../jobs/store.js';
 import { z } from 'zod';
 import { prepareImage } from '../services/image.js';
+import { ConnectorWorkflowService } from '../jobs/connector-workflow.js';
 
 const idPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -12,7 +13,12 @@ export function registerAnalysisRoutes(
   config: Config,
   store: JobStore,
   kick: () => void,
+  workflow: ConnectorWorkflowService = new ConnectorWorkflowService(store),
 ) {
+  const view = (analysisId: string) => ({
+    ...publicJob(store.get(analysisId)),
+    automaticTargeting: workflow.publicForAnalysis(analysisId),
+  });
   let uploads = 0;
   app.post('/api/analyses', async (request, reply) => {
     if (!request.isMultipart())
@@ -55,7 +61,7 @@ export function registerAnalysisRoutes(
       const job = store.create(bytes, image);
       // The durable commit precedes 202. Polling is not required for execution.
       setImmediate(kick);
-      return reply.code(202).send(publicJob(job));
+      return reply.code(202).send(view(job.analysisId));
     } finally {
       uploads--;
     }
@@ -74,7 +80,69 @@ export function registerAnalysisRoutes(
   app.get(
     '/api/analyses/:id',
     { config: { rateLimit: { max: 240, timeWindow: 60_000 } } },
-    async (request) => publicJob(store.get(id(request.params))),
+    async (request) => view(id(request.params)),
+  );
+  app.post('/api/analyses/:id/prepare-automatic-targeting', async (request) => {
+    const analysisId = id(request.params);
+    await workflow.prepare(analysisId, request.body);
+    return view(analysisId);
+  });
+  for (const action of ['run', 'release', 'evaluate'] as const)
+    app.post(
+      `/api/analyses/:id/${action}-automatic-targeting`,
+      async (request, reply) => {
+        const analysisId = id(request.params),
+          body = z
+            .object({ workflowId: z.string().regex(/^[a-f0-9]{64}$/) })
+            .passthrough()
+            .safeParse(request.body);
+        if (!body.success)
+          throw new AppError(
+            400,
+            'INVALID_WORKFLOW',
+            'Choose a saved experiment workflow ID.',
+          );
+        if (
+          workflow.get(body.data.workflowId).contract.plan.analysisId !==
+          analysisId
+        )
+          throw new AppError(
+            404,
+            'WORKFLOW_NOT_FOUND',
+            'This plan belongs to a different analysis.',
+          );
+        if (action === 'run')
+          workflow.start(body.data.workflowId, request.body);
+        else if (action === 'release') workflow.release(body.data.workflowId);
+        else
+          workflow.evaluate(
+            body.data.workflowId,
+            (request.body as { reviews?: unknown }).reviews ?? [],
+          );
+        return reply.code(action === 'run' ? 202 : 200).send(view(analysisId));
+      },
+    );
+  app.get(
+    '/api/analyses/:id/automatic-targeting-evidence',
+    async (request, reply) => {
+      const analysisId = id(request.params),
+        query = z
+          .object({ workflowId: z.string().regex(/^[a-f0-9]{64}$/) })
+          .strict()
+          .safeParse(request.query);
+      if (!query.success)
+        throw new AppError(
+          400,
+          'INVALID_WORKFLOW',
+          'Choose a saved experiment workflow ID.',
+        );
+      return reply
+        .header(
+          'Content-Disposition',
+          'attachment; filename="praxis-automatic-targeting-evidence.json"',
+        )
+        .send(workflow.evidence(query.data.workflowId, analysisId));
+    },
   );
   app.get('/api/analyses/:id/image', async (request, reply) => {
     const bytes = store.image(id(request.params));
@@ -89,7 +157,7 @@ export function registerAnalysisRoutes(
   app.post('/api/analyses/:id/start-scene', async (request, reply) => {
     const job = store.requestScene(id(request.params));
     setImmediate(kick);
-    return reply.code(202).send(publicJob(job));
+    return reply.code(202).send(view(job.analysisId));
   });
   for (const [path, operation] of [
     ['reconcile-scene', 'reconcile'],
@@ -106,13 +174,13 @@ export function registerAnalysisRoutes(
       if (operation !== 'reconcile') setImmediate(kick);
       return reply
         .code(operation !== 'reconcile' ? 202 : 200)
-        .send(publicJob(job));
+        .send(view(job.analysisId));
     });
   for (const stage of ['sam', 'muse', 'scene'] as const)
     app.post(`/api/analyses/:id/retry-${stage}`, async (request, reply) => {
       const job = store.retry(id(request.params), stage);
       setImmediate(kick);
-      return reply.code(202).send(publicJob(job));
+      return reply.code(202).send(view(job.analysisId));
     });
   for (const [path, operation] of [
     ['audit-wires', 'audit'],
@@ -149,18 +217,18 @@ export function registerAnalysisRoutes(
           : undefined,
       );
       setImmediate(kick);
-      return reply.code(202).send(publicJob(job));
+      return reply.code(202).send(view(job.analysisId));
     });
   app.post('/api/analyses/:id/interpret-recovery', async (request, reply) => {
     const job = store.interpretRecovery(id(request.params));
     setImmediate(kick);
-    return reply.code(202).send(publicJob(job));
+    return reply.code(202).send(view(job.analysisId));
   });
-  app.post('/api/analyses/:id/wire-identities', async (request, reply) =>
-    reply.send(
-      publicJob(store.reviewWireIdentity(id(request.params), request.body)),
-    ),
-  );
+  app.post('/api/analyses/:id/wire-identities', async (request, reply) => {
+    const analysisId = id(request.params);
+    store.reviewWireIdentity(analysisId, request.body);
+    return reply.send(view(analysisId));
+  });
   app.delete('/api/analyses/:id', async (request, reply) => {
     store.remove(id(request.params));
     return reply.code(204).send();

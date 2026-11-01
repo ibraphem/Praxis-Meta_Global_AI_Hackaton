@@ -233,7 +233,7 @@ export class JobStore {
       "CREATE TABLE IF NOT EXISTS scene_snapshots (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, metadata TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_snapshots_analysis ON scene_snapshots(analysis_id); CREATE TRIGGER IF NOT EXISTS immutable_scene_snapshots BEFORE UPDATE ON scene_snapshots BEGIN SELECT RAISE(ABORT,'Scene snapshots are immutable'); END",
     );
     this.db.exec(
-      'CREATE TABLE IF NOT EXISTS scene_requests (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_requests_analysis ON scene_requests(analysis_id)',
+      'CREATE TABLE IF NOT EXISTS connector_workflows (id TEXT PRIMARY KEY,analysis_id TEXT NOT NULL,data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS scene_requests (id TEXT PRIMARY KEY, analysis_id TEXT NOT NULL, data TEXT NOT NULL); CREATE INDEX IF NOT EXISTS scene_requests_analysis ON scene_requests(analysis_id)',
     );
     this.experiments = new ExperimentRegistry(this);
     this.transaction(() => {
@@ -245,8 +245,13 @@ export class JobStore {
         this.save(this.get(row.id as string), true);
     });
   }
+  private transactionDepth = 0;
+  get inTransaction() {
+    return this.transactionDepth > 0;
+  }
   transaction<T>(work: () => T): T {
     this.db.exec('BEGIN IMMEDIATE');
+    this.transactionDepth++;
     try {
       const value = work();
       this.db.exec('COMMIT');
@@ -254,6 +259,8 @@ export class JobStore {
     } catch (e) {
       this.db.exec('ROLLBACK');
       throw e;
+    } finally {
+      this.transactionDepth--;
     }
   }
   get(id: string): Job {
@@ -1375,6 +1382,11 @@ export class JobStore {
   }
   private recoverWithinTransaction(now = Date.now()) {
     this.experiments.recover(now);
+    this.db
+      .prepare(
+        'DELETE FROM connector_workflows WHERE analysis_id NOT IN (SELECT id FROM jobs)',
+      )
+      .run();
     for (const row of this.db
       .prepare('SELECT id FROM jobs WHERE owner IS NOT NULL AND lease_until<=?')
       .all(now)) {
@@ -1547,6 +1559,9 @@ export class JobStore {
         .run(id);
       this.db.prepare('DELETE FROM experiments WHERE analysis_id=?').run(id);
       this.db.prepare('DELETE FROM scene_requests WHERE analysis_id=?').run(id);
+      this.db
+        .prepare('DELETE FROM connector_workflows WHERE analysis_id=?')
+        .run(id);
     });
   }
   close() {

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { canonicalHash } from '../lib/canonical-json.js';
 import { z } from 'zod';
 import { boxSchema } from '../schemas/geometry.js';
 import { visualObservationSchema } from '../schemas/scene.js';
@@ -37,7 +38,8 @@ export function evaluateAutomaticTargetingReport(
     report.plan.version !== 'connector-automatic-plan-v1' ||
     !report.plan.automaticTargeting ||
     report.plan.profile ||
-    digest(spec) !== planHash ||
+    (report.plan.hashAlgorithm ? canonicalHash(spec) : digest(spec)) !==
+      planHash ||
     profile.imageHash !== report.plan.imageHash ||
     profile.frozenAt > report.startedAt
   )

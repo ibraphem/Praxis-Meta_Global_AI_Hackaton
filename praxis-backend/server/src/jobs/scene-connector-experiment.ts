@@ -15,6 +15,11 @@ import { getSceneSnapshot } from './scene-snapshots.js';
 import { SceneRequestRecorder, sha256 } from './scene-request-evidence.js';
 import { admittedClient } from './model-admission.js';
 import type { JobStore } from './store.js';
+import { canonicalHash } from '../lib/canonical-json.js';
+import {
+  connectorAccounting,
+  type ConnectorAccountingMeasurement,
+} from './connector-lifecycle.js';
 
 async function bounded<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   let abort: (() => void) | undefined;
@@ -211,8 +216,37 @@ export async function prepareConnectorExperiment(
     variants: prepared,
     ...(profile ? { profile } : {}),
     ...(automaticTargeting ? { automaticTargeting } : {}),
+    ...(automaticTargeting
+      ? {
+          hashAlgorithm: 'canonical-json-sha256-v1',
+          requestSpecifications: prepared.map((v) => ({
+            variant: v.name,
+            model: job.settings.samModel,
+            providerBaseUrl: store.config.META_BASE_URL,
+            requestedModelVersion: job.settings.samModel,
+            resolvedProviderVersion: null,
+            coordinateSystem: 'crop_pixels_xywh_original_image',
+            crop: v.crop,
+            originalImageDimensions: {
+              width: image.width,
+              height: image.height,
+            },
+            cropImageHash: v.imageSha256,
+            sourceImageHash: job.imageHash,
+            sourceSnapshotHash: saved.ref.snapshotHash,
+            prompt: v.prompt,
+            stream: false,
+            metadata: { include_confidence: 'true', mask_encoding: 'one_bit' },
+          })),
+        }
+      : {}),
   };
-  return { ...spec, planHash: sha256(JSON.stringify(spec)) };
+  return {
+    ...spec,
+    planHash: automaticTargeting
+      ? canonicalHash(spec)
+      : sha256(JSON.stringify(spec)),
+  };
 }
 export type ConnectorExperimentPlan = Awaited<
   ReturnType<typeof prepareConnectorExperiment>
@@ -235,11 +269,25 @@ export async function runConnectorExperiment(
   store: JobStore,
   plan: ConnectorExperimentPlan,
   config: Config,
-  options: { client?: MetaClient; signal?: AbortSignal } = {},
+  options: {
+    client?: MetaClient;
+    signal?: AbortSignal;
+    onReserved?: (id: string) => void;
+  } = {},
 ) {
   const validate = async () => {
+    if (config.META_BASE_URL !== plan.providerBaseUrl)
+      throw new AppError(
+        409,
+        'PROVIDER_CONFIGURATION_CHANGED',
+        'Prepared provider destination differs from the execution configuration.',
+      );
     const { planHash, ...spec } = plan;
-    if (sha256(JSON.stringify(spec)) !== planHash)
+    if (
+      (plan.hashAlgorithm
+        ? canonicalHash(spec)
+        : sha256(JSON.stringify(spec))) !== planHash
+    )
       throw new AppError(
         409,
         'INVALID_EXPERIMENT_PLAN',
@@ -298,23 +346,31 @@ export async function runConnectorExperiment(
     errorCode: undefined as string | undefined,
     chargedRequests: 0,
     chargedPixels: 0,
-    measurements: [] as Array<{
-      variant: string;
-      requestId: string;
-      objectId: string;
-      scope?: string;
-      status: string;
-      upstreamOutcome: string;
-      startedAt: number;
-      finishedAt: number | null;
-      diagnostics?: ReturnType<AnalysisTrace['snapshot']>;
-      observations?: unknown[];
-      native?: unknown[];
-      errorCode?: string;
-    }>,
+    measurements: [] as Array<
+      {
+        variant: string;
+        requestId: string;
+        objectId: string;
+        scope?: string;
+        status: string;
+        upstreamOutcome: string;
+        startedAt: number;
+        finishedAt: number | null;
+        diagnostics?: ReturnType<AnalysisTrace['snapshot']>;
+        observations?: unknown[];
+        native?: unknown[];
+        errorCode?: string;
+      } & ConnectorAccountingMeasurement
+    >,
+    accounting: connectorAccounting({
+      chargedRequests: 0,
+      chargedPixels: 0,
+      measurements: [],
+    }),
     note: 'Independent three-request experiment ledger. Reuses inventory; never changes the production budget, graph, IDs, observations, terminals or connectivity. Spatial points are targeting proposals. Candidate delivery is not physical identity verification.',
   };
   const persist = () => {
+    report.accounting = connectorAccounting(report);
     if (
       !store.experiments.record(
         reservation.experimentId,
@@ -336,8 +392,9 @@ export async function runConnectorExperiment(
     return report;
   };
   try {
-    await validate();
+    options.onReserved?.(reservation.experimentId);
     persist();
+    await validate();
     const image = store.getSnapshot(plan.samSnapshotRef.samSnapshotId).snapshot
       .image;
     const settings = {
@@ -366,6 +423,10 @@ export async function runConnectorExperiment(
         ...(variant.scope ? { scope: variant.scope } : {}),
         status: 'running',
         upstreamOutcome: 'unknown',
+        phase: 'admitted',
+        evaluationStatus: 'not_evaluated',
+        pixels: variant.crop[2] * variant.crop[3],
+        events: [{ phase: 'admitted', at: Date.now() }],
         startedAt: Date.now(),
         finishedAt: null,
       } as (typeof report.measurements)[number];
@@ -408,25 +469,54 @@ export async function runConnectorExperiment(
               record: (bytes) => {
                 if (sha256(bytes) !== variant.imageSha256)
                   throw new Error('Prepared crop bytes changed');
-                recorder = new SceneRequestRecorder(store, {
-                  requestId,
-                  analysisId: plan.analysisId,
-                  objectId: plan.objectId,
-                  experimentId: reservation.experimentId,
-                  variant: variant.name,
-                  inputSnapshotId: plan.sceneSnapshotRef.snapshotId,
-                  inputSnapshotHash: plan.sceneSnapshotRef.snapshotHash,
-                  imageHash: plan.imageHash,
-                  crop: variant.crop,
-                  prompt: variant.prompt,
-                  createdAt: Date.now(),
-                  cropImage: {
-                    mimeType: 'image/jpeg',
-                    sha256: sha256(bytes),
-                    base64: bytes.toString('base64'),
-                    bytes: bytes.length,
+                recorder = new SceneRequestRecorder(
+                  store,
+                  {
+                    requestId,
+                    analysisId: plan.analysisId,
+                    objectId: plan.objectId,
+                    experimentId: reservation.experimentId,
+                    variant: variant.name,
+                    inputSnapshotId: plan.sceneSnapshotRef.snapshotId,
+                    inputSnapshotHash: plan.sceneSnapshotRef.snapshotHash,
+                    imageHash: plan.imageHash,
+                    crop: variant.crop,
+                    prompt: variant.prompt,
+                    createdAt: Date.now(),
+                    cropImage: {
+                      mimeType: 'image/jpeg',
+                      sha256: sha256(bytes),
+                      base64: bytes.toString('base64'),
+                      bytes: bytes.length,
+                    },
                   },
-                });
+                  (phase) => {
+                    const previous = structuredClone(measurement);
+                    try {
+                      measurement.phase = phase;
+                      (measurement.events ??= []).push({
+                        phase,
+                        at: Date.now(),
+                      });
+                      if (phase === 'dispatching')
+                        measurement.dispatchStartedAt = Date.now();
+                      else {
+                        measurement.responseRecordedAt = Date.now();
+                        measurement.responseStatus =
+                          recorder!.record.response!.upstreamStatus;
+                        measurement.upstreamOutcome = 'response_received';
+                      }
+                      persist();
+                    } catch (error) {
+                      for (const key of Object.keys(measurement))
+                        delete (
+                          measurement as unknown as Record<string, unknown>
+                        )[key];
+                      Object.assign(measurement, previous);
+                      throw error;
+                    }
+                  },
+                );
                 return recorder;
               },
             },
@@ -464,6 +554,16 @@ export async function runConnectorExperiment(
                 : 'not_sent';
         measurement.status =
           measurement.upstreamOutcome === 'unknown' ? 'interrupted' : 'failed';
+        measurement.phase =
+          measurement.upstreamOutcome === 'unknown'
+            ? 'outcome_unknown'
+            : response
+              ? 'response_recorded'
+              : 'not_sent';
+        (measurement.events ??= []).push({
+          phase: measurement.phase,
+          at: Date.now(),
+        });
         measurement.finishedAt = Date.now();
         measurement.diagnostics = trace.snapshot();
         report.errorCode = measurement.errorCode;

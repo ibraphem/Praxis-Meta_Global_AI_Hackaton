@@ -15,6 +15,7 @@ import {
 } from "./wire-recovery";
 import { geometryBoxSchema } from "./geometry";
 import { z } from "zod";
+import { automaticTargetingRecordSchema } from "./connector-workflow";
 import { analysisSchema } from "./vision";
 import { diagnosticsSchema } from "./diagnostics";
 
@@ -160,6 +161,10 @@ export const analysisJobSchema = z
       .optional(),
     sam: stageSchema.extend({ snapshotRef: snapshotRefSchema.optional() }),
     muse: stageSchema.extend({ resultAttemptId: z.uuid().optional() }),
+    automaticTargeting: z
+      .array(automaticTargetingRecordSchema)
+      .max(20)
+      .optional(),
     experiment: z
       .object({
         experimentId: z.uuid(),
@@ -226,6 +231,9 @@ export const analysisJobSchema = z
 export type AnalysisJob = z.infer<typeof analysisJobSchema>;
 export function jobIsActive(job: AnalysisJob) {
   return (
+    job.automaticTargeting?.some(
+      (r) => r.status === "starting" || r.status === "running",
+    ) ||
     job.experiment?.status === "running" ||
     [
       job.sam.status,
@@ -269,8 +277,8 @@ export function jobMessage(job: AnalysisJob) {
         : "Muse is verifying a selected candidate. Its response remains a proposal.";
   if (job.experiment)
     return job.experiment.status === "running"
-      ? "A controlled Muse experiment is running. Live analysis is paused; saved results remain available."
-      : "A controlled Muse experiment was interrupted. Release its reservation explicitly before starting more model work; its upstream outcome is unknown.";
+      ? "A controlled inference experiment is running. Live analysis is paused; saved results remain available."
+      : "A controlled inference experiment was interrupted. Release its reservation explicitly before starting more model work; its upstream outcome is unknown.";
   if (job.candidatePublicationError)
     return "New geometry is saved, but the selection budget is full. Earlier masks remain available; inspect recovery evidence for deferred candidates.";
   if (

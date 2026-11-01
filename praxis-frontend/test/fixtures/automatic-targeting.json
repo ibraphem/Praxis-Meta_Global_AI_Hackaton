@@ -1,0 +1,410 @@
+{
+  "synthetic": true,
+  "job": {
+    "runtime": {
+      "buildId": "1937692d955bac4e7f82e5ad4b75836003e08fe004c2c6981de84d5226b5ec38",
+      "representation": "source",
+      "algorithms": {
+        "candidateLayer": "sam-candidate-layer-v1",
+        "wireSelection": "preserve-wire-evidence-v1",
+        "interpretation": "incremental-experiments-v2"
+      }
+    },
+    "analysisId": "2737ed10-ef6e-48d7-a882-17a8063f5650",
+    "imageHash": "56b374508800e3fc6091e9bc933c924db45179cbd12c98783157171baf7451f1",
+    "image": {
+      "width": 200,
+      "height": 160
+    },
+    "status": "queued",
+    "revision": "sam",
+    "createdAt": 1793508508792,
+    "updatedAt": 1793508508797,
+    "expiresAt": 1793594908792,
+    "settings": {
+      "maxDimension": 0,
+      "minimalPrompt": false,
+      "mode": "combined",
+      "samModel": "sam-3.1",
+      "museModel": "muse-spark-1.3",
+      "dynamicScene": false,
+      "sceneTimeoutMs": 45000,
+      "sceneMaxRequests": 3,
+      "sceneMaxPixels": 6000000,
+      "sceneMaxCropPixels": 2000000
+    },
+    "scene": {
+      "status": "succeeded",
+      "attempts": [
+        {
+          "attemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c",
+          "status": "succeeded",
+          "upstreamOutcome": "not_sent",
+          "retryPolicy": "dispatch_existing",
+          "createdAt": 1793508508793,
+          "sceneOperation": "inventory"
+        }
+      ],
+      "budget": {
+        "requests": 0,
+        "pixels": 0
+      },
+      "work": [],
+      "settings": {
+        "timeoutMs": 45000,
+        "maxRequests": 0,
+        "maxPixels": 6000000,
+        "maxCropPixels": 2000000
+      },
+      "snapshotRef": {
+        "snapshotId": "943aad73-016e-4e09-8b73-44919a78b25c",
+        "snapshotHash": "72ceebb893533a372b07043e638fa9c675d3fc15d8b26050a09e130b89d2a36c",
+        "imageHash": "56b374508800e3fc6091e9bc933c924db45179cbd12c98783157171baf7451f1",
+        "sourceAttemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c",
+        "createdAt": 1793508508796
+      },
+      "graph": {
+        "version": "scene-v1",
+        "imageHash": "56b374508800e3fc6091e9bc933c924db45179cbd12c98783157171baf7451f1",
+        "image": {
+          "width": 200,
+          "height": 160
+        },
+        "promptVersion": "open-inventory-v1",
+        "objects": [
+          {
+            "id": "8aa8511a-7b55-4ba8-ac28-c82ef9846874",
+            "proposedType": "black battery snap connector",
+            "category": "connector",
+            "bbox": [70, 30, 40, 50],
+            "recognitionStatus": "proposed",
+            "segmentationStatus": "not_attempted",
+            "terminalIds": []
+          },
+          {
+            "id": "f2421d06-a124-4e46-b182-7243de3b1e02",
+            "proposedType": "red insulated conductor",
+            "category": "conductor",
+            "bbox": [140, 50, 20, 70],
+            "recognitionStatus": "proposed",
+            "segmentationStatus": "not_attempted",
+            "terminalIds": []
+          }
+        ],
+        "observations": [
+          {
+            "id": "6d0af4b6-4c54-4add-a00a-8bd6d2ecc8ac",
+            "kind": "bbox",
+            "source": "muse",
+            "attemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c",
+            "model": "synthetic",
+            "bbox": [70, 30, 40, 50],
+            "prompt": "black battery snap connector"
+          },
+          {
+            "id": "c1564739-3d48-4a4b-9195-f539e9c88e1a",
+            "kind": "bbox",
+            "source": "muse",
+            "attemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c",
+            "model": "synthetic",
+            "bbox": [140, 50, 20, 70],
+            "prompt": "red insulated conductor"
+          },
+          {
+            "id": "ba82c94d-ac09-4d26-9853-b49e269f14f9",
+            "kind": "mask",
+            "source": "sam",
+            "attemptId": "ff1efd24-7f6c-42e2-9550-836b9c1e4b3a",
+            "model": "sam-3.1",
+            "bbox": [80, 40, 20, 20],
+            "sourceCandidateId": "led_1",
+            "samSnapshotId": "3228d905-f32c-4ef2-ac92-c384647bee0f",
+            "samSnapshotHash": "879e9306a88c34c74d51f952d3399043b72d421654ae823690759c2eb8041b47",
+            "prompt": "led"
+          }
+        ],
+        "associations": [
+          {
+            "id": "bd66359c-7ad6-41f2-853b-4cf9a0a834ad",
+            "objectId": "8aa8511a-7b55-4ba8-ac28-c82ef9846874",
+            "observationId": "6d0af4b6-4c54-4add-a00a-8bd6d2ecc8ac",
+            "relation": "unknown",
+            "basis": "inventory",
+            "status": "proposed",
+            "attemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c"
+          },
+          {
+            "id": "4a120c6b-5c2c-4a75-aaf1-b6f1f6908d61",
+            "objectId": "f2421d06-a124-4e46-b182-7243de3b1e02",
+            "observationId": "c1564739-3d48-4a4b-9195-f539e9c88e1a",
+            "relation": "unknown",
+            "basis": "inventory",
+            "status": "proposed",
+            "attemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c"
+          },
+          {
+            "id": "4e7dbebe-2820-4ac7-9173-c749bac706f7",
+            "objectId": "8aa8511a-7b55-4ba8-ac28-c82ef9846874",
+            "observationId": "ba82c94d-ac09-4d26-9853-b49e269f14f9",
+            "relation": "unknown",
+            "basis": "category_and_overlap",
+            "status": "proposed",
+            "attemptId": "f0f569a9-3086-4c65-9f04-a795f8ddc44c"
+          }
+        ],
+        "electricalConnectionStatus": "unestablished"
+      }
+    },
+    "sam": {
+      "status": "succeeded",
+      "attempts": [
+        {
+          "attemptId": "ff1efd24-7f6c-42e2-9550-836b9c1e4b3a",
+          "status": "succeeded",
+          "upstreamOutcome": "not_sent",
+          "retryPolicy": "dispatch_existing",
+          "createdAt": 1793508508793,
+          "samSnapshotId": "3228d905-f32c-4ef2-ac92-c384647bee0f",
+          "samSnapshotHash": "879e9306a88c34c74d51f952d3399043b72d421654ae823690759c2eb8041b47",
+          "snapshotBinding": "recorded"
+        }
+      ],
+      "snapshotRef": {
+        "imageHash": "56b374508800e3fc6091e9bc933c924db45179cbd12c98783157171baf7451f1",
+        "model": "sam-3.1",
+        "processingVersion": "sam-checkpoint-v1",
+        "samSnapshotId": "3228d905-f32c-4ef2-ac92-c384647bee0f",
+        "samSnapshotHash": "879e9306a88c34c74d51f952d3399043b72d421654ae823690759c2eb8041b47",
+        "sourceAttemptId": "ff1efd24-7f6c-42e2-9550-836b9c1e4b3a",
+        "createdAt": 1793508508793,
+        "origin": "recorded"
+      }
+    },
+    "muse": {
+      "status": "not_started",
+      "attempts": []
+    },
+    "recovery": {
+      "status": "not_started",
+      "attempts": [],
+      "operation": "audit",
+      "budget": {
+        "requests": 0,
+        "pixels": 0,
+        "verificationRequests": 0,
+        "rounds": 0
+      },
+      "visited": [],
+      "cropAttempts": []
+    },
+    "wireIdentities": [],
+    "automaticTargeting": [
+      {
+        "workflowId": "c8fce2c8d58492db83c107e322c1000ea6e586289272e3d9309f19852b20c4f9",
+        "analysisId": "2737ed10-ef6e-48d7-a882-17a8063f5650",
+        "imageHash": "56b374508800e3fc6091e9bc933c924db45179cbd12c98783157171baf7451f1",
+        "objectId": "8aa8511a-7b55-4ba8-ac28-c82ef9846874",
+        "sourceSnapshotId": "943aad73-016e-4e09-8b73-44919a78b25c",
+        "sourceSnapshotHash": "72ceebb893533a372b07043e638fa9c675d3fc15d8b26050a09e130b89d2a36c",
+        "preparedAt": 1793508508805,
+        "providerBaseUrl": "https://api.meta.ai/v1",
+        "model": "sam-3.1",
+        "experimentId": "64dd690e-7b33-46a6-8863-6cd889cf0a2f",
+        "replacementOf": null,
+        "status": "completed",
+        "phase": "evaluated",
+        "budget": {
+          "scope": "isolated_experiment",
+          "maxRequests": 3,
+          "maxPixels": 6000000,
+          "plannedRequests": 2,
+          "plannedPixels": 23956
+        },
+        "accounting": {
+          "reservedRequests": 2,
+          "reservedPixels": 23956,
+          "dispatchAttempts": 2,
+          "dispatchedPixels": 23956,
+          "responsesRecorded": 2,
+          "unknownUsageRequests": 0,
+          "unknownUsagePixels": 0,
+          "providerConfirmedUsage": null,
+          "billedCost": null,
+          "note": "Dispatch intent is persisted before transport. It may overcount packets actually sent; responses do not prove billed usage. Unknown usage remains charged after release."
+        },
+        "arms": [
+          {
+            "name": "A-auto-inventory-box",
+            "prompt": "<0f>0<|box;x1=33;y1=30;x2=72;y2=79;w=106;h=113|>",
+            "crop": [37, 0, 106, 113],
+            "imageSha256": "5b4883dc4de10d14277c55b648ab9e7f8227b303add5e3b5e455e908592d18b5",
+            "status": "candidates_returned",
+            "reason": "Frozen automatic targeting proposal."
+          },
+          {
+            "name": "B-auto-baseline-interior",
+            "prompt": "<0f>0<|box;x1=33;y1=30;x2=72;y2=79;w=106;h=113|><|point;x=52;y=49;w=106;h=113|>",
+            "crop": [37, 0, 106, 113],
+            "imageSha256": "5b4883dc4de10d14277c55b648ab9e7f8227b303add5e3b5e455e908592d18b5",
+            "status": "candidates_returned",
+            "reason": "Frozen automatic targeting proposal."
+          }
+        ],
+        "pointStatus": "proposed",
+        "pointCues": [
+          {
+            "observationId": "ba82c94d-ac09-4d26-9853-b49e269f14f9",
+            "point": [89, 49],
+            "interiorDistance": 10
+          }
+        ],
+        "measurements": [
+          {
+            "variant": "A-auto-inventory-box",
+            "requestId": "39067726-4914-47c4-a2ea-d411fe42d2d5",
+            "status": "candidates_returned",
+            "phase": "response_recorded",
+            "providerOutcome": "response_received",
+            "startedAt": 1793508508812,
+            "finishedAt": 1793508508844,
+            "wallMs": 32,
+            "maskCount": 1,
+            "observationIds": ["d3a136b2-ab84-4cfc-9cf2-7192ee833532"],
+            "previews": [
+              {
+                "id": "d3a136b2-ab84-4cfc-9cf2-7192ee833532",
+                "bbox": [80, 40, 20, 20],
+                "mask": {
+                  "format": "svg_path",
+                  "width": 20,
+                  "height": 20,
+                  "path": "M-0.5 0L0 -0.5L1 -0.5L2 -0.5L3 -0.5L4 -0.5L5 -0.5L6 -0.5L7 -0.5L8 -0.5L9 -0.5L10 -0.5L11 -0.5L12 -0.5L13 -0.5L14 -0.5L15 -0.5L16 -0.5L17 -0.5L18 -0.5L19 -0.5L19.5 0L19.5 1L19.5 2L19.5 3L19.5 4L19.5 5L19.5 6L19.5 7L19.5 8L19.5 9L19.5 10L19.5 11L19.5 12L19.5 13L19.5 14L19.5 15L19.5 16L19.5 17L19.5 18L19.5 19L19 19.5L18 19.5L17 19.5L16 19.5L15 19.5L14 19.5L13 19.5L12 19.5L11 19.5L10 19.5L9 19.5L8 19.5L7 19.5L6 19.5L5 19.5L4 19.5L3 19.5L2 19.5L1 19.5L0 19.5L-0.5 19L-0.5 18L-0.5 17L-0.5 16L-0.5 15L-0.5 14L-0.5 13L-0.5 12L-0.5 11L-0.5 10L-0.5 9L-0.5 8L-0.5 7L-0.5 6L-0.5 5L-0.5 4L-0.5 3L-0.5 2L-0.5 1Z"
+                }
+              }
+            ],
+            "events": [
+              {
+                "phase": "admitted",
+                "at": 1793508508812
+              },
+              {
+                "phase": "dispatching",
+                "at": 1793508508813
+              },
+              {
+                "phase": "response_recorded",
+                "at": 1793508508841
+              }
+            ]
+          },
+          {
+            "variant": "B-auto-baseline-interior",
+            "requestId": "9b597e9b-724e-454f-876a-1cc9aa55af57",
+            "status": "candidates_returned",
+            "phase": "response_recorded",
+            "providerOutcome": "response_received",
+            "startedAt": 1793508508844,
+            "finishedAt": 1793508508847,
+            "wallMs": 3,
+            "maskCount": 1,
+            "observationIds": ["2bad06f8-9c49-4b01-9142-540dfbbe9a20"],
+            "previews": [
+              {
+                "id": "2bad06f8-9c49-4b01-9142-540dfbbe9a20",
+                "bbox": [80, 40, 20, 20],
+                "mask": {
+                  "format": "svg_path",
+                  "width": 20,
+                  "height": 20,
+                  "path": "M-0.5 0L0 -0.5L1 -0.5L2 -0.5L3 -0.5L4 -0.5L5 -0.5L6 -0.5L7 -0.5L8 -0.5L9 -0.5L10 -0.5L11 -0.5L12 -0.5L13 -0.5L14 -0.5L15 -0.5L16 -0.5L17 -0.5L18 -0.5L19 -0.5L19.5 0L19.5 1L19.5 2L19.5 3L19.5 4L19.5 5L19.5 6L19.5 7L19.5 8L19.5 9L19.5 10L19.5 11L19.5 12L19.5 13L19.5 14L19.5 15L19.5 16L19.5 17L19.5 18L19.5 19L19 19.5L18 19.5L17 19.5L16 19.5L15 19.5L14 19.5L13 19.5L12 19.5L11 19.5L10 19.5L9 19.5L8 19.5L7 19.5L6 19.5L5 19.5L4 19.5L3 19.5L2 19.5L1 19.5L0 19.5L-0.5 19L-0.5 18L-0.5 17L-0.5 16L-0.5 15L-0.5 14L-0.5 13L-0.5 12L-0.5 11L-0.5 10L-0.5 9L-0.5 8L-0.5 7L-0.5 6L-0.5 5L-0.5 4L-0.5 3L-0.5 2L-0.5 1Z"
+                }
+              }
+            ],
+            "events": [
+              {
+                "phase": "admitted",
+                "at": 1793508508844
+              },
+              {
+                "phase": "dispatching",
+                "at": 1793508508845
+              },
+              {
+                "phase": "response_recorded",
+                "at": 1793508508846
+              }
+            ]
+          }
+        ],
+        "evaluationStatus": "succeeded",
+        "evaluationError": null,
+        "evaluation": {
+          "invariants": {
+            "requestsBeyondBudget": 0,
+            "missingRequiredProvenance": 0,
+            "confirmedIdentityMerges": 0,
+            "sourceEvidencePreserved": true
+          },
+          "status": "synthetic_pass",
+          "referenceHash": "b05a9fb33cd1f025a62f949238f7beae9b58c5d98153f1a3ef627fd0ea69679d",
+          "independentGroundTruth": false,
+          "plannedStrategyCount": 2,
+          "validMaskArms": 2,
+          "abComparison": "complete",
+          "successRate": 1,
+          "armResults": [
+            {
+              "variant": "A-auto-inventory-box",
+              "outcome": "candidates_returned",
+              "acceptedMaskCount": 1,
+              "maskMetrics": [
+                {
+                  "observationId": "d3a136b2-ab84-4cfc-9cf2-7192ee833532",
+                  "iou": 1,
+                  "recall": 1,
+                  "precision": 1,
+                  "leakage": 0,
+                  "identityCorrectness": "correct"
+                }
+              ]
+            },
+            {
+              "variant": "B-auto-baseline-interior",
+              "outcome": "candidates_returned",
+              "acceptedMaskCount": 1,
+              "maskMetrics": [
+                {
+                  "observationId": "2bad06f8-9c49-4b01-9142-540dfbbe9a20",
+                  "iou": 1,
+                  "recall": 1,
+                  "precision": 1,
+                  "leakage": 0,
+                  "identityCorrectness": "correct"
+                }
+              ]
+            }
+          ],
+          "note": "IoU=intersection/union; recall=intersection/reference; precision=intersection/prediction; leakage=conductor intersection/prediction. Zero predictions have recall/IoU 0 and undefined precision/leakage. Abstentions, empty responses and failures remain in the two-strategy success denominator. Assistant points/boxes never supply pixel truth; synthetic passes are not photographic readiness."
+        },
+        "evidenceUrl": "/api/analyses/2737ed10-ef6e-48d7-a882-17a8063f5650/automatic-targeting-evidence?workflowId=c8fce2c8d58492db83c107e322c1000ea6e586289272e3d9309f19852b20c4f9",
+        "protocol": {
+          "thresholds": {
+            "version": "connector-release-gate-v1",
+            "minimumIoU": 0.8,
+            "minimumRecall": 0.9,
+            "maximumConductorLeakage": 0.05,
+            "requiredAcceptedIdentityCorrectness": 1,
+            "maximumIncorrectConfirmedMerges": 0,
+            "maximumBudgetOverage": 0,
+            "maximumMissingProvenance": 0
+          },
+          "referenceHash": "b05a9fb33cd1f025a62f949238f7beae9b58c5d98153f1a3ef627fd0ea69679d"
+        },
+        "referenceStatus": "registered_synthetic",
+        "executionError": null,
+        "protocolHash": "d7416d008ead132d7a6f92c1c7cdd9a99914f52e2631f36850c6ae8fcbdc4482",
+        "note": "Separate bounded experiment budget. Production scene evidence is unchanged. Preview paths may be omitted within the public preview budget; private evidence retains every native mask. No billing or connectivity claim."
+      }
+    ]
+  }
+}
