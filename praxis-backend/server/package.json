@@ -27,6 +27,8 @@
     "scene:freeze-truth": "node --import tsx scripts/freeze-scene-truth.ts",
     "scene:replay-identities": "node --import tsx scripts/replay-scene-identities.ts",
     "experiment:synthetic": "node --import tsx scripts/synthetic-connector-workflow.ts",
+    "connectivity:evaluate": "node --import tsx scripts/evaluate-connectivity.ts",
+    "fixture:junction-ui": "node --import tsx scripts/synthetic-junction-ui.ts",
     "connector:reference": "node --env-file-if-exists=.env --import tsx scripts/connector-reference.ts",
     "experiment:automatic": "node --env-file-if-exists=.env --import tsx scripts/experiment-automatic.ts",
     "experiment:connector": "node --env-file-if-exists=.env --import tsx scripts/experiment-connector.ts"

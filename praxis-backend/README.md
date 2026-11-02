@@ -1720,3 +1720,194 @@ request. Body pixel diagnostics report dark foreground before exclusion, reviewe
 mask exclusions, uncertain-box exclusions, remaining pixels and interior cores.
 They distinguish missing visual support from uncertainty imposed by neighboring
 hypotheses without treating box overlap as physical contact.
+
+### Phase 4B: connector junction discovery
+
+The workspace now has a **Connector junction discovery** section. It operates on
+one connector and two explicitly selected conductor object IDs. Preparation is
+local and requires the exact independently accepted `C-body-aware-v2`
+connector-only native mask, including its validation, identity review, photograph
+and scene bindings. An object-level gate or approximate inventory box alone is
+insufficient. The prerequisite is checked again at admission and transport.
+
+The worker reuses the existing scene/terminal queue, ownership lease, model
+admission and request-evidence recorder. There is no new segmentation pass. It
+samples all sides of the mask boundary within a frozen eight-pixel search band;
+reviewed, unambiguous native conductor pixels may supply proximity candidates.
+Unverified boxes supply search regions only, with no junction position or claim
+of attachment. The crop is the native mask extent with 24 source pixels of context.
+
+Preparation freezes both the original JPEG crop and a separately identified
+proposal overlay, their hashes, native-mask hash, source checkpoints, candidate
+regions, model/provider and request payload hash. Both images count toward input
+pixels. **SAM requests are always zero; Muse requests are zero or one, with no
+retries.** Muse is opt-in and the run requires authorization for the exact saved
+provider, request count and pixel allowance. Offline completion yields exactly
+two unresolved outcomes. Model interpretation likewise returns two conductor
+outcomes or a precise failure/uncertainty record, never another inference stage.
+
+Junction observations are stored separately from generic electrical terminals.
+A visible `housing_entry` may have a physical position while its hidden conductive
+contact remains unlocated. `exposed_contact` requires an actual visible contact.
+Colors are descriptive clues only. Polarity, continuity and electrical connections
+remain unestablished. Model confidence is an uncalibrated estimate, not acceptance.
+Model proposals cannot confirm associations; only explicit visible-evidence human
+reviews can do so. Marker corrections reuse the current image and original pixel
+coordinates, with numerical entry available for keyboard review. Reviews append
+without altering model observations; stale revisions fail closed.
+
+One admitted attempt is allowed per connector/image/native-mask/two-conductor
+scope. Preparation is idempotent. Repeated admission, generic-terminal bypass and
+scene retry are blocked after that bounded attempt. Dispatch intent is committed
+before transport. A lost response remains charged and unknown; a worker restart
+never silently resends it, and late workers cannot overwrite recovered evidence.
+Two outcomes remain available even after occlusion, invalid output or interruption.
+
+A small point-reference JSON can be uploaded through the panel for offline
+benchmarking; no additional drawing tool is introduced. Its content includes:
+
+- `imageHash`, `connectorObjectId`, reviewer label and source;
+- `annotationMethod`: `manual_point`, `assistant_proposal` or `synthetic_fixture`;
+- declared `predictionExposure`, `originalImageOnly` and human attestation;
+- exactly two `junctions`, each with conductor ID, kind, visibility and nullable
+  original-image `[x,y]` position.
+
+Only an attested original-only manual human reference with declared no prior
+junction-prediction exposure can qualify as independent; an exposed reviewer
+cannot regain that status by changing a Boolean. Assistant and non-blinded
+references remain diagnostic. Hidden contacts and visible housing entries are
+scored as different claims. The five-pixel Euclidean localization threshold is
+an initial protocol, not established photographic accuracy. Zero visible reference
+junctions leaves localization incomplete rather than reporting a perfect score.
+
+Original proposals and human-reviewed outcomes are scored as separate layers, so
+corrections cannot hide an automatic failure. Exports include localization errors,
+visible coverage, abstentions, incorrect confirmed claims and their denominator,
+provenance coverage, accounting and latency. `wrongConfirmedAssociations` is a
+conservative count of invalid confirmed junction claims, including wrong kind or
+out-of-tolerance position. An evaluation never automatically confirms an outcome
+or establishes an electrical connection.
+
+Public scene evaluation bundles include `connectorJunctions`. The private
+`connector-junction-evidence` download and full job archive include the native
+connector mask, frozen upstream acceptance/reference evidence (not supplied to
+Muse), original crop/overlay, raw request/response, observations, reviews,
+references, scoring results and hashes. Analysis deletion/retention also removes
+the associated local junction records; downloaded archives remain self-contained.
+
+`npm run fixture:junction-ui` regenerates the synthetic UI fixture with in-memory
+storage and mocked transports. The simulated prerequisite reviewer metadata in
+that fixture is not evidence about any real photograph. Tests cover gating,
+boundary search, contact/entry separation, strict response IDs/coordinates,
+one-request accounting, uncertainty, stale plans, immutable reviews, independent
+reference qualification, five-pixel scoring, crash/lease fencing, rollback, HTTP
+routing, image correction and export preservation.
+
+The accepted-mask resolver materializes the exact pixels used by C's validation.
+If C was scored with the recorded keep-dark-halo refinement, Phase 4B reconstructs
+that subset and checks its scores against the frozen reference before admission.
+Raw SAM bytes, accepted-raster runs/hash, refinement hash and tight accepted bounds
+are preserved separately; boundary search and the overlay use the accepted raster,
+not a larger unfiltered native candidate. Unknown/missing refinement provenance
+fails closed. Private downloads also retain the source photograph and prepared
+image checkpoint, so original coordinates and mask provenance remain verifiable
+without the live job store.
+
+## Phase 5A — deterministic electrical connectivity
+
+The Connectivity panel extends the current photograph workspace. It does not
+send SAM or Muse requests and does not start another analysis lifecycle.
+Calibration and endpoint records remain usable through their existing controls;
+**Save calibration and endpoint evidence** persists their original records in the
+saved analysis. On reload, the saved board/rail geometry, assignments and endpoint
+reviews are restored. The former photograph-local geometry implementation now
+lives in `server/src/shared/calibration.ts`; the frontend exports that same code.
+
+Saving a hole assignment does **not** confirm electrical contact or wire identity.
+The graph requires explicit review of board topology, each required insertion or
+external conductive contact, and same-wire identity/intact continuity. Component
+terminal roles require a stated identification source; no polarity or transistor
+pin order is generated from image position or wire color. Unrecognized components
+can be added manually, with unknown roles. Duplicate or irrelevant hypotheses may
+be explicitly excluded with a retained review reason; they are not automatically
+merged by labels or overlap. Connector junction/scene evidence is retained as
+physical hints and never promoted to electrical contact.
+
+The graph unions only confirmed topology, confirmed conductive contact and intact
+conductors. Resistors, LEDs, LDRs, transistors and supplies are typed devices, not
+zero-resistance edges. Separate strips, the center gap and declared rail breaks
+remain separate until a confirmed conductor bridges them. Unknown rail continuity
+never becomes a bus. Every edge retains its source evidence and every node lists
+its physical members. Terminal display anchors may use the confirmed hole's
+projection when no separate lead-position observation exists; that projection is
+not an independently localized physical contact.
+
+All mutations require the current evidence revision, reviewer and reason.
+Original import records and both previous and reviewed values remain in immutable
+events. Calibration/scene/model changes invalidate dependent evidence or block
+construction; a rebuild never silently re-snaps old insertions. Rebuilding the
+same evidence is idempotent. A graph can be rebuilt after restart without model
+work. Job deletion/retention removes its associated connectivity artifacts.
+
+The first rule compares a required same-net relationship and identifies a
+misplaced jumper only when its confirmed endpoints and the reference mapping
+support that attribution. Alternate confirmed paths and equivalent holes on the
+same strip prevent a false disconnection finding. A missing path requires explicit
+**conductive review coverage** before it can become `confirmed_fault`: the
+reviewer must account for relevant conductive paths, including paths omitted from
+recognition. Any later evidence mutation invalidates this coverage assertion.
+Otherwise the result remains `possible_fault` or `insufficient_evidence`.
+`no_fault` means only that the selected required relationship is present; it is
+not a full-circuit or illumination guarantee.
+
+Reference JSON contains a `reference` and explicit one-to-one component `mapping`.
+The reference declares components, terminal roles, nets, one or more
+`required_conductive_path` rules and schematic provenance. Verified human
+references containing an NPN transistor require its exact `partNumber`, `package`
+and `pinoutSource`. Reference specifications and mappings are immutable once
+registered; corrections create a new registered reference. Synthetic and draft
+references remain clearly labeled and cannot establish real-photo acceptance.
+See `server/fixtures/reference-night-light.synthetic.json` for the abstract
+synthetic netlist; it intentionally specifies no physical transistor package or
+pin order.
+
+Analysis-scoped API actions (all local, without inference):
+
+- `GET /api/analyses/:id/connectivity`
+- `GET /api/analyses/:id/connectivity-evidence`
+- `POST /api/analyses/:id/save-connectivity-workspace`
+- `POST /api/analyses/:id/review-connectivity`
+- `POST /api/analyses/:id/build-connectivity`
+- `POST /api/analyses/:id/register-connectivity-reference`
+- `POST /api/analyses/:id/compare-connectivity`
+
+The UI highlights selected nets, connections and supported fault destinations on
+the existing image. Green represents confirmed graph relationships; dashed amber
+markers represent unresolved associations. Confirm/correct terminal associations
+using the existing calibrated hole picker, or select another known terminal for
+an explicitly reviewed external contact. Historical graphs are marked stale and
+cannot support a current comparison. Unsaved workspace changes also block review,
+rebuild and comparison until persisted.
+
+**Export connectivity evidence**, the existing evaluation bundle and the full
+private job archive include graph/review/reference/diagnostic evidence. The complete
+connectivity download retains every immutable graph revision, so earlier fault
+findings remain linked to their original graph after a correction. The private
+archive also retains the original image and analysis checkpoints. The browser
+bundle records unsaved local geometry separately so it cannot masquerade as the
+source of a previously built graph.
+
+Run `npm run connectivity:evaluate` from `server` for the controlled synthetic
+correct-circuit and misplaced-jumper comparison. It uses only in-memory jobs,
+regenerates the synthetic frontend fixtures and emits an offline evidence report.
+It never opens historical user analyses or uses a provider transport. Tests cover
+registered topology, device separation, unresolved/rejected contact, explicit
+coverage, equivalent holes, alternate paths, corrections, revision conflicts,
+persistence/replay, HTTP contracts, UI picking/highlighting and export.
+
+Physical Phase 5A acceptance remains pending. Required real demonstration inputs:
+a selected saved night-light analysis and source photograph, its intended schematic
+or verified netlist, actual component values where relevant, the transistor's exact
+part/package and verified pinout, and confirmed physical associations for the
+chosen deliberately misplaced jumper and its required destination net. A synthetic
+pass or a rendered graph does not satisfy that acceptance test.

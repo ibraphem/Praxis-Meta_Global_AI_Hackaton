@@ -64,6 +64,7 @@ export function buildSceneEvaluationEvidence(input: {
         }
       : null,
     connectorValidation: job?.connectorValidation ?? null,
+    connectorJunctions: job?.connectorJunctions ?? null,
     automaticTargeting: {
       availability: job?.automaticTargeting ? "recorded" : "not_recorded",
       experiments: job?.automaticTargeting ?? [],
@@ -112,6 +113,9 @@ export function buildSceneEvaluationEvidence(input: {
             const work = scene?.terminalWork
               ?.filter((w) => w.objectId === o.id)
               .at(-1);
+            const junction = job?.connectorJunctions?.find(
+              (r) => r.plan.connectorObjectId === o.id && r.admittedAt !== null,
+            );
             const terminals = (graph.terminals ?? []).filter(
               (t) => t.objectId === o.id,
             );
@@ -127,13 +131,17 @@ export function buildSceneEvaluationEvidence(input: {
               objectId: o.id,
               status: contact
                 ? "visible_contact_proposed"
-                : work?.status === "succeeded" || terminals.length
-                  ? "examined_but_unresolved"
-                  : work
-                    ? "request_incomplete"
-                    : queued
-                      ? "queued"
-                      : "not_attempted",
+                : junction
+                  ? junction.phase === "finished"
+                    ? "junctions_examined_contacts_unestablished"
+                    : "junction_attempt_incomplete"
+                  : work?.status === "succeeded" || terminals.length
+                    ? "examined_but_unresolved"
+                    : work
+                      ? "request_incomplete"
+                      : queued
+                        ? "queued"
+                        : "not_attempted",
               requestStatus: work?.status ?? null,
             };
           }) ?? null,

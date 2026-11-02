@@ -1,3 +1,4 @@
+import { ConnectorJunctionOverlays } from "./connector-junction-review";
 import type { RuntimeFingerprint } from "@/lib/runtime-schema";
 import type { CSSProperties } from "react";
 import { categories, componentLabel, type Analysis } from "@/lib/vision";
@@ -128,6 +129,13 @@ export function ImagePreview({
         onSelectWire={onSelect}
         overlaysVisible={showOverlays}
       >
+        {showOverlays && analysisJob?.connectorJunctions && (
+          <ConnectorJunctionOverlays
+            records={analysisJob.connectorJunctions}
+            image={{ width: photograph.width, height: photograph.height }}
+            onSelect={onSelect}
+          />
+        )}
         {sceneGraph &&
           sceneGraph.image.width === photograph.width &&
           sceneGraph.image.height === photograph.height &&

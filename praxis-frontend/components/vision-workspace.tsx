@@ -1,4 +1,5 @@
 "use client";
+import { JunctionReviewProvider } from "./connector-junction-review";
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import Link from "next/link";
@@ -350,7 +351,10 @@ export function VisionWorkspace() {
   }
 
   return (
-    <div className="app-shell">
+    <JunctionReviewProvider
+      className="app-shell"
+      key={job?.analysisId ?? photograph?.id ?? "empty"}
+    >
       <header className="app-header">
         <Link className="brand" href="/" aria-label="Praxis home">
           <PraxisMark />
@@ -708,6 +712,6 @@ export function VisionWorkspace() {
           <span className="mono">PRAXIS / SEE FIRST, BUILD NEXT</span>
         </footer>
       </main>
-    </div>
+    </JunctionReviewProvider>
   );
 }

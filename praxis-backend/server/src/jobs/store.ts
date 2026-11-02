@@ -1,7 +1,16 @@
 import {
+  ensureConnectivityTables,
+  connectivityTables,
+} from './connectivity.js';
+import {
   assertConnectorTerminalGate,
   ensureConnectorValidationTables,
 } from './connector-validation-gate.js';
+import {
+  ensureJunctionTables,
+  junctionTables,
+  recoverJunctions,
+} from './connector-junction-records.js';
 import { planSceneTargets } from '../services/scene-guidance.js';
 import { retryCropWork } from '../services/crop-retry.js';
 import { RUNTIME } from '../lib/runtime.js';
@@ -76,6 +85,7 @@ export interface Attempt {
   outputSnapshotHash?: string;
   sceneOperation?: 'inventory' | 'guided' | 'terminals' | 'reconcile';
   terminalObjectIds?: string[];
+  junctionPlanId?: string;
   guidedObjectIds?: string[];
   inventoryOnly?: boolean;
   sceneSnapshotId?: string;
@@ -241,6 +251,8 @@ export class JobStore {
     );
     this.experiments = new ExperimentRegistry(this);
     ensureConnectorValidationTables(this);
+    ensureJunctionTables(this);
+    ensureConnectivityTables(this);
     this.transaction(() => {
       for (const row of this.db
         .prepare(
@@ -938,6 +950,20 @@ export class JobStore {
             'INVALID_TERMINAL_TARGETS',
             'Choose up to two inventory objects for terminal discovery.',
           );
+        if (
+          objectIds.some((id) =>
+            this.db
+              .prepare(
+                "SELECT id FROM connector_junctions WHERE analysis_id=? AND json_extract(data,'$.plan.connectorObjectId')=? AND json_type(data,'$.admittedAt')='integer'",
+              )
+              .get(job.analysisId, id),
+          )
+        )
+          throw new AppError(
+            409,
+            'TERMINAL_ALREADY_ATTEMPTED',
+            'Phase 4B already examined this connector. No generic terminal rerun is permitted for this bounded experiment.',
+          );
         assertConnectorTerminalGate(this, job);
         const capacity = reconcileSceneGraph(job.scene.graph),
           count = objectIds.length;
@@ -1392,6 +1418,8 @@ export class JobStore {
       'connector_annotation_drafts',
       'connector_references',
       'connector_retrospective_evaluations',
+      ...junctionTables,
+      ...connectivityTables,
     ])
       this.db
         .prepare(
@@ -1468,6 +1496,7 @@ export class JobStore {
           : 'failed';
       this.save(job);
     }
+    recoverJunctions(this, now);
   }
   claim(
     owner: string,
@@ -1579,6 +1608,8 @@ export class JobStore {
         'connector_annotation_drafts',
         'connector_references',
         'connector_retrospective_evaluations',
+        ...junctionTables,
+        ...connectivityTables,
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE analysis_id=?`).run(id);
       this.db

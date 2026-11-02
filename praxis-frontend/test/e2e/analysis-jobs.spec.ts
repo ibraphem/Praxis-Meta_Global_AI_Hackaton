@@ -193,7 +193,7 @@ test("experiment reservations leave SAM review available and suppress model retr
     .getByRole("button", { name: "Analyze image", exact: true })
     .click();
   await expect(
-    page.getByText(/controlled Muse experiment is running/),
+    page.getByText(/controlled inference experiment is running/),
   ).toBeVisible();
   await expect(
     page.getByRole("button", {
@@ -209,7 +209,7 @@ test("experiment reservations leave SAM review available and suppress model retr
   ).toBeEnabled();
   job.experiment.status = "interrupted";
   await expect(
-    page.getByText(/controlled Muse experiment was interrupted/),
+    page.getByText(/controlled inference experiment was interrupted/),
   ).toBeVisible();
   await expect(
     page.getByRole("button", {

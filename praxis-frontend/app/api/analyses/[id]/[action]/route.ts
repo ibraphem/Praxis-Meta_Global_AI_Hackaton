@@ -7,22 +7,28 @@ export async function GET(
   const { id, action } = await context.params;
   if (
     ![
+      "connectivity",
+      "connectivity-evidence",
       "image",
       "automatic-targeting-evidence",
       "connector-annotation",
       "connector-annotation-image",
       "connector-validation-evidence",
+      "connector-junction-evidence",
     ].includes(action)
   )
     return new Response(null, { status: 404 });
   return proxy(
     request,
     action as
+      | "connectivity"
+      | "connectivity-evidence"
       | "image"
       | "automatic-targeting-evidence"
       | "connector-annotation"
       | "connector-annotation-image"
-      | "connector-validation-evidence",
+      | "connector-validation-evidence"
+      | "connector-junction-evidence",
     id,
   );
 }
@@ -33,9 +39,19 @@ export async function POST(
   const { id, action } = await context.params;
   if (
     ![
+      "save-connectivity-workspace",
+      "review-connectivity",
+      "build-connectivity",
+      "register-connectivity-reference",
+      "compare-connectivity",
       "save-connector-reference",
       "freeze-connector-reference",
       "evaluate-connector-reference",
+      "prepare-connector-junctions",
+      "run-connector-junctions",
+      "review-connector-junction",
+      "freeze-junction-reference",
+      "evaluate-connector-junctions",
       "prepare-automatic-targeting",
       "run-automatic-targeting",
       "evaluate-automatic-targeting",
@@ -62,9 +78,19 @@ export async function POST(
   return proxy(
     request,
     action as
+      | "save-connectivity-workspace"
+      | "review-connectivity"
+      | "build-connectivity"
+      | "register-connectivity-reference"
+      | "compare-connectivity"
       | "save-connector-reference"
       | "freeze-connector-reference"
       | "evaluate-connector-reference"
+      | "prepare-connector-junctions"
+      | "run-connector-junctions"
+      | "review-connector-junction"
+      | "freeze-junction-reference"
+      | "evaluate-connector-junctions"
       | "prepare-automatic-targeting"
       | "run-automatic-targeting"
       | "evaluate-automatic-targeting"

@@ -1,4 +1,6 @@
+import { ConnectivityService } from './connectivity.js';
 import { connectorValidationEvidence } from './connector-validation.js';
+import { ConnectorJunctionService } from './connector-junctions.js';
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -16,6 +18,7 @@ export function exportJobEvidence(
   attachments: { bundle?: string; truth?: string } = {},
 ) {
   const evidence = store.transaction(() => ({
+    connectivity: new ConnectivityService(store).evidence(analysisId),
     job: store.get(analysisId),
     image: store.image(analysisId),
     snapshots: store.snapshots(analysisId),
@@ -24,6 +27,11 @@ export function exportJobEvidence(
     experiments: store.experiments.forAnalysis(analysisId),
     automaticTargeting: savedConnectorWorkflows(store, analysisId),
     connectorValidation: connectorValidationEvidence(store, analysisId),
+    connectorJunctions: new ConnectorJunctionService(store)
+      .forAnalysis(analysisId)
+      .map((r) =>
+        new ConnectorJunctionService(store).evidence(r.plan.planId, analysisId),
+      ),
   }));
   const extras: {
     path: string;
@@ -91,6 +99,7 @@ export function exportJobEvidence(
     Buffer.from(JSON.stringify(value, null, 2) + '\n');
   const { snapshot: _payload, ...sam } = evidence.job.sam;
   void _payload;
+  write('connectivity.json', json(evidence.connectivity));
   write('job.json', json({ ...evidence.job, sam }));
   const format =
     evidence.image[0] === 0xff
@@ -119,6 +128,10 @@ export function exportJobEvidence(
   write(
     'connector-validation/evidence.json',
     json(evidence.connectorValidation),
+  );
+  mkdirSync(join(outputDirectory, 'connector-junctions'), { mode: 0o700 });
+  evidence.connectorJunctions.forEach((record, i) =>
+    write(`connector-junctions/${i + 1}.json`, json(record)),
   );
   mkdirSync(join(outputDirectory, 'scene-requests'), { mode: 0o700 });
   evidence.sceneRequests.forEach((record, i) => {

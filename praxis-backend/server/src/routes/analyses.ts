@@ -1,3 +1,4 @@
+import { ConnectivityService } from '../jobs/connectivity.js';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
 import { AppError } from '../lib/errors.js';
@@ -6,6 +7,7 @@ import { z } from 'zod';
 import { prepareImage } from '../services/image.js';
 import { ConnectorValidationService } from '../jobs/connector-validation.js';
 import { ConnectorWorkflowService } from '../jobs/connector-workflow.js';
+import { ConnectorJunctionService } from '../jobs/connector-junctions.js';
 
 const idPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -17,11 +19,60 @@ export function registerAnalysisRoutes(
   workflow: ConnectorWorkflowService = new ConnectorWorkflowService(store),
 ) {
   const validation = new ConnectorValidationService(store);
+  const junctions = new ConnectorJunctionService(store);
   const view = (analysisId: string) => ({
     ...publicJob(store.get(analysisId)),
     automaticTargeting: workflow.publicForAnalysis(analysisId),
     connectorValidation: validation.summary(analysisId),
+    connectorJunctions: junctions.forAnalysis(analysisId),
   });
+  const connectivity = new ConnectivityService(store);
+  app.get('/api/analyses/:id/connectivity-evidence', async (request, reply) =>
+    reply
+      .header(
+        'Content-Disposition',
+        'attachment; filename="praxis-connectivity-evidence.json"',
+      )
+      .send(connectivity.evidence(id(request.params))),
+  );
+  app.get('/api/analyses/:id/connectivity', async (request) =>
+    connectivity.view(id(request.params)),
+  );
+  for (const action of [
+    'save-connectivity-workspace',
+    'review-connectivity',
+    'build-connectivity',
+    'register-connectivity-reference',
+    'compare-connectivity',
+  ] as const) {
+    app.post(
+      `/api/analyses/:id/${action}`,
+      { bodyLimit: 2 * 1024 * 1024 },
+      async (request) => {
+        const analysisId = id(request.params);
+        try {
+          if (action === 'save-connectivity-workspace')
+            return connectivity.importWorkspace(analysisId, request.body);
+          if (action === 'review-connectivity')
+            return connectivity.review(analysisId, request.body);
+          if (action === 'build-connectivity')
+            return connectivity.build(analysisId, request.body);
+          if (action === 'register-connectivity-reference')
+            return connectivity.registerReference(analysisId, request.body);
+          return connectivity.compare(analysisId, request.body);
+        } catch (error) {
+          if (error instanceof AppError) throw error;
+          throw new AppError(
+            400,
+            'INVALID_CONNECTIVITY_EVIDENCE',
+            error instanceof Error
+              ? error.message.slice(0, 300)
+              : 'Invalid connectivity evidence.',
+          );
+        }
+      },
+    );
+  }
   let uploads = 0;
   app.post('/api/analyses', async (request, reply) => {
     if (!request.isMultipart())
@@ -90,6 +141,59 @@ export function registerAnalysisRoutes(
     await workflow.prepare(analysisId, request.body);
     return view(analysisId);
   });
+  app.post('/api/analyses/:id/prepare-connector-junctions', async (request) => {
+    const analysisId = id(request.params);
+    await junctions.prepare(analysisId, request.body);
+    return view(analysisId);
+  });
+  app.post(
+    '/api/analyses/:id/run-connector-junctions',
+    async (request, reply) => {
+      const analysisId = id(request.params);
+      junctions.admit(analysisId, request.body);
+      setImmediate(kick);
+      return reply.code(202).send(view(analysisId));
+    },
+  );
+  app.post('/api/analyses/:id/review-connector-junction', async (request) => {
+    const analysisId = id(request.params);
+    junctions.review(analysisId, request.body);
+    return view(analysisId);
+  });
+  app.post('/api/analyses/:id/freeze-junction-reference', async (request) => {
+    const analysisId = id(request.params);
+    junctions.freezeReference(analysisId, request.body);
+    return view(analysisId);
+  });
+  app.post(
+    '/api/analyses/:id/evaluate-connector-junctions',
+    async (request) => {
+      const analysisId = id(request.params);
+      junctions.evaluate(analysisId, request.body);
+      return view(analysisId);
+    },
+  );
+  app.get(
+    '/api/analyses/:id/connector-junction-evidence',
+    async (request, reply) => {
+      const parsed = z
+        .object({ planId: z.string().regex(/^[a-f0-9]{64}$/) })
+        .strict()
+        .safeParse(request.query);
+      if (!parsed.success)
+        throw new AppError(
+          400,
+          'INVALID_JUNCTION_PLAN',
+          'Choose a frozen junction plan.',
+        );
+      return reply
+        .header(
+          'Content-Disposition',
+          'attachment; filename="praxis-connector-junction-evidence.json"',
+        )
+        .send(junctions.evidence(parsed.data.planId, id(request.params)));
+    },
+  );
   for (const action of ['run', 'release', 'evaluate'] as const)
     app.post(
       `/api/analyses/:id/${action}-automatic-targeting`,

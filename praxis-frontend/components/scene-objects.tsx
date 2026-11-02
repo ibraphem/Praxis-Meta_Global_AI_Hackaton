@@ -1,3 +1,4 @@
+import { ConnectorJunctionPanel } from "./connector-junction-review";
 import { AutomaticTargetingPanel } from "./automatic-targeting-panel";
 import { useState } from "react";
 import { planSceneTargets } from "@/lib/scene-guidance";
@@ -14,6 +15,11 @@ import {
 export type SceneMode = "objects" | "members" | "evidence";
 export type SceneAction =
   | "evaluate-connector-reference"
+  | "prepare-connector-junctions"
+  | "run-connector-junctions"
+  | "review-connector-junction"
+  | "freeze-junction-reference"
+  | "evaluate-connector-junctions"
   | "prepare-automatic-targeting"
   | "run-automatic-targeting"
   | "evaluate-automatic-targeting"
@@ -109,6 +115,9 @@ export function SceneObjectPanel({
         ? selectedId
         : undefined;
   const attempted = new Set([
+    ...(job?.connectorJunctions
+      ?.filter((r) => r.admittedAt !== null)
+      .map((r) => r.plan.connectorObjectId) ?? []),
     ...(job?.scene?.terminalWork?.map((w) => w.objectId) ?? []),
     ...(graph.terminals ?? []).map((t) => t.objectId),
   ]);
@@ -577,6 +586,13 @@ export function SceneObjectPanel({
           </button>
         ))}
       </details>
+      <ConnectorJunctionPanel
+        job={job}
+        graph={graph}
+        busy={busy}
+        onAction={onAction}
+        onSelect={onSelect}
+      />
       <AutomaticTargetingPanel
         job={job}
         graph={graph}

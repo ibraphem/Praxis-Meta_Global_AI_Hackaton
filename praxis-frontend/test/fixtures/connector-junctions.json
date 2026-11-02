@@ -1,0 +1,1313 @@
+{
+  "fixtureScope": "Synthetic protocol fixture with simulated prerequisite reviewer metadata. No real photograph, reviewer, inference, or photographic accuracy evidence.",
+  "job": {
+    "runtime": {
+      "buildId": "4b3b25f88890c955370685bf6c81187b076f69f9da8432693a9791409ee60ca9",
+      "representation": "source",
+      "algorithms": {
+        "candidateLayer": "sam-candidate-layer-v1",
+        "wireSelection": "preserve-wire-evidence-v1",
+        "interpretation": "incremental-experiments-v2"
+      }
+    },
+    "analysisId": "c39e3965-9de8-432f-94f0-cf6512ee4cdb",
+    "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+    "image": {
+      "width": 200,
+      "height": 160
+    },
+    "status": "completed",
+    "revision": "sam",
+    "createdAt": 1793567069804,
+    "updatedAt": 1793567070018,
+    "expiresAt": 1793653469804,
+    "settings": {
+      "maxDimension": 0,
+      "minimalPrompt": false,
+      "mode": "combined",
+      "samModel": "sam-3.1",
+      "museModel": "muse-spark-1.3",
+      "dynamicScene": false,
+      "sceneTimeoutMs": 45000,
+      "sceneMaxRequests": 3,
+      "sceneMaxPixels": 6000000,
+      "sceneMaxCropPixels": 2000000
+    },
+    "scene": {
+      "status": "succeeded",
+      "attempts": [
+        {
+          "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98",
+          "status": "succeeded",
+          "upstreamOutcome": "not_sent",
+          "retryPolicy": "dispatch_existing",
+          "createdAt": 1793567069804,
+          "sceneOperation": "inventory"
+        },
+        {
+          "attemptId": "b985bc82-0110-4b9d-a206-4ba458215b62",
+          "status": "succeeded",
+          "upstreamOutcome": "response_received",
+          "retryPolicy": "not_retryable",
+          "createdAt": 1793567069997,
+          "sceneOperation": "terminals",
+          "junctionPlanId": "66cfa4f55aaef863441396e5d2d1794bd9ca4beab6844837b21b33b32adfa51a",
+          "terminalObjectIds": [
+            "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c"
+          ],
+          "sceneSnapshotId": "7c6253b5-baad-4c85-b47c-4e436720bd00",
+          "sceneSnapshotHash": "d975510d8372d81da2e7a01f95ed8727637bd1f7d5f62112f142991906b3b5ad",
+          "samSnapshotId": "e33d67c0-c93d-48b2-8a79-48a3fa43d9b7",
+          "samSnapshotHash": "0ee9e802c1128193f2b37ce3dc535413aaae5225115031733456687693b0f2a1",
+          "snapshotBinding": "recorded",
+          "startedAt": 1793567069998,
+          "finishedAt": 1793567070018,
+          "diagnostics": {
+            "requestId": "b985bc82-0110-4b9d-a206-4ba458215b62",
+            "elapsedMs": 19,
+            "timings": [
+              {
+                "stage": "muse.prepare",
+                "startedAtMs": 6,
+                "durationMs": 0,
+                "status": "completed",
+                "kind": "work"
+              },
+              {
+                "stage": "muse.terminals",
+                "startedAtMs": 6,
+                "durationMs": 10,
+                "status": "completed",
+                "kind": "request",
+                "payloadBytes": 8814,
+                "outputSchemaBytes": 1597,
+                "encodedImageBytes": 4069,
+                "promptChars": 2821,
+                "imageCount": 2,
+                "outputTokenBudget": null,
+                "imageDimensions": [
+                  {
+                    "width": 68,
+                    "height": 68
+                  },
+                  {
+                    "width": 68,
+                    "height": 68
+                  }
+                ],
+                "attempt": 1,
+                "timeoutMs": 45000,
+                "model": "muse-spark-1.3",
+                "upstreamStatus": 200,
+                "headersMs": 5
+              }
+            ]
+          }
+        }
+      ],
+      "budget": {
+        "requests": 0,
+        "pixels": 0,
+        "terminalRequests": 1,
+        "terminalPixels": 9248
+      },
+      "work": [],
+      "settings": {
+        "timeoutMs": 45000,
+        "maxRequests": 0,
+        "maxPixels": 6000000,
+        "maxCropPixels": 2000000
+      },
+      "snapshotRef": {
+        "snapshotId": "7c6253b5-baad-4c85-b47c-4e436720bd00",
+        "snapshotHash": "d975510d8372d81da2e7a01f95ed8727637bd1f7d5f62112f142991906b3b5ad",
+        "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+        "sourceAttemptId": "e5cd69ca-b242-40c4-a185-55e45de0facc",
+        "createdAt": 1793567069808,
+        "parentSnapshotId": "c56ad455-8fb2-4c34-9315-1aaa4de54768"
+      },
+      "graph": {
+        "version": "scene-v1",
+        "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+        "image": {
+          "width": 200,
+          "height": 160
+        },
+        "promptVersion": "open-inventory-v1",
+        "objects": [
+          {
+            "id": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+            "proposedType": "black battery snap connector",
+            "category": "connector",
+            "bbox": [
+              70,
+              30,
+              40,
+              50
+            ],
+            "recognitionStatus": "proposed",
+            "segmentationStatus": "not_attempted",
+            "terminalIds": []
+          },
+          {
+            "id": "bd270d45-2c90-4420-8914-329a6614be43",
+            "proposedType": "red insulated conductor",
+            "category": "conductor",
+            "bbox": [
+              100,
+              47,
+              30,
+              4
+            ],
+            "recognitionStatus": "proposed",
+            "segmentationStatus": "not_attempted",
+            "terminalIds": []
+          },
+          {
+            "id": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+            "proposedType": "black insulated conductor",
+            "category": "conductor",
+            "bbox": [
+              60,
+              47,
+              20,
+              4
+            ],
+            "recognitionStatus": "proposed",
+            "segmentationStatus": "not_attempted",
+            "terminalIds": []
+          }
+        ],
+        "observations": [
+          {
+            "id": "eb5079d4-4dda-46cc-90a9-f92bab92c383",
+            "kind": "bbox",
+            "source": "muse",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98",
+            "model": "synthetic",
+            "bbox": [
+              70,
+              30,
+              40,
+              50
+            ],
+            "prompt": "black battery snap connector"
+          },
+          {
+            "id": "6df5e2ae-4e59-4ddd-9c74-25c2f96683e9",
+            "kind": "bbox",
+            "source": "muse",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98",
+            "model": "synthetic",
+            "bbox": [
+              140,
+              50,
+              20,
+              70
+            ],
+            "prompt": "red insulated conductor"
+          },
+          {
+            "id": "6aaaa533-96c0-4fec-8de9-c873a1b4510b",
+            "kind": "mask",
+            "source": "sam",
+            "attemptId": "4946503d-6088-431f-9141-4b4c40872952",
+            "model": "sam-3.1",
+            "bbox": [
+              80,
+              40,
+              20,
+              20
+            ],
+            "sourceCandidateId": "led_1",
+            "samSnapshotId": "e33d67c0-c93d-48b2-8a79-48a3fa43d9b7",
+            "samSnapshotHash": "0ee9e802c1128193f2b37ce3dc535413aaae5225115031733456687693b0f2a1",
+            "prompt": "led"
+          },
+          {
+            "id": "95676c0f-8093-488d-b02d-e0a94f7ef578",
+            "kind": "bbox",
+            "source": "muse",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98",
+            "model": "synthetic",
+            "bbox": [
+              60,
+              47,
+              20,
+              4
+            ],
+            "prompt": "red insulated conductor"
+          }
+        ],
+        "associations": [
+          {
+            "id": "4c629a00-465c-41e8-ac07-223255b06aaf",
+            "objectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+            "observationId": "eb5079d4-4dda-46cc-90a9-f92bab92c383",
+            "relation": "unknown",
+            "basis": "inventory",
+            "status": "proposed",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98"
+          },
+          {
+            "id": "7897f4b4-cf58-4a43-8b78-1507e516b17a",
+            "objectId": "bd270d45-2c90-4420-8914-329a6614be43",
+            "observationId": "6df5e2ae-4e59-4ddd-9c74-25c2f96683e9",
+            "relation": "unknown",
+            "basis": "inventory",
+            "status": "proposed",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98"
+          },
+          {
+            "id": "7142f11a-8604-4bbe-a7d5-809ec23df8ac",
+            "objectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+            "observationId": "6aaaa533-96c0-4fec-8de9-c873a1b4510b",
+            "relation": "unknown",
+            "basis": "category_and_overlap",
+            "status": "proposed",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98"
+          },
+          {
+            "id": "8eb14684-c1df-4ec0-8b07-3effa2a83de3",
+            "objectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+            "observationId": "95676c0f-8093-488d-b02d-e0a94f7ef578",
+            "relation": "unknown",
+            "basis": "inventory",
+            "status": "proposed",
+            "attemptId": "ae73fe9c-8d81-478d-a87c-7495ecdd9a98"
+          }
+        ],
+        "electricalConnectionStatus": "unestablished"
+      }
+    },
+    "sam": {
+      "status": "succeeded",
+      "attempts": [
+        {
+          "attemptId": "4946503d-6088-431f-9141-4b4c40872952",
+          "status": "succeeded",
+          "upstreamOutcome": "not_sent",
+          "retryPolicy": "dispatch_existing",
+          "createdAt": 1793567069804,
+          "samSnapshotId": "e33d67c0-c93d-48b2-8a79-48a3fa43d9b7",
+          "samSnapshotHash": "0ee9e802c1128193f2b37ce3dc535413aaae5225115031733456687693b0f2a1",
+          "snapshotBinding": "recorded"
+        }
+      ],
+      "snapshotRef": {
+        "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+        "model": "sam-3.1",
+        "processingVersion": "sam-checkpoint-v1",
+        "samSnapshotId": "e33d67c0-c93d-48b2-8a79-48a3fa43d9b7",
+        "samSnapshotHash": "0ee9e802c1128193f2b37ce3dc535413aaae5225115031733456687693b0f2a1",
+        "sourceAttemptId": "4946503d-6088-431f-9141-4b4c40872952",
+        "createdAt": 1793567069804,
+        "origin": "recorded"
+      }
+    },
+    "muse": {
+      "status": "not_started",
+      "attempts": []
+    },
+    "recovery": {
+      "status": "not_started",
+      "attempts": [],
+      "operation": "audit",
+      "budget": {
+        "requests": 0,
+        "pixels": 0,
+        "verificationRequests": 0,
+        "rounds": 0
+      },
+      "visited": [],
+      "cropAttempts": []
+    },
+    "wireIdentities": [],
+    "result": {
+      "image": {
+        "width": 200,
+        "height": 160
+      },
+      "objects": [],
+      "provenance": {
+        "mode": "combined",
+        "segmentationModel": "synthetic",
+        "reasoningModel": "synthetic"
+      }
+    },
+    "automaticTargeting": [
+      {
+        "workflowId": "ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186",
+        "algorithmVersion": "automatic-targeting-v2",
+        "targetingDiagnostics": {
+          "version": "automatic-targeting-diagnostics-v2",
+          "decodedPixels": 400,
+          "baseline": [
+            {
+              "observationId": "6aaaa533-96c0-4fec-8de9-c873a1b4510b",
+              "reasons": [],
+              "pixelRejections": {
+                "insufficientInterior": 144,
+                "outsideTarget": 0,
+                "conductorOrNeighborPixels": 0,
+                "uncertainNeighborBox": 0
+              },
+              "eligibleInteriorPixels": 256
+            }
+          ],
+          "eligibleBaselineMasks": 1,
+          "nativeSources": [
+            {
+              "observationId": "6aaaa533-96c0-4fec-8de9-c873a1b4510b",
+              "samSnapshotId": "e33d67c0-c93d-48b2-8a79-48a3fa43d9b7",
+              "samSnapshotHash": "0ee9e802c1128193f2b37ce3dc535413aaae5225115031733456687693b0f2a1",
+              "nativeHash": "c7a431c9ff102c45186e9dbbbfc9d0e2154d227fef6e0b49c111c08cd5616153"
+            }
+          ],
+          "exclusions": [
+            {
+              "objectId": "bd270d45-2c90-4420-8914-329a6614be43",
+              "mode": "uncertain_bbox",
+              "coverage": 0.02,
+              "reason": "Native pixels or unambiguous human identity review unavailable; box retained as uncertain exclusion.",
+              "observationIds": []
+            },
+            {
+              "objectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+              "mode": "uncertain_bbox",
+              "coverage": 0.02,
+              "reason": "Native pixels or unambiguous human identity review unavailable; box retained as uncertain exclusion.",
+              "observationIds": []
+            }
+          ],
+          "bodyProposal": {
+            "source": "local_dark_core_v2",
+            "status": "proposed",
+            "reason": "proposed",
+            "box": [
+              80,
+              40,
+              20,
+              20
+            ],
+            "positivePoints": [
+              [
+                89,
+                49
+              ],
+              [
+                96,
+                43
+              ],
+              [
+                96,
+                54
+              ]
+            ],
+            "componentCount": 1,
+            "mergedComponentPixels": 0,
+            "boundaryFragmentsSkipped": 0,
+            "pixelDiagnostics": {
+              "darkPixels": 429,
+              "excludedByNativeMasks": 0,
+              "excludedByUncertainBoxes": 30,
+              "remainingDarkPixels": 399,
+              "interiorCorePixels": 255
+            },
+            "physicalBoundaryStatus": "unconfirmed"
+          },
+          "chromaticCue": {
+            "source": "saturated_red_v1",
+            "status": "abstained",
+            "reason": "no_saturated_red_core",
+            "saturatedRedPixels": 15,
+            "componentCount": 0
+          },
+          "surfaceCues": [
+            {
+              "source": "bright_neutral_surface",
+              "status": "proposed",
+              "reason": "proposed",
+              "surfacePixels": 1532,
+              "componentCount": 2
+            },
+            {
+              "source": "chromatic_host_surface",
+              "status": "abstained",
+              "reason": "no_surface_core",
+              "surfacePixels": 15,
+              "componentCount": 0
+            }
+          ],
+          "negativeCues": [
+            {
+              "source": "bright_neutral_surface",
+              "point": [
+                107,
+                54
+              ],
+              "componentPixels": 684,
+              "clearance": 8
+            }
+          ],
+          "keepRing": {
+            "haloPx": 1,
+            "crop": [
+              37,
+              0,
+              106,
+              113
+            ],
+            "runs": [
+              [
+                39,
+                42,
+                64
+              ],
+              [
+                40,
+                42,
+                64
+              ],
+              [
+                41,
+                42,
+                64
+              ],
+              [
+                42,
+                42,
+                64
+              ],
+              [
+                43,
+                42,
+                64
+              ],
+              [
+                44,
+                42,
+                64
+              ],
+              [
+                45,
+                42,
+                64
+              ],
+              [
+                46,
+                42,
+                64
+              ],
+              [
+                47,
+                22,
+                64
+              ],
+              [
+                48,
+                22,
+                64
+              ],
+              [
+                49,
+                22,
+                64
+              ],
+              [
+                50,
+                22,
+                64
+              ],
+              [
+                51,
+                22,
+                64
+              ],
+              [
+                52,
+                42,
+                64
+              ],
+              [
+                53,
+                42,
+                64
+              ],
+              [
+                54,
+                42,
+                64
+              ],
+              [
+                55,
+                42,
+                64
+              ],
+              [
+                56,
+                42,
+                64
+              ],
+              [
+                57,
+                42,
+                64
+              ],
+              [
+                58,
+                42,
+                64
+              ],
+              [
+                59,
+                42,
+                64
+              ],
+              [
+                60,
+                42,
+                64
+              ]
+            ]
+          }
+        },
+        "evaluationProtocol": {
+          "version": "connector-comparison-protocol-v2",
+          "algorithmVersion": "automatic-targeting-v2",
+          "cuePolicyHash": "04d6f991010f27ad3156a9899bb0c8f923dc26191c209d5cce17c197ce92cd19",
+          "strategies": [
+            "A-inventory-box-v2",
+            "B-mask-interior-v2",
+            "C-body-aware-v2"
+          ],
+          "requiredComparisons": [
+            "A-inventory-box-v2",
+            "B-mask-interior-v2",
+            "C-body-aware-v2"
+          ],
+          "requiredAcceptedStrategies": [
+            "C-body-aware-v2"
+          ],
+          "thresholds": {
+            "version": "connector-release-gate-v2",
+            "minimumIoU": 0.8,
+            "minimumRecall": 0.9,
+            "maximumConductorLeakage": 0.05,
+            "requiredAcceptedIdentityCorrectness": 1,
+            "maximumIncorrectConfirmedMerges": 0,
+            "maximumBudgetOverage": 0,
+            "maximumMissingProvenance": 0
+          },
+          "referencePolicy": "blinded_original_only_attested_human_v2",
+          "referenceBoundaryBandPx": 2,
+          "comparedWhen": "measured_or_recorded_abstention",
+          "maxRequests": 3,
+          "maxPixels": 6000000,
+          "automaticRetries": 0,
+          "protocolHash": "96192ad2b5885dfc795c3c240895f775511536ecd5764373df7219f60ed1e4bc"
+        },
+        "analysisId": "c39e3965-9de8-432f-94f0-cf6512ee4cdb",
+        "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+        "objectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+        "sourceSnapshotId": "7c6253b5-baad-4c85-b47c-4e436720bd00",
+        "sourceSnapshotHash": "d975510d8372d81da2e7a01f95ed8727637bd1f7d5f62112f142991906b3b5ad",
+        "preparedAt": 1793567069843,
+        "providerBaseUrl": "https://api.meta.ai/v1",
+        "model": "sam-3.1",
+        "experimentId": "8a6df729-7164-4075-878b-9db821933578",
+        "replacementOf": null,
+        "status": "completed",
+        "phase": "evaluated",
+        "budget": {
+          "scope": "isolated_experiment",
+          "maxRequests": 3,
+          "maxPixels": 6000000,
+          "plannedRequests": 3,
+          "plannedPixels": 35934
+        },
+        "accounting": {
+          "reservedRequests": 3,
+          "reservedPixels": 35934,
+          "dispatchAttempts": 3,
+          "dispatchedPixels": 35934,
+          "responsesRecorded": 3,
+          "unknownUsageRequests": 0,
+          "unknownUsagePixels": 0,
+          "providerConfirmedUsage": null,
+          "billedCost": null,
+          "note": "Dispatch intent is persisted before transport. It may overcount packets actually sent; responses do not prove billed usage. Unknown usage remains charged after release."
+        },
+        "arms": [
+          {
+            "name": "A-inventory-box-v2",
+            "prompt": "<0f>0<|box;x1=33;y1=30;x2=72;y2=79;w=106;h=113|>",
+            "crop": [
+              37,
+              0,
+              106,
+              113
+            ],
+            "imageSha256": "9de3e6260efce7858d23abb30a1771133cc49d5e7e07691a690b04cf5e159b64",
+            "status": "candidates_returned",
+            "reason": "Frozen automatic targeting proposal."
+          },
+          {
+            "name": "B-mask-interior-v2",
+            "prompt": "<0f>0<|box;x1=33;y1=30;x2=72;y2=79;w=106;h=113|><|point;x=52;y=49;w=106;h=113|>",
+            "crop": [
+              37,
+              0,
+              106,
+              113
+            ],
+            "imageSha256": "9de3e6260efce7858d23abb30a1771133cc49d5e7e07691a690b04cf5e159b64",
+            "status": "candidates_returned",
+            "reason": "Frozen automatic targeting proposal."
+          },
+          {
+            "name": "C-body-aware-v2",
+            "prompt": "<0f>0<|box;x1=43;y1=40;x2=62;y2=59;w=106;h=113|><|point;x=52;y=49;w=106;h=113|><|point;x=59;y=43;w=106;h=113|><|point;x=59;y=54;w=106;h=113|>-<|point;x=70;y=54;w=106;h=113|>",
+            "crop": [
+              37,
+              0,
+              106,
+              113
+            ],
+            "imageSha256": "9de3e6260efce7858d23abb30a1771133cc49d5e7e07691a690b04cf5e159b64",
+            "status": "candidates_returned",
+            "reason": "Frozen automatic targeting proposal."
+          }
+        ],
+        "pointStatus": "proposed",
+        "pointCues": [
+          {
+            "observationId": "6aaaa533-96c0-4fec-8de9-c873a1b4510b",
+            "point": [
+              89,
+              49
+            ],
+            "interiorDistance": 10
+          }
+        ],
+        "measurements": [
+          {
+            "variant": "A-inventory-box-v2",
+            "requestId": "5a63741c-c53e-4086-ae01-b503ba44c2dd",
+            "status": "candidates_returned",
+            "phase": "response_recorded",
+            "providerOutcome": "response_received",
+            "startedAt": 1793567069862,
+            "finishedAt": 1793567069895,
+            "wallMs": 33,
+            "maskCount": 1,
+            "observationIds": [
+              "c4ba5cb6-5c11-4d40-8f4f-05242a61813f"
+            ],
+            "previews": [
+              {
+                "id": "c4ba5cb6-5c11-4d40-8f4f-05242a61813f",
+                "bbox": [
+                  80,
+                  40,
+                  20,
+                  20
+                ],
+                "mask": {
+                  "format": "svg_path",
+                  "width": 20,
+                  "height": 20,
+                  "path": "M-0.5 0L0 -0.5L1 -0.5L2 -0.5L3 -0.5L4 -0.5L5 -0.5L6 -0.5L7 -0.5L8 -0.5L9 -0.5L10 -0.5L11 -0.5L12 -0.5L13 -0.5L14 -0.5L15 -0.5L16 -0.5L17 -0.5L18 -0.5L19 -0.5L19.5 0L19.5 1L19.5 2L19.5 3L19.5 4L19.5 5L19.5 6L19.5 7L19.5 8L19.5 9L19.5 10L19.5 11L19.5 12L19.5 13L19.5 14L19.5 15L19.5 16L19.5 17L19.5 18L19.5 19L19 19.5L18 19.5L17 19.5L16 19.5L15 19.5L14 19.5L13 19.5L12 19.5L11 19.5L10 19.5L9 19.5L8 19.5L7 19.5L6 19.5L5 19.5L4 19.5L3 19.5L2 19.5L1 19.5L0 19.5L-0.5 19L-0.5 18L-0.5 17L-0.5 16L-0.5 15L-0.5 14L-0.5 13L-0.5 12L-0.5 11L-0.5 10L-0.5 9L-0.5 8L-0.5 7L-0.5 6L-0.5 5L-0.5 4L-0.5 3L-0.5 2L-0.5 1Z"
+                }
+              }
+            ],
+            "events": [
+              {
+                "phase": "admitted",
+                "at": 1793567069862
+              },
+              {
+                "phase": "dispatching",
+                "at": 1793567069864
+              },
+              {
+                "phase": "response_recorded",
+                "at": 1793567069892
+              }
+            ]
+          },
+          {
+            "variant": "B-mask-interior-v2",
+            "requestId": "6be1340b-b100-43eb-8758-d18f9035c534",
+            "status": "candidates_returned",
+            "phase": "response_recorded",
+            "providerOutcome": "response_received",
+            "startedAt": 1793567069895,
+            "finishedAt": 1793567069899,
+            "wallMs": 4,
+            "maskCount": 1,
+            "observationIds": [
+              "7ddb2928-94e5-48fd-870e-ea00dd32da9c"
+            ],
+            "previews": [
+              {
+                "id": "7ddb2928-94e5-48fd-870e-ea00dd32da9c",
+                "bbox": [
+                  80,
+                  40,
+                  20,
+                  20
+                ],
+                "mask": {
+                  "format": "svg_path",
+                  "width": 20,
+                  "height": 20,
+                  "path": "M-0.5 0L0 -0.5L1 -0.5L2 -0.5L3 -0.5L4 -0.5L5 -0.5L6 -0.5L7 -0.5L8 -0.5L9 -0.5L10 -0.5L11 -0.5L12 -0.5L13 -0.5L14 -0.5L15 -0.5L16 -0.5L17 -0.5L18 -0.5L19 -0.5L19.5 0L19.5 1L19.5 2L19.5 3L19.5 4L19.5 5L19.5 6L19.5 7L19.5 8L19.5 9L19.5 10L19.5 11L19.5 12L19.5 13L19.5 14L19.5 15L19.5 16L19.5 17L19.5 18L19.5 19L19 19.5L18 19.5L17 19.5L16 19.5L15 19.5L14 19.5L13 19.5L12 19.5L11 19.5L10 19.5L9 19.5L8 19.5L7 19.5L6 19.5L5 19.5L4 19.5L3 19.5L2 19.5L1 19.5L0 19.5L-0.5 19L-0.5 18L-0.5 17L-0.5 16L-0.5 15L-0.5 14L-0.5 13L-0.5 12L-0.5 11L-0.5 10L-0.5 9L-0.5 8L-0.5 7L-0.5 6L-0.5 5L-0.5 4L-0.5 3L-0.5 2L-0.5 1Z"
+                }
+              }
+            ],
+            "events": [
+              {
+                "phase": "admitted",
+                "at": 1793567069895
+              },
+              {
+                "phase": "dispatching",
+                "at": 1793567069897
+              },
+              {
+                "phase": "response_recorded",
+                "at": 1793567069898
+              }
+            ]
+          },
+          {
+            "variant": "C-body-aware-v2",
+            "requestId": "a5e6f3e4-1713-4862-8434-51b8e7f910f1",
+            "status": "candidates_returned",
+            "phase": "response_recorded",
+            "providerOutcome": "response_received",
+            "startedAt": 1793567069900,
+            "finishedAt": 1793567069904,
+            "wallMs": 4,
+            "maskCount": 1,
+            "observationIds": [
+              "0da1655d-c4a0-4add-bedb-a2a1b503a14e"
+            ],
+            "previews": [
+              {
+                "id": "0da1655d-c4a0-4add-bedb-a2a1b503a14e",
+                "bbox": [
+                  80,
+                  40,
+                  20,
+                  20
+                ],
+                "mask": {
+                  "format": "svg_path",
+                  "width": 20,
+                  "height": 20,
+                  "path": "M-0.5 0L0 -0.5L1 -0.5L2 -0.5L3 -0.5L4 -0.5L5 -0.5L6 -0.5L7 -0.5L8 -0.5L9 -0.5L10 -0.5L11 -0.5L12 -0.5L13 -0.5L14 -0.5L15 -0.5L16 -0.5L17 -0.5L18 -0.5L19 -0.5L19.5 0L19.5 1L19.5 2L19.5 3L19.5 4L19.5 5L19.5 6L19.5 7L19.5 8L19.5 9L19.5 10L19.5 11L19.5 12L19.5 13L19.5 14L19.5 15L19.5 16L19.5 17L19.5 18L19.5 19L19 19.5L18 19.5L17 19.5L16 19.5L15 19.5L14 19.5L13 19.5L12 19.5L11 19.5L10 19.5L9 19.5L8 19.5L7 19.5L6 19.5L5 19.5L4 19.5L3 19.5L2 19.5L1 19.5L0 19.5L-0.5 19L-0.5 18L-0.5 17L-0.5 16L-0.5 15L-0.5 14L-0.5 13L-0.5 12L-0.5 11L-0.5 10L-0.5 9L-0.5 8L-0.5 7L-0.5 6L-0.5 5L-0.5 4L-0.5 3L-0.5 2L-0.5 1Z"
+                }
+              }
+            ],
+            "events": [
+              {
+                "phase": "admitted",
+                "at": 1793567069900
+              },
+              {
+                "phase": "dispatching",
+                "at": 1793567069902
+              },
+              {
+                "phase": "response_recorded",
+                "at": 1793567069903
+              }
+            ]
+          }
+        ],
+        "evaluationStatus": "succeeded",
+        "evaluationError": null,
+        "evaluation": {
+          "invariants": {
+            "requestsBeyondBudget": 0,
+            "missingRequiredProvenance": 0,
+            "confirmedIdentityMerges": 0,
+            "sourceEvidencePreserved": true
+          },
+          "status": "synthetic_pass",
+          "referenceHash": "4c889a23d4fc044c0932e703ff93de6c9e503fca9c8004050131e0b5ebefa296",
+          "independentGroundTruth": false,
+          "plannedStrategyCount": 3,
+          "validMaskArms": 3,
+          "protocolVersion": "connector-comparison-protocol-v2",
+          "protocolHash": "96192ad2b5885dfc795c3c240895f775511536ecd5764373df7219f60ed1e4bc",
+          "referenceQualification": "synthetic",
+          "declaredPredictionExposure": "unknown",
+          "requiredAcceptedStrategies": [
+            "C-body-aware-v2"
+          ],
+          "abComparison": "complete",
+          "successRate": 1,
+          "armResults": [
+            {
+              "variant": "A-inventory-box-v2",
+              "outcome": "candidates_returned",
+              "acceptedMaskCount": 1,
+              "maskMetrics": [
+                {
+                  "observationId": "c4ba5cb6-5c11-4d40-8f4f-05242a61813f",
+                  "iou": 1,
+                  "recall": 1,
+                  "precision": 1,
+                  "leakage": 0,
+                  "identityCorrectness": "correct"
+                }
+              ]
+            },
+            {
+              "variant": "B-mask-interior-v2",
+              "outcome": "candidates_returned",
+              "acceptedMaskCount": 1,
+              "maskMetrics": [
+                {
+                  "observationId": "7ddb2928-94e5-48fd-870e-ea00dd32da9c",
+                  "iou": 1,
+                  "recall": 1,
+                  "precision": 1,
+                  "leakage": 0,
+                  "identityCorrectness": "correct"
+                }
+              ]
+            },
+            {
+              "variant": "C-body-aware-v2",
+              "outcome": "candidates_returned",
+              "acceptedMaskCount": 1,
+              "maskMetrics": [
+                {
+                  "observationId": "0da1655d-c4a0-4add-bedb-a2a1b503a14e",
+                  "iou": 1,
+                  "recall": 1,
+                  "precision": 1,
+                  "leakage": 0,
+                  "identityCorrectness": "correct"
+                }
+              ]
+            }
+          ],
+          "note": "Versioned three-strategy comparison. All declared arms must complete; body-aware C must pass quality and identity thresholds. Baseline A/B quality is reported separately. Provisional assistant or non-blinded references provide diagnostic scores only; a Boolean alone cannot qualify a human reference. No reference pixels are used for targeting."
+        },
+        "evidenceUrl": "/api/analyses/c39e3965-9de8-432f-94f0-cf6512ee4cdb/automatic-targeting-evidence?workflowId=ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186",
+        "protocol": {
+          "thresholds": {
+            "version": "connector-release-gate-v2",
+            "minimumIoU": 0.8,
+            "minimumRecall": 0.9,
+            "maximumConductorLeakage": 0.05,
+            "requiredAcceptedIdentityCorrectness": 1,
+            "maximumIncorrectConfirmedMerges": 0,
+            "maximumBudgetOverage": 0,
+            "maximumMissingProvenance": 0
+          },
+          "referenceHash": "4c889a23d4fc044c0932e703ff93de6c9e503fca9c8004050131e0b5ebefa296"
+        },
+        "referenceStatus": "registered_synthetic",
+        "executionError": null,
+        "protocolHash": "dd94059cceea6e394836844c11df3e55b94d15c8dfd1bdba59618b1f3579a3f0",
+        "note": "Separate bounded experiment budget. Production scene evidence is unchanged. Preview paths may be omitted within the public preview budget; private evidence retains every native mask. No billing or connectivity claim."
+      }
+    ],
+    "connectorValidation": {
+      "evidenceLinks": [
+        {
+          "workflowId": "ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186",
+          "url": "/api/analyses/c39e3965-9de8-432f-94f0-cf6512ee4cdb/connector-validation-evidence?workflowId=ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186"
+        }
+      ],
+      "references": [
+        {
+          "referenceHash": "4db68966e725c2a5c9898cfbe69f13551f8002ca0ce7dd787e672bf7bbb0b767",
+          "workflowId": "ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186",
+          "annotationVersion": 1,
+          "objectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+          "frozenAt": 1793567069932,
+          "independent": true,
+          "reviewer": "Simulated prerequisite reviewer",
+          "source": "human_review",
+          "predictionExposure": "never_seen",
+          "pixelCounts": {
+            "connector": 256,
+            "redWire": 36,
+            "blackWire": 36,
+            "uncertain": 640
+          }
+        }
+      ],
+      "evaluations": [
+        {
+          "evaluationId": "2b87961b6d4bf5b677e7d9010fc5744538df4f5d342530a3743a5ca2b1378eea",
+          "workflowId": "ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186",
+          "experimentId": "8a6df729-7164-4075-878b-9db821933578",
+          "objectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+          "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+          "sourceSnapshotHash": "d975510d8372d81da2e7a01f95ed8727637bd1f7d5f62112f142991906b3b5ad",
+          "reportHash": "9a18e15336e2291e872e47472286f9ca0ca0583f509e80f0321324009ece5972",
+          "predictionHash": "b9b0851143cc06247b99e7157856e002ed2a1e0dced4829fa4a53c4df5e166ee",
+          "referenceHash": "4db68966e725c2a5c9898cfbe69f13551f8002ca0ce7dd787e672bf7bbb0b767",
+          "evaluatedAt": 1793567069940,
+          "mode": "retrospective_diagnostic",
+          "strategy": "C-body-aware-v2",
+          "protocolVersion": "connector-comparison-protocol-v2",
+          "protocolHash": "96192ad2b5885dfc795c3c240895f775511536ecd5764373df7219f60ed1e4bc",
+          "thresholds": {
+            "version": "connector-release-gate-v2",
+            "minimumIoU": 0.8,
+            "minimumRecall": 0.9,
+            "maximumConductorLeakage": 0.05,
+            "requiredAcceptedIdentityCorrectness": 1,
+            "maximumIncorrectConfirmedMerges": 0,
+            "maximumBudgetOverage": 0,
+            "maximumMissingProvenance": 0
+          },
+          "configurationHash": "53fe6300357eb32083217b37e2513abc295ac5c03db60ad206437cc4959a72cc",
+          "originalContractPreserved": true,
+          "independentGroundTruth": true,
+          "blinded": true,
+          "status": "passed",
+          "abComparison": "complete",
+          "metrics": [
+            {
+              "observationId": "0da1655d-c4a0-4add-bedb-a2a1b503a14e",
+              "iou": 1,
+              "recall": 1,
+              "precision": 1,
+              "leakage": 0,
+              "redWireLeakage": 0,
+              "blackWireLeakage": 0,
+              "identityCorrectness": "correct",
+              "accepted": true,
+              "foregroundPixels": 256,
+              "scoredMask": "keep_dark_halo",
+              "raw": {
+                "iou": 1,
+                "recall": 1,
+                "precision": 1,
+                "leakage": 0,
+                "redWireLeakage": 0,
+                "blackWireLeakage": 0,
+                "foregroundPixels": 256
+              }
+            }
+          ],
+          "refinement": {
+            "version": "keep-dark-halo-v1",
+            "scoredMask": "keep_dark_halo",
+            "haloPx": 1,
+            "policyHash": "04d6f991010f27ad3156a9899bb0c8f923dc26191c209d5cce17c197ce92cd19",
+            "policyVersion": "automatic-targeting-v2"
+          },
+          "provenanceValid": true,
+          "previewAgreement": true,
+          "note": "Retrospective v2 diagnostic scoring. Top-level IoU, recall and leakage are the keep-dark-halo refined mask; raw native SAM scores are on each metric. Acceptance uses the refined mask. Candidate acceptance is separate from comparison completeness."
+        }
+      ],
+      "gates": [
+        {
+          "objectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+          "status": "passed",
+          "evaluationId": "2b87961b6d4bf5b677e7d9010fc5744538df4f5d342530a3743a5ca2b1378eea",
+          "reason": "Independent pixel reference, identity review and recorded mask meet the connector thresholds."
+        }
+      ]
+    },
+    "connectorJunctions": [
+      {
+        "plan": {
+          "version": "connector-junction-plan-v1",
+          "planId": "66cfa4f55aaef863441396e5d2d1794bd9ca4beab6844837b21b33b32adfa51a",
+          "analysisId": "c39e3965-9de8-432f-94f0-cf6512ee4cdb",
+          "connectorObjectId": "bfc3ac5c-47d9-4fb6-8f54-3256de2a592c",
+          "conductorObjectIds": [
+            "bd270d45-2c90-4420-8914-329a6614be43",
+            "0779ee88-4cc3-4473-9174-812af0b4a22e"
+          ],
+          "imageHash": "a1fc4bc209ada9a105c96961b31be19da0782e0a6793291fc0a45b324f91afda",
+          "image": {
+            "width": 200,
+            "height": 160
+          },
+          "inputSnapshotId": "7c6253b5-baad-4c85-b47c-4e436720bd00",
+          "inputSnapshotHash": "d975510d8372d81da2e7a01f95ed8727637bd1f7d5f62112f142991906b3b5ad",
+          "samSnapshotId": "e33d67c0-c93d-48b2-8a79-48a3fa43d9b7",
+          "samSnapshotHash": "0ee9e802c1128193f2b37ce3dc535413aaae5225115031733456687693b0f2a1",
+          "segmentation": {
+            "workflowId": "ed3ed49bbf772eff09119539870bac89271990484c4d0086d2fdddc1dcbcd186",
+            "experimentId": "8a6df729-7164-4075-878b-9db821933578",
+            "evaluationId": "2b87961b6d4bf5b677e7d9010fc5744538df4f5d342530a3743a5ca2b1378eea",
+            "observationId": "0da1655d-c4a0-4add-bedb-a2a1b503a14e",
+            "nativeHash": "c7a431c9ff102c45186e9dbbbfc9d0e2154d227fef6e0b49c111c08cd5616153",
+            "acceptedRasterHash": "afb6cecb558a0858d1ae9afeff0650dbfe2c109a2e6ee8a4d71e94e88bc43015",
+            "scoredMask": "keep_dark_halo",
+            "refinementHash": "cd4179f3d446ed519b3ce204d4faa186a8b9960d9eefb11a9daacb7fbe25efeb",
+            "acceptedBounds": [
+              80,
+              40,
+              20,
+              20
+            ],
+            "bbox": [
+              80,
+              40,
+              20,
+              20
+            ]
+          },
+          "crop": [
+            56,
+            16,
+            68,
+            68
+          ],
+          "candidates": [
+            {
+              "id": "5f22c128-a61d-4e85-a773-5ec9d30e5e9d",
+              "conductorObjectId": "bd270d45-2c90-4420-8914-329a6614be43",
+              "region": [
+                84,
+                32,
+                17,
+                17
+              ],
+              "position": null,
+              "source": "bbox_search_only",
+              "observationIds": [
+                "0da1655d-c4a0-4add-bedb-a2a1b503a14e"
+              ],
+              "nativeHashes": [
+                "c7a431c9ff102c45186e9dbbbfc9d0e2154d227fef6e0b49c111c08cd5616153",
+                "afb6cecb558a0858d1ae9afeff0650dbfe2c109a2e6ee8a4d71e94e88bc43015"
+              ],
+              "physicalAttachmentEstablished": false
+            },
+            {
+              "id": "b7971ac3-b54f-4ca6-a895-d870a0991b20",
+              "conductorObjectId": "bd270d45-2c90-4420-8914-329a6614be43",
+              "region": [
+                91,
+                47,
+                17,
+                17
+              ],
+              "position": null,
+              "source": "bbox_search_only",
+              "observationIds": [
+                "0da1655d-c4a0-4add-bedb-a2a1b503a14e"
+              ],
+              "nativeHashes": [
+                "c7a431c9ff102c45186e9dbbbfc9d0e2154d227fef6e0b49c111c08cd5616153",
+                "afb6cecb558a0858d1ae9afeff0650dbfe2c109a2e6ee8a4d71e94e88bc43015"
+              ],
+              "physicalAttachmentEstablished": false
+            },
+            {
+              "id": "6d1776ca-d4cd-4efe-a9f5-501a12c994f3",
+              "conductorObjectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+              "region": [
+                72,
+                32,
+                17,
+                17
+              ],
+              "position": null,
+              "source": "bbox_search_only",
+              "observationIds": [
+                "0da1655d-c4a0-4add-bedb-a2a1b503a14e"
+              ],
+              "nativeHashes": [
+                "c7a431c9ff102c45186e9dbbbfc9d0e2154d227fef6e0b49c111c08cd5616153",
+                "afb6cecb558a0858d1ae9afeff0650dbfe2c109a2e6ee8a4d71e94e88bc43015"
+              ],
+              "physicalAttachmentEstablished": false
+            },
+            {
+              "id": "6bb20c72-ae10-4da5-aa5b-16017a7e3aa9",
+              "conductorObjectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+              "region": [
+                72,
+                48,
+                17,
+                17
+              ],
+              "position": null,
+              "source": "bbox_search_only",
+              "observationIds": [
+                "0da1655d-c4a0-4add-bedb-a2a1b503a14e"
+              ],
+              "nativeHashes": [
+                "c7a431c9ff102c45186e9dbbbfc9d0e2154d227fef6e0b49c111c08cd5616153",
+                "afb6cecb558a0858d1ae9afeff0650dbfe2c109a2e6ee8a4d71e94e88bc43015"
+              ],
+              "physicalAttachmentEstablished": false
+            }
+          ],
+          "policy": {
+            "version": "connector-junction-policy-v1",
+            "boundaryBandPixels": 8,
+            "maxBoundarySamples": 4096,
+            "maxCandidatesPerConductor": 3,
+            "benchmarkTolerancePixels": 5
+          },
+          "inputImages": [
+            {
+              "kind": "original_crop",
+              "sha256": "dab10611f7bc66ab00e320d8f348a9951765f21836590b7bfb9a74396d2e2243",
+              "width": 68,
+              "height": 68,
+              "bytes": 713,
+              "mimeType": "image/jpeg"
+            },
+            {
+              "kind": "proposal_overlay",
+              "sha256": "c57d61b07c6e68238a306913628e6b779070ef452f67d069bae362238ec1e665",
+              "width": 68,
+              "height": 68,
+              "bytes": 2303,
+              "mimeType": "image/png"
+            }
+          ],
+          "useMuse": true,
+          "providerBaseUrl": "https://api.meta.ai/v1",
+          "model": "muse-spark-1.3",
+          "requestPayloadHash": "b892f4a90a3e18af48847c9d9b24c7a43e8a1086ad072b7d8878a15609a8c260",
+          "acceptanceEvidenceHash": "60060497a91d41655278cd923022f4ac3809d3490a2d303febe455b4d508d76a",
+          "budget": {
+            "samRequests": 0,
+            "museRequests": 1,
+            "inputPixels": 9248,
+            "maxRetries": 0,
+            "timeoutMs": 45000
+          },
+          "scopeHash": "f28cb08bac6a2365a7b8839156996fe509c0ba098d3a1b3e81fb2da692663897"
+        },
+        "revision": 6,
+        "preparedAt": 1793567069985,
+        "phase": "finished",
+        "attemptId": "b985bc82-0110-4b9d-a206-4ba458215b62",
+        "requestId": "9afac1dc-3f16-4acc-9ee9-7246e4f822f9",
+        "admittedAt": 1793567069997,
+        "startedAt": 1793567070004,
+        "finishedAt": 1793567070018,
+        "errorCode": null,
+        "outcomes": [
+          {
+            "id": "ddaceb58-d330-4798-afb6-a3011258049d",
+            "expectedConductorObjectId": "bd270d45-2c90-4420-8914-329a6614be43",
+            "conductorObjectId": "bd270d45-2c90-4420-8914-329a6614be43",
+            "kind": "housing_entry",
+            "position": [
+              92,
+              40
+            ],
+            "visibility": "visible",
+            "associationStatus": "proposed",
+            "contactPosition": null,
+            "contactVisibility": "occluded",
+            "modelConfidence": 0.7,
+            "evidenceSource": "muse",
+            "candidateIds": [
+              "5f22c128-a61d-4e85-a773-5ec9d30e5e9d"
+            ],
+            "reason": "Synthetic visible insulation/housing junction. The conductive contact remains hidden.",
+            "electricalConnectionStatus": "unestablished"
+          },
+          {
+            "id": "8f9830e6-9095-49e1-afa8-057df65ce2f4",
+            "expectedConductorObjectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+            "conductorObjectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+            "kind": "housing_entry",
+            "position": [
+              80,
+              40
+            ],
+            "visibility": "visible",
+            "associationStatus": "proposed",
+            "contactPosition": null,
+            "contactVisibility": "occluded",
+            "modelConfidence": 0.7,
+            "evidenceSource": "muse",
+            "candidateIds": [
+              "6d1776ca-d4cd-4efe-a9f5-501a12c994f3"
+            ],
+            "reason": "Synthetic visible insulation/housing junction. The conductive contact remains hidden.",
+            "electricalConnectionStatus": "unestablished"
+          }
+        ],
+        "reviews": [],
+        "effectiveOutcomes": [
+          {
+            "id": "ddaceb58-d330-4798-afb6-a3011258049d",
+            "expectedConductorObjectId": "bd270d45-2c90-4420-8914-329a6614be43",
+            "conductorObjectId": "bd270d45-2c90-4420-8914-329a6614be43",
+            "kind": "housing_entry",
+            "position": [
+              92,
+              40
+            ],
+            "visibility": "visible",
+            "associationStatus": "proposed",
+            "contactPosition": null,
+            "contactVisibility": "occluded",
+            "modelConfidence": 0.7,
+            "evidenceSource": "muse",
+            "candidateIds": [
+              "5f22c128-a61d-4e85-a773-5ec9d30e5e9d"
+            ],
+            "reason": "Synthetic visible insulation/housing junction. The conductive contact remains hidden.",
+            "electricalConnectionStatus": "unestablished"
+          },
+          {
+            "id": "8f9830e6-9095-49e1-afa8-057df65ce2f4",
+            "expectedConductorObjectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+            "conductorObjectId": "0779ee88-4cc3-4473-9174-812af0b4a22e",
+            "kind": "housing_entry",
+            "position": [
+              80,
+              40
+            ],
+            "visibility": "visible",
+            "associationStatus": "proposed",
+            "contactPosition": null,
+            "contactVisibility": "occluded",
+            "modelConfidence": 0.7,
+            "evidenceSource": "muse",
+            "candidateIds": [
+              "6d1776ca-d4cd-4efe-a9f5-501a12c994f3"
+            ],
+            "reason": "Synthetic visible insulation/housing junction. The conductive contact remains hidden.",
+            "electricalConnectionStatus": "unestablished"
+          }
+        ],
+        "references": [],
+        "evaluations": [],
+        "accounting": {
+          "reservedRequests": 1,
+          "dispatchAttempts": 1,
+          "responsesRecorded": 1,
+          "unknownUsageRequests": 0,
+          "reservedPixels": 9248,
+          "dispatchedPixels": 9248,
+          "billedCost": null
+        },
+        "latency": {
+          "preparationMs": 42,
+          "queueMs": 7,
+          "providerMs": 5,
+          "totalMs": 21
+        },
+        "evidenceUrl": "/api/analyses/c39e3965-9de8-432f-94f0-cf6512ee4cdb/connector-junction-evidence?planId=66cfa4f55aaef863441396e5d2d1794bd9ca4beab6844837b21b33b32adfa51a"
+      }
+    ]
+  }
+}

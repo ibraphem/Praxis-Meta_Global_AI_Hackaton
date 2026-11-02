@@ -1514,3 +1514,38 @@ h1 > span {
   background: #f7f8f7;
   border-radius: 8px;
 }
+
+
+.connector-junction-panel {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, #d5ddd3);
+}
+.connector-junction-panel > h3 { font-weight: 650; }
+.connector-junction-panel p { margin: 8px 0; font-size: 13px; }
+.connector-junction-panel details { margin: 12px 0; }
+.connector-junction-panel summary { cursor: pointer; font-weight: 600; }
+.connector-junction-panel label { margin: 8px 0; font-size: 13px; }
+.connector-junction-panel input:not([type=checkbox]):not([type=file]),
+.connector-junction-panel select,
+.connector-junction-panel textarea {
+  padding: 6px 8px;
+  border: 1px solid #aabbb0;
+  border-radius: 5px;
+  background: white;
+  max-width: 100%;
+}
+.connector-junction-panel select { width: 100%; white-space: normal; }
+.connector-junction-panel textarea { display: block; width: 100%; min-height: 64px; }
+.connector-junction-panel .button { margin: 4px 4px 4px 0; white-space: normal; }
+.connector-junction-panel [role=group] { border-radius: 8px; background: #f7faf6; }
+
+
+.connectivity-panel { margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.connectivity-panel h3 { font-weight: 650; }
+.connectivity-panel p { margin: 8px 0; font-size: 13px; }
+.connectivity-panel label { display: block; font-size: 13px; margin: 8px 0; }
+.connectivity-panel input:not([type=checkbox]):not([type=file]), .connectivity-panel select, .connectivity-panel textarea { display: block; width: 100%; border: 1px solid #aabbb0; border-radius: 5px; padding: 6px 8px; background: white; }
+.connectivity-panel details { margin: 12px 0; }
+.connectivity-panel summary { cursor: pointer; font-weight: 600; }
+.connectivity-panel .button { margin: 4px 6px 4px 0; white-space: normal; }

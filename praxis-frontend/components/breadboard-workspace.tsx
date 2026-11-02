@@ -2,6 +2,13 @@
 /* Blob photographs must be rendered directly, without an image optimizer. */
 /* eslint-disable @next/next/no-img-element */
 
+import {
+  ConnectivityPanel,
+  ConnectivityOverlay,
+  type CircuitHighlight,
+  type CircuitWorkspace,
+} from "./connectivity-panel";
+import type { ConnectivityView } from "@/lib/connectivity";
 import type { AnalysisJob } from "@/lib/analysis-jobs";
 import { buildSceneEvaluationEvidence } from "@/lib/scene-evaluation-bundle";
 import type { RuntimeFingerprint } from "@/lib/runtime-schema";
@@ -109,13 +116,13 @@ const message = (error: unknown) =>
     ? error.message
     : "Calibration could not be completed.";
 
-/** All calibration stays in memory for this photograph. No extra image/API transmission. */
+/** Geometry remains photograph-bound; Connectivity explicitly persists reviewed workspace records. */
 export function BreadboardWorkspace({
   image,
   imageUrl,
   disabled,
   children,
-  assignmentContext,
+  assignmentContext: suppliedAssignmentContext,
   selectedWireId = null,
   onSelectWire,
   overlaysVisible = true,
@@ -140,6 +147,24 @@ export function BreadboardWorkspace({
     gridPoints: [number, number][];
   }) => void;
 }) {
+  const [restoredPhotoId, setRestoredPhotoId] = useState<string | null>(null);
+  const assignmentContext = useMemo(
+    () =>
+      suppliedAssignmentContext
+        ? {
+            ...suppliedAssignmentContext,
+            photoId: restoredPhotoId ?? suppliedAssignmentContext.photoId,
+          }
+        : undefined,
+    [suppliedAssignmentContext, restoredPhotoId],
+  );
+  const [connectivityView, setConnectivityView] =
+    useState<ConnectivityView | null>(null);
+  const [circuitHighlight, setCircuitHighlight] = useState<CircuitHighlight>({
+    pointIds: [],
+    componentIds: [],
+    connectionIds: [],
+  });
   const [boards, setBoards] = useState<Board[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const nextBoard = useRef(1);
@@ -199,6 +224,41 @@ export function BreadboardWorkspace({
     disabled,
   ]);
   const nextAssignment = useRef(1);
+  const restoreCircuitWorkspace = useCallback(
+    (saved: CircuitWorkspace) => {
+      setBoards((current) => (current.length ? current : saved.boards));
+      setAssignments((current) =>
+        current.length ? current : saved.assignments,
+      );
+      setReviews((current) => (current.length ? current : saved.reviews));
+      setRestoredPhotoId(saved.photoId);
+      setActiveId(
+        (current) =>
+          current ?? saved.boards[0]?.calibration.breadboardId ?? null,
+      );
+      nextBoard.current = Math.max(
+        nextBoard.current,
+        ...saved.boards.map(
+          (b) => Number(b.calibration.breadboardId.replace("board_", "")) + 1,
+        ),
+      );
+      nextAssignment.current = Math.max(
+        nextAssignment.current,
+        ...saved.assignments.map(
+          (a) => Number(a.id.replace("connection_", "")) + 1,
+        ),
+      );
+    },
+    [
+      setBoards,
+      setAssignments,
+      setReviews,
+      setRestoredPhotoId,
+      setActiveId,
+      nextBoard,
+      nextAssignment,
+    ],
+  );
   const [editingReference, setEditingReference] = useState<number | null>(null);
   const [pointer, setPointer] = useState<Point | null>(null);
   const photoRef = useRef<HTMLImageElement>(null);
@@ -1026,6 +1086,27 @@ export function BreadboardWorkspace({
           capturedAt,
         }),
         endpointRequests,
+        connectivity: connectivityView
+          ? {
+              ...connectivityView,
+              localWorkspaceUnsaved:
+                JSON.stringify([boards, assignments, reviews]) !==
+                JSON.stringify([
+                  (
+                    connectivityView.source?.workspace as
+                      CircuitWorkspace | undefined
+                  )?.boards,
+                  (
+                    connectivityView.source?.workspace as
+                      CircuitWorkspace | undefined
+                  )?.assignments,
+                  (
+                    connectivityView.source?.workspace as
+                      CircuitWorkspace | undefined
+                  )?.reviews,
+                ]),
+            }
+          : null,
         runtime: {
           frontend: FRONTEND_RUNTIME,
           backendProducer:
@@ -1174,6 +1255,14 @@ export function BreadboardWorkspace({
             draggable="false"
           />
           {!activeAudit && children}
+          {!activeAudit && overlaysVisible && connectivityView?.graph && (
+            <ConnectivityOverlay
+              graph={connectivityView.graph.graph}
+              highlight={circuitHighlight}
+              image={image}
+            />
+          )}
+
           {(enabled || picking || activeAudit) && !disabled && (
             <>
               {!activeAudit && (
@@ -1320,6 +1409,24 @@ export function BreadboardWorkspace({
             </button>
           )}
         </>
+      )}
+      {analysisJob && assignmentContext && (
+        <ConnectivityPanel
+          key={analysisJob.analysisId}
+          job={analysisJob}
+          workspace={{
+            boards,
+            assignments,
+            reviews,
+            photoId: assignmentContext.photoId,
+            analysisRunId: assignmentContext.analysisRunId,
+          }}
+          selectedHole={selected}
+          onRestore={restoreCircuitWorkspace}
+          onView={setConnectivityView}
+          onHighlight={setCircuitHighlight}
+          busy={disabled || !!draft || !!railPoints || !!activeAudit}
+        />
       )}
       {assignmentContext && imageFile && (
         <section aria-label="Evaluation export" style={{ margin: "12px 0" }}>
@@ -1903,8 +2010,8 @@ export function BreadboardWorkspace({
               the center gap separates them. Confirm the overlay against your
               board. Geometry is user calibrated; hole visibility, contact, and
               actual continuity are not verified. Recalibrating clears
-              registered rails. Nothing is saved after this photograph is
-              replaced or the page is reloaded.
+              registered rails. Use Connectivity to save calibration and reviews
+              with this analysis. Unsaved changes are lost on reload.
             </p>
           </fieldset>
         </section>

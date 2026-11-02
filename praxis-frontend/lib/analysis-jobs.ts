@@ -1,3 +1,4 @@
+import { junctionRecordSchema } from "./connector-junctions";
 import {
   sceneGraphSchema,
   sceneSnapshotRefSchema,
@@ -61,6 +62,10 @@ export const attemptSchema = z
       .enum(["inventory", "guided", "terminals", "reconcile"])
       .optional(),
     terminalObjectIds: z.array(z.uuid()).max(2).optional(),
+    junctionPlanId: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     guidedObjectIds: z.array(z.uuid()).max(3).optional(),
     inventoryOnly: z.boolean().optional(),
     sceneSnapshotId: z.uuid().optional(),
@@ -163,6 +168,7 @@ export const analysisJobSchema = z
     sam: stageSchema.extend({ snapshotRef: snapshotRefSchema.optional() }),
     muse: stageSchema.extend({ resultAttemptId: z.uuid().optional() }),
     connectorValidation: connectorValidationSummarySchema.optional(),
+    connectorJunctions: z.array(junctionRecordSchema).max(20).optional(),
     automaticTargeting: z
       .array(automaticTargetingRecordSchema)
       .max(20)
@@ -220,6 +226,19 @@ export const analysisJobSchema = z
       ctx.addIssue({
         code: "custom",
         message: "Scene evidence belongs to a different photograph.",
+      });
+    if (
+      job.connectorJunctions?.some(
+        (r) =>
+          r.plan.analysisId !== job.analysisId ||
+          r.plan.imageHash !== job.imageHash ||
+          r.plan.image.width !== job.image.width ||
+          r.plan.image.height !== job.image.height,
+      )
+    )
+      ctx.addIssue({
+        code: "custom",
+        message: "Junction evidence does not match this photograph.",
       });
     if (
       job.scene?.snapshotRef &&

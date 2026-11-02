@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "praxis-reference-circuit-v1",
+  "id": "synthetic-night-light",
+  "version": 1,
+  "name": "SYNTHETIC night-light logical netlist; no physical pinout",
+  "qualification": "synthetic_fixture",
+  "schematicSource": "Manually authored abstract fixture for deterministic graph tests, not the intended physical demonstration schematic.",
+  "reviewer": "synthetic_fixture",
+  "components": [
+    {
+      "id": "supply",
+      "type": "power_source",
+      "terminalRoles": ["positive", "negative"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    },
+    {
+      "id": "led",
+      "type": "led",
+      "terminalRoles": ["anode", "cathode"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    },
+    {
+      "id": "r_led",
+      "type": "resistor",
+      "terminalRoles": ["terminal1", "terminal2"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    },
+    {
+      "id": "ldr",
+      "type": "ldr",
+      "terminalRoles": ["terminal1", "terminal2"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    },
+    {
+      "id": "r_bias",
+      "type": "resistor",
+      "terminalRoles": ["terminal1", "terminal2"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    },
+    {
+      "id": "r_base",
+      "type": "resistor",
+      "terminalRoles": ["terminal1", "terminal2"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    },
+    {
+      "id": "q",
+      "type": "npn_transistor",
+      "terminalRoles": ["base", "collector", "emitter"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": "Abstract named ports only; no package orientation or physical lead order"
+    },
+    {
+      "id": "jumper",
+      "type": "jumper_wire",
+      "terminalRoles": ["a", "b"],
+      "value": null,
+      "partNumber": null,
+      "package": null,
+      "pinoutSource": null
+    }
+  ],
+  "nets": [
+    {
+      "id": "vcc",
+      "terminals": ["supply:positive", "r_led:terminal1", "r_bias:terminal1"]
+    },
+    {
+      "id": "ground",
+      "terminals": ["supply:negative", "q:emitter", "ldr:terminal2"]
+    },
+    { "id": "led-feed", "terminals": ["r_led:terminal2", "led:anode"] },
+    {
+      "id": "collector",
+      "terminals": ["led:cathode", "jumper:a", "jumper:b", "q:collector"]
+    },
+    {
+      "id": "sense",
+      "terminals": ["r_bias:terminal2", "ldr:terminal1", "r_base:terminal1"]
+    },
+    { "id": "base", "terminals": ["r_base:terminal2", "q:base"] }
+  ],
+  "rules": [
+    {
+      "id": "led-collector-path",
+      "kind": "required_conductive_path",
+      "from": "led:cathode",
+      "to": "q:collector",
+      "jumper": "jumper"
+    }
+  ]
+}

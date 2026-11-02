@@ -1,3 +1,7 @@
+import {
+  parseConnectivityView,
+  parseConnectivityEvidence,
+} from "../connectivity";
 import { connectorAnnotationViewSchema } from "../connector-validation";
 import { randomUUID } from "node:crypto";
 import { analysisJobSchema } from "../analysis-jobs";
@@ -5,6 +9,19 @@ import { IMAGE_TYPES, MAX_FILE_BYTES } from "../vision";
 import { readBounded, BoundedReadError } from "./bounded-body";
 
 type Action =
+  | "connectivity-evidence"
+  | "connectivity"
+  | "save-connectivity-workspace"
+  | "review-connectivity"
+  | "build-connectivity"
+  | "register-connectivity-reference"
+  | "compare-connectivity"
+  | "prepare-connector-junctions"
+  | "run-connector-junctions"
+  | "review-connector-junction"
+  | "freeze-junction-reference"
+  | "evaluate-connector-junctions"
+  | "connector-junction-evidence"
   | "prepare-automatic-targeting"
   | "run-automatic-targeting"
   | "evaluate-automatic-targeting"
@@ -131,6 +148,16 @@ export function createAnalysisJobProxy(
           return fail(400, "INVALID_WORKFLOW", "Choose a saved experiment.");
         endpoint.searchParams.set("workflowId", workflowId);
       }
+      if (action === "connector-junction-evidence") {
+        const planId = url.searchParams.get("planId");
+        if (!planId || !/^[a-f0-9]{64}$/.test(planId))
+          return fail(
+            400,
+            "INVALID_JUNCTION_PLAN",
+            "Choose a frozen junction plan.",
+          );
+        endpoint.searchParams.set("planId", planId);
+      }
       const upstreamHeaders: Record<string, string> = {
         "X-Request-Id": requestId,
       };
@@ -169,9 +196,19 @@ export function createAnalysisJobProxy(
       phase = "backend.connect";
       if (
         [
+          "save-connectivity-workspace",
+          "review-connectivity",
+          "build-connectivity",
+          "register-connectivity-reference",
+          "compare-connectivity",
           "save-connector-reference",
           "freeze-connector-reference",
           "evaluate-connector-reference",
+          "prepare-connector-junctions",
+          "run-connector-junctions",
+          "review-connector-junction",
+          "freeze-junction-reference",
+          "evaluate-connector-junctions",
           "prepare-automatic-targeting",
           "run-automatic-targeting",
           "evaluate-automatic-targeting",
@@ -190,14 +227,16 @@ export function createAnalysisJobProxy(
         phase = "upload";
         body = await readBounded(
           request.body,
-          action === "prepare-automatic-targeting" ||
-            action === "save-connector-reference"
-            ? 8 * 1024 * 1024
-            : action === "evaluate-automatic-targeting"
-              ? 65536
-              : action === "recover-short-wires"
+          action.includes("connectivity")
+            ? 2 * 1024 * 1024
+            : action === "prepare-automatic-targeting" ||
+                action === "save-connector-reference"
+              ? 8 * 1024 * 1024
+              : action === "evaluate-automatic-targeting"
                 ? 65536
-                : 8192,
+                : action === "recover-short-wires"
+                  ? 65536
+                  : 8192,
           signal,
         );
         upstreamHeaders["Content-Type"] = "application/json";
@@ -206,6 +245,9 @@ export function createAnalysisJobProxy(
       const upstream = await fetcher(endpoint, {
         method: ![
           "get",
+          "connectivity",
+          "connectivity-evidence",
+          "connector-junction-evidence",
           "image",
           "automatic-targeting-evidence",
           "connector-annotation",
@@ -306,6 +348,24 @@ export function createAnalysisJobProxy(
             "The extension evidence changed, remains truncated, another attempt is active, or the verification budget is exhausted. Refresh the saved status.",
           ];
         }
+        if (
+          [
+            "prepare-connector-junctions",
+            "run-connector-junctions",
+            "review-connector-junction",
+            "freeze-junction-reference",
+            "evaluate-connector-junctions",
+          ].includes(action)
+        ) {
+          errors[400] = [
+            "INVALID_JUNCTION_REQUEST",
+            "Choose valid connector/conductor evidence and a complete visible-evidence review.",
+          ];
+          errors[409] = [
+            "JUNCTION_BLOCKED",
+            "Junction discovery requires an independently accepted Strategy C mask, current evidence, an unused attempt and sufficient budget. Reload the saved analysis.",
+          ];
+        }
         const [code, message] = errors[upstream.status] ?? [
           "ANALYSIS_UNAVAILABLE",
           "The saved analysis is unavailable. Check the backend connection.",
@@ -368,6 +428,61 @@ export function createAnalysisJobProxy(
             "Annotation view binding mismatch.",
           );
         return Response.json(view, { headers });
+      }
+      if (action === "connectivity-evidence") {
+        const bytes = await readBounded(
+            upstream.body,
+            48 * 1024 * 1024,
+            signal,
+          ),
+          evidence = parseConnectivityEvidence(
+            JSON.parse(new TextDecoder().decode(bytes)),
+            id!,
+          );
+        return Response.json(evidence, {
+          headers: {
+            ...headers,
+            "Content-Disposition":
+              'attachment; filename="praxis-connectivity-evidence.json"',
+          },
+        });
+      }
+      if (action.includes("connectivity")) {
+        const bytes = await readBounded(upstream.body, 8 * 1024 * 1024, signal);
+        return Response.json(
+          parseConnectivityView(
+            JSON.parse(new TextDecoder().decode(bytes)),
+            id!,
+          ),
+          { headers },
+        );
+      }
+      if (action === "connector-junction-evidence") {
+        const bytes = await readBounded(
+            upstream.body,
+            48 * 1024 * 1024,
+            signal,
+          ),
+          e = JSON.parse(new TextDecoder().decode(bytes));
+        if (
+          e.schemaVersion !== "praxis-connector-junction-evidence-v1" ||
+          e.analysisId !== id ||
+          e.record?.plan?.analysisId !== id ||
+          e.record?.plan?.planId !== url.searchParams.get("planId")
+        )
+          return fail(
+            502,
+            "INVALID_BACKEND_RESPONSE",
+            "Junction evidence binding mismatch.",
+          );
+        return new Response(bytes, {
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+            "Content-Disposition":
+              'attachment; filename="praxis-connector-junction-evidence.json"',
+          },
+        });
       }
       if (action === "connector-validation-evidence") {
         const bytes = await readBounded(

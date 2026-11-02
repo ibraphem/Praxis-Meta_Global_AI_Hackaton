@@ -23,7 +23,11 @@ export interface SceneRequestEvidence {
   };
   createdAt: number;
   dispatchStartedAt?: number;
-  request?: { path: 'responses'; payload: string; sha256: string };
+  request?: {
+    path: 'responses' | 'chat/completions';
+    payload: string;
+    sha256: string;
+  };
   response?: {
     upstreamStatus: number;
     contentType: string | null;
@@ -53,6 +57,7 @@ export class SceneRequestRecorder {
     private readonly transition?: (
       phase: 'dispatching' | 'response_recorded',
     ) => void,
+    private readonly path: 'responses' | 'chat/completions' = 'responses',
   ) {
     store.db
       .prepare('INSERT INTO scene_requests VALUES (?,?,?)')
@@ -88,7 +93,7 @@ export class SceneRequestRecorder {
         throw new Error('Scene request evidence cannot be dispatched twice.');
       this.change('dispatching', () => {
         this.record.request = {
-          path: 'responses',
+          path: this.path,
           payload,
           sha256: sha256(payload),
         };

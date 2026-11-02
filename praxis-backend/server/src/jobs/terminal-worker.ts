@@ -1,4 +1,5 @@
 import { assertConnectorTerminalGate } from './connector-validation-gate.js';
+import { ConnectorJunctionService } from './connector-junctions.js';
 import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.js';
 import type { MetaClient } from '../lib/meta-client.js';
@@ -24,6 +25,16 @@ export async function runTerminalStage(
   trace: AnalysisTrace,
 ) {
   const attempt = lastAttempt(job, 'scene')!;
+  if (attempt.junctionPlanId)
+    return new ConnectorJunctionService(store).runWorker(
+      job,
+      owner,
+      attemptId,
+      config,
+      client,
+      signal,
+      trace,
+    );
   if (!attempt.sceneSnapshotId || !attempt.terminalObjectIds?.length)
     throw new AppError(
       409,
