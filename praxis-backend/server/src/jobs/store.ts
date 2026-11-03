@@ -1458,7 +1458,9 @@ export class JobStore {
     ])
       this.db
         .prepare(
-          `DELETE FROM ${table} WHERE analysis_id NOT IN (SELECT id FROM jobs)`,
+          // Pre-upload sessions/captures have no analysis yet. In SQLite,
+          // NULL NOT IN an empty jobs table is true and would delete them.
+          `DELETE FROM ${table} WHERE analysis_id IS NOT NULL AND analysis_id NOT IN (SELECT id FROM jobs)`,
         )
         .run();
     this.db

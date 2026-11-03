@@ -23,6 +23,71 @@ import {
 import { syntheticTwoLed } from './fixtures/two-led.js';
 const frameHash = (b: Buffer) => createHash('sha256').update(b).digest('hex');
 const pause = () => new Promise((r) => setTimeout(r, 15));
+test('idle recovery preserves sessions and unuploaded captures across restart', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'praxis-camera-setup-')),
+    config = testConfig();
+  let store = new JobStore(config, dir);
+  try {
+    const service = new CircuitSessionService(store),
+      initial = service.create(),
+      id = initial.session.sessionId;
+    assert.equal(store.claim('idle-worker-before-capture'), undefined);
+    assert.equal(service.view(id).session.sessionId, id);
+    const prepared = service.prepare(id, {
+        expectedRevision: initial.session.revision,
+        purpose: 'setup',
+        frameHash: 'a'.repeat(64),
+        width: 640,
+        height: 480,
+        capturedAt: Date.now(),
+      }),
+      captureId = prepared.captures[0]!.plan.captureId;
+    assert.equal(store.claim('idle-worker-before-approval'), undefined);
+    store.close();
+    store = new JobStore(config, dir);
+    store.recover();
+    store.cleanup();
+    const resumed = new CircuitSessionService(store).view(id);
+    assert.equal(resumed.session.activeCaptureId, captureId);
+    assert.equal(resumed.captures.length, 1);
+    assert.equal(resumed.captures[0]!.analysisId, null);
+    assert.deepEqual(resumed.captures[0]!.plan, prepared.captures[0]!.plan);
+    const retaken = new CircuitSessionService(store).prepare(id, {
+      expectedRevision: resumed.session.revision,
+      purpose: 'setup',
+      frameHash: 'b'.repeat(64),
+      width: 640,
+      height: 480,
+      capturedAt: Date.now(),
+    });
+    assert.equal(retaken.captures.length, 2);
+    assert.notEqual(retaken.session.activeCaptureId, captureId);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('recovery removes records linked to missing analyses while keeping new sessions', () => {
+  const store = new JobStore(testConfig(), ':memory:'),
+    service = new CircuitSessionService(store);
+  try {
+    const fresh = service.create(),
+      orphan = service.create();
+    store.db
+      .prepare('UPDATE circuit_sessions SET analysis_id=? WHERE id=?')
+      .run('removed-analysis', orphan.session.sessionId);
+    store.recover();
+    assert.equal(
+      service.view(fresh.session.sessionId).session.sessionId,
+      fresh.session.sessionId,
+    );
+    assert.throws(() => service.view(orphan.session.sessionId), /unavailable/);
+  } finally {
+    store.close();
+  }
+});
+
 async function finish(store: JobStore, id: string) {
   for (let i = 0; i < 100; i++) {
     const j = store.get(id);
