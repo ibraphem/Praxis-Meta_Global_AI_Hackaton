@@ -28,6 +28,9 @@ const nextConfig: NextConfig = {
     ];
   },
   outputFileTracingRoot: resolve(process.cwd(), ".."),
+  typescript: {
+    tsconfigPath: "tsconfig.build.json",
+  },
   env: { NEXT_PUBLIC_PRAXIS_BUILD_ID: frontendBuildId(process.cwd()) },
   experimental: {
     agentFeedback: true,
@@ -36,6 +39,11 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   turbopack: {
     root: resolve(process.cwd(), ".."),
+    // Shared backend schemas are compiled into the frontend. Resolve their Zod
+    // imports from this app's installation when the backend is not installed.
+    resolveAlias: {
+      zod: "./node_modules/zod",
+    },
     rules: {
       // Tailwind owns the global entry. CSS modules must retain Next's native
       // module transform rather than being rewritten as ordinary CSS.

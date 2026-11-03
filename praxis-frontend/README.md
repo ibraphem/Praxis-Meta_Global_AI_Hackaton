@@ -95,6 +95,24 @@ Configure these **server-only** variables and restart Next.js:
 Do not prefix these variables with `NEXT_PUBLIC_`. Meta credentials belong only in
 the backend. No credentials are included in the browser bundle.
 
+## Deploy to Vercel
+
+Set the Vercel **Root Directory** to `praxis-frontend`, use the **Next.js** preset,
+and enable **Include source files outside of the Root Directory in the Build Step**.
+The frontend imports shared schemas and camera utilities from `praxis-backend/server/src`;
+those source files must be available even when the backend runs separately through ngrok.
+The install and build commands are `npm ci` and `npm run build`.
+
+The frontend resolves shared schema imports of Zod from its own installation.
+`tsconfig.build.json` checks application code during production builds, excluding
+offline benchmark scripts and tests that require local backend tools. `npm run typecheck`
+still checks the full development project. Installing backend dependencies is not
+required for the deployed frontend build.
+
+Set `PRAXIS_BACKEND_URL` to the backend's HTTPS URL and `PRAXIS_API_TOKEN` to the
+backend's matching token in Vercel's server-side environment settings, then redeploy.
+See the [ngrok walkthrough](../docs/camera-demo.md#deploy-the-frontend-and-tunnel-the-local-backend-with-ngrok).
+
 ## Use the workspace
 
 1. Choose or drop **one JPEG, PNG, or WebP**, up to **8 MiB and 16 megapixels**.
