@@ -219,6 +219,77 @@ test("camera capture is frozen before explicit four-SAM approval, double clicks 
     )
     .toBe(1);
 });
+test("Capture setup recovers a failed session start and shows progress until the frame is ready", async ({
+  page,
+}) => {
+  await fakeCamera(page);
+  let created = 0,
+    prepared = 0,
+    modelRequests = 0;
+  let releasePreparation!: () => void;
+  const preparation = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  await page.route("**/api/circuit-sessions", (route) => {
+    created++;
+    return created === 1
+      ? route.fulfill({
+          status: 502,
+          json: { error: { message: "Could not create the camera session." } },
+        })
+      : route.fulfill({ json: fixture.empty });
+  });
+  await page.route("**/api/circuit-sessions/*/prepare-capture", async (route) => {
+    prepared++;
+    const body = route.request().postDataJSON();
+    expect(body.expectedRevision).toBe(fixture.empty.session.revision);
+    expect(body.purpose).toBe("setup");
+    const capture = {
+      ...fixture.initial.captures[0],
+      plan: { ...fixture.initial.captures[0].plan, ...body },
+      analysisId: null,
+      freshReview: null,
+    };
+    await preparation;
+    return route.fulfill({
+      json: {
+        ...fixture.empty,
+        session: {
+          ...fixture.empty.session,
+          revision: fixture.empty.session.revision + 1,
+          activeCaptureId: capture.plan.captureId,
+        },
+        captures: [capture],
+      },
+    });
+  });
+  for (const url of ["**/api/analyses**", "**/api/vision/**"])
+    await page.route(url, (route) => {
+      modelRequests++;
+      return route.abort();
+    });
+  try {
+    await page.goto("/camera");
+    await page.getByRole("button", { name: "Start camera", exact: true }).click();
+    await expect(page.locator(".bench-alert[role=alert]")).toContainText(
+      "Could not create the camera session.",
+    );
+    await page.getByRole("button", { name: "Capture setup", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Preparing capture…", exact: true }),
+    ).toBeDisabled();
+    await expect.poll(() => prepared).toBe(1);
+    expect(created).toBe(2);
+    releasePreparation();
+    await expect(
+      page.getByRole("heading", { name: "Ready to inspect?" }),
+    ).toBeVisible();
+    await expect(page.getByAltText("Frozen frame awaiting scan approval")).toBeVisible();
+    expect(modelRequests).toBe(0);
+  } finally {
+    releasePreparation();
+  }
+});
 test("HTTP on a LAN address explains HTTPS setup before requesting the camera or creating a session", async ({
   page,
 }) => {

@@ -386,8 +386,10 @@ discarded. Neither service logs photographs, prompts, credentials or model outpu
 Restart both services after upgrading, and rebuild first if using `npm start`.
 Default budgets are 45 seconds per Meta attempt, 180 seconds overall in the backend,
 and 190 seconds at the Next proxy. Existing environment values override defaults.
-The route's `maxDuration=360` is a deployment hint, not another local application
-timer. Your hosting platform may impose its own limits; those cutoffs cannot always
+The vision routes use `maxDuration=300` to fit Vercel Hobby's function limit. Keep
+`PRAXIS_PROXY_TIMEOUT_MS` below 300000 on Vercel so the application can report a
+timeout before the platform terminates the request. This deployment setting is not
+another local application timer. Platform cutoffs cannot always
 be classified by application code. See the [backend diagnostics guide](../praxis-backend/README.md#diagnose-a-timeout).
 
 Browser previews stay in component memory and blob URLs are revoked on replacement.

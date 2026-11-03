@@ -67,6 +67,7 @@ export function CircuitCameraWorkspace() {
     [photo, setPhoto] = useState<Photograph | null>(null),
     [selected, setSelected] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
+    [capturing, setCapturing] = useState(false),
     [error, setError] = useState(""),
     [cameraOn, setCameraOn] = useState(false),
     [videoAspect, setVideoAspect] = useState(4 / 3),
@@ -337,21 +338,26 @@ export function CircuitCameraWorkspace() {
   }, [api, job, view, keep]); // polling never dispatches inference
   const stageCapture = async (
     purpose: "setup" | "assessment" | "verification",
+    session: CircuitSessionView,
   ) => {
     if (!video.current) throw Error("Start the camera.");
     const captured = await captureCamera(video.current),
       url = URL.createObjectURL(captured.file);
     urls.current.push(url);
     const frameHash = await hashBytes(await captured.file.arrayBuffer());
-    const next = await api("prepare-capture", {
-      expectedRevision: view!.session.revision,
-      frameHash,
-      width: captured.width,
-      height: captured.height,
-      capturedAt: captured.capturedAt,
-      cameraFrame: captured.cameraFrame,
-      purpose,
-    });
+    const next = await api(
+      "prepare-capture",
+      {
+        expectedRevision: session.session.revision,
+        frameHash,
+        width: captured.width,
+        height: captured.height,
+        capturedAt: captured.capturedAt,
+        cameraFrame: captured.cameraFrame,
+        purpose,
+      },
+      session.session.sessionId,
+    );
     keep(next);
     setPending({ ...captured, url });
     setFreshConfirmed(false);
@@ -646,13 +652,20 @@ export function CircuitCameraWorkspace() {
     if (!view) keep(await api("create"));
   };
   const takeFrame = async (verify = false) => {
-    if (!cameraOn) await start();
-    if (!view) throw Error("Start a camera session first.");
-    await stageCapture(
-      verify ? "verification" : qualified ? "assessment" : "setup",
-    );
-    setDisplayMode("capture");
-    setCannotSee(false);
+    setCapturing(true);
+    try {
+      if (!cameraOn) await start();
+      const session = view ?? (await api("create"));
+      if (!view) keep(session);
+      await stageCapture(
+        verify ? "verification" : qualified ? "assessment" : "setup",
+        session,
+      );
+      setDisplayMode("capture");
+      setCannotSee(false);
+    } finally {
+      if (alive.current) setCapturing(false);
+    }
   };
   const reviewCapture = async () => {
     if (!boundCapture || !input) return;
@@ -1024,10 +1037,15 @@ export function CircuitCameraWorkspace() {
             <button
               className="bench-button bench-button-dark"
               disabled={busy || !cameraOn || !!pending || analyzing}
+              aria-busy={capturing}
               onClick={() => work(() => takeFrame())}
             >
               <BenchIcon name="camera" />
-              {qualified ? "Capture circuit" : "Capture setup"}
+              {capturing
+                ? "Preparing capture…"
+                : qualified
+                  ? "Capture circuit"
+                  : "Capture setup"}
             </button>
           </div>
           {boundCapture?.freshReview && cameraOn && (

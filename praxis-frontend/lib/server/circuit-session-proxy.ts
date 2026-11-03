@@ -68,7 +68,7 @@ export function createCircuitSessionProxy(
             ...(env.PRAXIS_API_TOKEN
               ? { Authorization: `Bearer ${env.PRAXIS_API_TOKEN}` }
               : {}),
-            "Content-Type": "application/json",
+            ...(body ? { "Content-Type": "application/json" } : {}),
           },
           body,
           signal,
