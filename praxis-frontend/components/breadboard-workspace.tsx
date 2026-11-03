@@ -118,6 +118,7 @@ const message = (error: unknown) =>
 
 /** Geometry remains photograph-bound; Connectivity explicitly persists reviewed workspace records. */
 export function BreadboardWorkspace({
+  setupOnly = false,
   image,
   imageUrl,
   disabled,
@@ -130,7 +131,10 @@ export function BreadboardWorkspace({
   backendRuntime,
   analysisJob,
   onRecoveryContext,
+  onConnectivityChange,
 }: {
+  setupOnly?: boolean;
+  onConnectivityChange?: () => void;
   image: ImageSize;
   imageUrl: string;
   disabled: boolean;
@@ -160,6 +164,13 @@ export function BreadboardWorkspace({
   );
   const [connectivityView, setConnectivityView] =
     useState<ConnectivityView | null>(null);
+  const recordConnectivityView = useCallback(
+    (v: ConnectivityView) => {
+      setConnectivityView(v);
+      onConnectivityChange?.();
+    },
+    [onConnectivityChange],
+  );
   const [circuitHighlight, setCircuitHighlight] = useState<CircuitHighlight>({
     pointIds: [],
     componentIds: [],
@@ -665,6 +676,12 @@ export function BreadboardWorkspace({
     clearPointer();
   }
   function beginAssignment() {
+    if (analysisJob?.captureContext) {
+      setNotice(
+        "Use the camera session endpoint preview to stay within this capture’s frozen budget.",
+      );
+      return;
+    }
     if (
       !assignmentContext ||
       !selectedWireId ||
@@ -1335,7 +1352,7 @@ export function BreadboardWorkspace({
             )}
         </div>
       </div>
-      {boards.length > 0 && assignmentContext && (
+      {!setupOnly && boards.length > 0 && assignmentContext && (
         <>
           <CalibrationValidationPanel
             photoId={assignmentContext.photoId}
@@ -1412,6 +1429,7 @@ export function BreadboardWorkspace({
       )}
       {analysisJob && assignmentContext && (
         <ConnectivityPanel
+          setupOnly={setupOnly}
           key={analysisJob.analysisId}
           job={analysisJob}
           workspace={{
@@ -1423,12 +1441,12 @@ export function BreadboardWorkspace({
           }}
           selectedHole={selected}
           onRestore={restoreCircuitWorkspace}
-          onView={setConnectivityView}
+          onView={recordConnectivityView}
           onHighlight={setCircuitHighlight}
           busy={disabled || !!draft || !!railPoints || !!activeAudit}
         />
       )}
-      {assignmentContext && imageFile && (
+      {!setupOnly && assignmentContext && imageFile && (
         <section aria-label="Evaluation export" style={{ margin: "12px 0" }}>
           <button
             type="button"
@@ -1459,7 +1477,8 @@ export function BreadboardWorkspace({
           </details>
         </section>
       )}
-      {assignmentContext &&
+      {!setupOnly &&
+        assignmentContext &&
         !activeAudit &&
         (assignmentContext.analysis || assignments.length > 0) && (
           <>
@@ -1492,7 +1511,7 @@ export function BreadboardWorkspace({
                   ? proposalError.message
                   : ""
               }
-              canPropose={!!imageFile}
+              canPropose={!!imageFile && !analysisJob?.captureContext}
               onPropose={(focused, closeups, normalized) =>
                 void proposeEndpoints(focused, closeups, normalized)
               }

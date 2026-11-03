@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Praxis — Vision workspace",
+  title: "Praxis — Circuit workbench",
   description:
-    "A clearer picture of your workspace. Identify breadboards, LEDs, resistors, and jumper wires with Praxis.",
+    "See your circuit, inspect its connections, and verify a repair with Praxis.",
   applicationName: "Praxis",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Praxis" },
   icons: { icon: "/icon.svg", apple: "/apple-touch-icon.png" },

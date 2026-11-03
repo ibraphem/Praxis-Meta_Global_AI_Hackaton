@@ -72,6 +72,10 @@ npm run dev
 Open **http://127.0.0.1:3001**. The backend defaults to port 3000; the frontend uses
 3001 so they can run together. Both development services bind to loopback.
 
+For a phone camera over Wi-Fi, use `npm run dev:https` after setting up a trusted
+LAN certificate. HTTP access through the computer's IP cannot start the phone's
+camera. See the [phone setup instructions](../docs/camera-demo.md#use-the-camera-from-a-phone).
+
 The default backend URL works without a frontend env file. If the backend uses a
 different address or requires a token:
 
@@ -1060,3 +1064,7 @@ component leads. A favorable result appears as model evidence; the human-verifie
 and electrical connection status stay unchanged. Record human identity decisions
 separately, retain `unknown` for unsupported insertions, and evaluate all ten planned
 endpoints against the frozen benchmark. No new accuracy claim follows from these checks.
+
+## Fixed-camera circuit demonstration
+
+Open **Camera demo** (`/camera`) from the main workspace. See the [setup and UI walkthrough](../docs/camera-demo.md) and [software validation report](../docs/camera-demo-validation.md). Physical qualification remains pending; no hand tracking is used.

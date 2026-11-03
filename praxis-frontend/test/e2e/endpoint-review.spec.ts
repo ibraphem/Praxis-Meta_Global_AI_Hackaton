@@ -127,7 +127,7 @@ async function setup(
     return route.fulfill({ status: 202, json: job });
   });
   await page.route("**/api/vision/endpoints", endpointReply);
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);
@@ -925,7 +925,7 @@ test("retained masks stay selectable and disclose conflicts before endpoint revi
   await page.route("**/api/analyses", (route) =>
     route.fulfill({ status: 202, json: completedJob(retained) }),
   );
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);

@@ -90,7 +90,7 @@ test("workspace prepares, explicitly authorizes, reviews and exports the shared 
       return route.fulfill({ json: job });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", {
     name: "Automatic connector targeting",
   });
@@ -185,7 +185,7 @@ test("v2 preparation exposes missing evidence and exports its frozen three-strat
       return route.fulfill({ status: 409 });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", {
     name: "Automatic connector targeting",
   });

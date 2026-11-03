@@ -69,7 +69,7 @@ test("synthetic connectivity fault is inspectable, correctable through the exist
       return r.fulfill({ json: view });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", { name: "Connectivity", exact: true });
   await expect(panel).toBeVisible();
   await panel

@@ -21,6 +21,7 @@ export interface Photograph {
   height: number;
 }
 interface Props {
+  setupOnly?: boolean;
   photograph: Photograph | null;
   result: Analysis | null;
   sceneGraph?: SceneGraph;
@@ -35,6 +36,9 @@ interface Props {
   backendRuntime?: RuntimeFingerprint | null;
   onSelect: (id: string) => void;
   onChoose: () => void;
+  onHover?: (id: string | null) => void;
+  onConnectivityChange?: () => void;
+  wireAssessment?: { id: string; status: "fault" | "restored" } | null;
   onRecoveryContext?: (context: {
     pitchPx: number;
     gridPoints: [number, number][];
@@ -42,6 +46,7 @@ interface Props {
 }
 
 export function ImagePreview({
+  setupOnly = false,
   photograph,
   result,
   sceneGraph,
@@ -56,6 +61,9 @@ export function ImagePreview({
   backendRuntime,
   onSelect,
   onChoose,
+  onHover,
+  onConnectivityChange,
+  wireAssessment,
   onRecoveryContext,
 }: Props) {
   if (!photograph)
@@ -112,6 +120,8 @@ export function ImagePreview({
     >
       <div className="stage-grid" aria-hidden="true" />
       <BreadboardWorkspace
+        setupOnly={setupOnly}
+        onConnectivityChange={onConnectivityChange}
         key={photograph.url}
         image={{ width: photograph.width, height: photograph.height }}
         imageUrl={photograph.url}
@@ -195,6 +205,8 @@ export function ImagePreview({
                   );
                 })}
               <WireOverlays
+                onHover={onHover}
+                wireAssessment={wireAssessment}
                 result={result}
                 selectedId={selectedId}
                 onSelect={onSelect}

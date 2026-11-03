@@ -7,10 +7,14 @@ export function WireOverlays({
   result,
   selectedId,
   onSelect,
+  onHover,
+  wireAssessment,
 }: {
   result: Analysis;
   selectedId: string | null;
   onSelect: (id: string) => void;
+  onHover?: (id: string | null) => void;
+  wireAssessment?: { id: string; status: "fault" | "restored" } | null;
 }) {
   const wires = result.objects.filter(
     (object) => object.type === "jumper_wire" && object.mask,
@@ -36,10 +40,34 @@ export function WireOverlays({
               aria-label={`Inspect ${componentLabel(object)} mask`}
               aria-pressed={selectedId === object.id}
               className={`wire-mask ${selectedId === object.id ? "selected" : ""} ${object.interpretation === "uncertain" ? "uncertain" : ""}`}
-              fill={color}
-              stroke={color}
+              fill={
+                wireAssessment?.id === object.id
+                  ? wireAssessment.status === "fault"
+                    ? "#c43a35"
+                    : "#278066"
+                  : color
+              }
+              stroke={
+                wireAssessment?.id === object.id
+                  ? wireAssessment.status === "fault"
+                    ? "#c43a35"
+                    : "#278066"
+                  : color
+              }
+              style={
+                wireAssessment?.id === object.id &&
+                wireAssessment.status === "fault"
+                  ? {
+                      animation: "camera-fault-pulse 1.2s ease-in-out infinite",
+                    }
+                  : undefined
+              }
               fillRule="evenodd"
               vectorEffect="non-scaling-stroke"
+              onMouseEnter={() => onHover?.(object.id)}
+              onMouseLeave={() => onHover?.(null)}
+              onFocus={() => onHover?.(object.id)}
+              onBlur={() => onHover?.(null)}
               onClick={() => onSelect(object.id)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
