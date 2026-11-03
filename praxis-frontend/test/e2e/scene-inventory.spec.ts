@@ -22,7 +22,7 @@ test("saved scene hypotheses remain selectable during discovery and inspection o
   await page.route(`**/api/analyses/${job.analysisId}/image`, (route) =>
     route.fulfill({ contentType: "image/png", body: image }),
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", { name: "Reconciled scene objects" });
   await expect(panel).toBeVisible();
   const locations = page.getByLabel("Physical object hypotheses", {
@@ -107,7 +107,7 @@ test("disabled saved analysis offers discovery and displays returned object boxe
     };
     return route.fulfill({ status: 202, json: job });
   });
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", { name: "Dynamic scene inventory" });
   await expect(panel).toContainText("Not run for this analysis");
   await expect(panel).toContainText(
@@ -216,7 +216,7 @@ test("terminal proposals preserve unresolved roles and attachments without chang
       return route.fulfill({ status: 202, json: job });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", { name: "Reconciled scene objects" });
   await panel
     .getByRole("button", { name: /9V battery snap connector/ })
@@ -279,7 +279,7 @@ test("proposed identity groups are inspectable and separable and a review only c
       return route.fulfill({ json: job });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", { name: "Reconciled scene objects" });
   await expect(panel).toContainText("Grouped by proposal · 2 members");
   await panel
@@ -389,7 +389,7 @@ test("guided segmentation submits the bounded targets and exposes independent ma
     ];
     return r.fulfill({ json: job });
   });
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", { name: "Reconciled scene objects" });
   await panel
     .getByRole("button", { name: "Segment scene targets (1)", exact: true })
@@ -498,7 +498,7 @@ test("ambiguity clusters expose stable members and retain checkpoint-bound revie
       return route.fulfill({ json: job });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const section = page.getByRole("region", {
     name: "Identity ambiguity clusters",
   });

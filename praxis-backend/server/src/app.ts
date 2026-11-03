@@ -1,3 +1,4 @@
+import { registerCircuitSessionRoutes } from './routes/circuit-sessions.js';
 import { admittedClient } from './jobs/model-admission.js';
 import { JobStore } from './jobs/store.js';
 import { AnalysisWorker, type VisionStages } from './jobs/worker.js';
@@ -112,11 +113,14 @@ export async function buildApp(
     config,
     traceLogger,
     jobOptions?.stages,
+    undefined,
+    jobOptions?.experimentClient,
   );
   const connectorWorkflow = new ConnectorWorkflowService(
     jobStore,
     jobOptions?.experimentClient,
   );
+  registerCircuitSessionRoutes(app, jobStore, () => worker.tick());
   registerAnalysisRoutes(
     app,
     config,
@@ -147,7 +151,25 @@ export async function buildApp(
   registerVisionRoute(
     app,
     config,
-    proposeEndpoints ?? createEndpointProposalService(config, client),
+    (bytes, signal, trace, context) => {
+      const analysisId =
+        typeof context === 'object' &&
+        context !== null &&
+        'analysisId' in context
+          ? String(context.analysisId)
+          : null;
+      if (analysisId) {
+        try {
+          jobStore.assertOrdinaryInference(analysisId);
+        } catch (e) {
+          if (!(e instanceof AppError) || e.code !== 'ANALYSIS_NOT_FOUND')
+            throw e;
+        }
+      }
+      return (
+        proposeEndpoints ?? createEndpointProposalService(config, client)
+      )(bytes, signal, trace, context);
+    },
     traceLogger,
     {
       path: '/api/vision/endpoints',

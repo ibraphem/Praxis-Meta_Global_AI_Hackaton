@@ -1,3 +1,4 @@
+import { CircuitSessionService } from '../jobs/circuit-sessions.js';
 import { ConnectivityService } from '../jobs/connectivity.js';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
@@ -112,7 +113,23 @@ export function registerAnalysisRoutes(
           'The image field is required.',
         );
       const image = await prepareImage(bytes, config);
-      const job = store.create(bytes, image);
+      const capturePlan = request.headers['x-praxis-capture-plan'];
+      let job;
+      try {
+        job =
+          typeof capturePlan === 'string'
+            ? new CircuitSessionService(store).upload(capturePlan, bytes, image)
+            : store.create(bytes, image);
+      } catch (e) {
+        if (e instanceof AppError) throw e;
+        throw new AppError(
+          409,
+          'STALE_CAPTURE',
+          e instanceof Error
+            ? e.message.slice(0, 300)
+            : 'The capture manifest is invalid.',
+        );
+      }
       // The durable commit precedes 202. Polling is not required for execution.
       setImmediate(kick);
       return reply.code(202).send(view(job.analysisId));

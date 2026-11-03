@@ -21,6 +21,7 @@ export interface SceneRequestEvidence {
     base64: string;
     bytes: number;
   };
+  inputImageDimensions?: { width: number; height: number }[];
   createdAt: number;
   dispatchStartedAt?: number;
   request?: {

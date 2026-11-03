@@ -80,7 +80,7 @@ test("junction markers support correction and unknown review while preserving or
       return route.fulfill({ json: job });
     },
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const panel = page.getByRole("region", {
     name: "Connector junction discovery",
   });

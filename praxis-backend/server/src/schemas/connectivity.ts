@@ -105,6 +105,21 @@ export const circuitComponentSchema = z
     terminalIds: z.array(id).max(16),
     state: connectionStateSchema,
     continuity: connectionStateSchema,
+    switchState: z.enum(['open', 'closed', 'unknown']).optional(),
+    switchStateEvidence: proofs.optional(),
+    contactAliases: z
+      .array(
+        z
+          .object({
+            terminalId: id,
+            contactTerminalId: id,
+            state: connectionStateSchema,
+            evidence: proofs,
+          })
+          .strict(),
+      )
+      .max(14)
+      .optional(),
     evidence: proofs,
   })
   .strict();

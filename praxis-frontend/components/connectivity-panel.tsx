@@ -24,6 +24,7 @@ export interface CircuitHighlight {
   unresolved?: boolean;
 }
 export function ConnectivityPanel({
+  setupOnly = false,
   job,
   workspace,
   selectedHole,
@@ -32,6 +33,7 @@ export function ConnectivityPanel({
   onHighlight,
   busy,
 }: {
+  setupOnly?: boolean;
   job: AnalysisJob;
   workspace: CircuitWorkspace;
   selectedHole: HoleSelection | null;
@@ -54,7 +56,11 @@ export function ConnectivityPanel({
     [electrical, setElectrical] = useState(false),
     [refText, setRefText] = useState(""),
     [contactTarget, setContactTarget] = useState(""),
-    [newLabel, setNewLabel] = useState("");
+    [newLabel, setNewLabel] = useState(""),
+    [switchState, setSwitchState] = useState("unknown"),
+    [switchSource, setSwitchSource] = useState(""),
+    [physicalLeg, setPhysicalLeg] = useState(""),
+    [aliasContact, setAliasContact] = useState("");
   useEffect(() => {
     const controller = new AbortController();
     fetch(`/api/analyses/${job.analysisId}/connectivity`, {
@@ -173,17 +179,29 @@ export function ConnectivityPanel({
   };
   return (
     <section className="connectivity-panel" aria-label="Connectivity">
-      <h3>Connectivity · Phase 5A</h3>
-      <p>
-        Build from reviewed topology and electrical associations. Green
-        highlights are confirmed; dashed amber markers are unresolved. No SAM or
-        Muse calls. Housing entries and hole proximity remain separate from
-        contact.
-      </p>
+      <h3>
+        {setupOnly
+          ? "Identify parts and confirm contacts"
+          : "Connectivity · Phase 5A"}
+      </h3>
+      {!setupOnly && (
+        <p>
+          Build from reviewed topology and electrical associations. Green
+          highlights are confirmed; dashed amber markers are unresolved. No SAM
+          or Muse calls. Housing entries and hole proximity remain separate from
+          contact.
+        </p>
+      )}
       <p role="status">
-        {input
-          ? `Evidence revision ${revision}; ${workspaceDirty ? "save workspace changes before review/build" : view!.graphStale ? "graph requires rebuild" : "graph current"}`
-          : "Save the calibrated workspace to begin."}
+        {setupOnly
+          ? !input
+            ? "Save the mapped board to begin identifying its contacts."
+            : workspaceDirty
+              ? "Save the board changes before reviewing contacts."
+              : "Review the components, their terminal roles and every relevant conductive contact."
+          : input
+            ? `Evidence revision ${revision}; ${workspaceDirty ? "save workspace changes before review/build" : view!.graphStale ? "graph requires rebuild" : "graph current"}`
+            : "Save the calibrated workspace to begin."}
       </p>
       {error && <p role="alert">{error}</p>}
       <label>
@@ -225,7 +243,7 @@ export function ConnectivityPanel({
           void action("build-connectivity", { expectedRevision: revision })
         }
       >
-        Build connectivity graph
+        {setupOnly ? "Check wiring map" : "Build connectivity graph"}
       </button>
       {input && (
         <>
@@ -346,6 +364,8 @@ export function ConnectivityPanel({
                       "battery",
                       "power_source",
                       "dc_power_source",
+                      "switch",
+                      "button",
                     ].map((t) => (
                       <option key={t}>{t}</option>
                     ))}
@@ -360,6 +380,106 @@ export function ConnectivityPanel({
                   For a conductor: both selected ends belong to the same intact
                   conductive wire
                 </label>
+                {["switch", "button"].includes(component.type) && (
+                  <fieldset>
+                    <legend>
+                      Switch state (typed device; ports stay distinct)
+                    </legend>
+                    <label>
+                      Observed switch state
+                      <select
+                        value={switchState}
+                        onChange={(e) => setSwitchState(e.target.value)}
+                      >
+                        <option>unknown</option>
+                        <option>open</option>
+                        <option>closed</option>
+                      </select>
+                    </label>
+                    <label>
+                      Verified switch contact mapping
+                      <input
+                        value={switchSource}
+                        onChange={(e) => setSwitchSource(e.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      disabled={
+                        disabled || !canReview || switchSource.trim().length < 8
+                      }
+                      onClick={() =>
+                        review("switch_state", component.id, {
+                          state: switchState,
+                          contactMappingSource: switchSource,
+                        })
+                      }
+                    >
+                      Save switch state evidence
+                    </button>
+                    <p>
+                      For a multi-leg button, register each additional leg
+                      against a verified effective contact, then confirm its
+                      physical hole using Terminal associations.
+                    </p>
+                    <label>
+                      Additional physical leg ID
+                      <input
+                        value={physicalLeg}
+                        onChange={(e) => setPhysicalLeg(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Same internal contact as
+                      <select
+                        aria-label="Switch alias contact"
+                        value={aliasContact}
+                        onChange={(e) => setAliasContact(e.target.value)}
+                      >
+                        <option value="">
+                          Choose verified effective contact
+                        </option>
+                        {input.terminals
+                          .filter(
+                            (t) =>
+                              t.componentId === component.id &&
+                              !component.contactAliases?.some(
+                                (a) => a.terminalId === t.id,
+                              ),
+                          )
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.role ?? t.label}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      disabled={
+                        disabled ||
+                        !canReview ||
+                        switchSource.trim().length < 8 ||
+                        !physicalLeg ||
+                        !aliasContact
+                      }
+                      onClick={() =>
+                        review("switch_contact", component.id, {
+                          physicalLegId: physicalLeg,
+                          contactTerminalId: aliasContact,
+                          contactMappingSource: switchSource,
+                        })
+                      }
+                    >
+                      Register verified physical leg alias
+                    </button>
+                    {component.contactAliases?.map((a) => (
+                      <p key={a.terminalId}>
+                        {a.terminalId} → {a.contactTerminalId} ({a.state})
+                      </p>
+                    ))}
+                  </fieldset>
+                )}
                 <button
                   type="button"
                   className="button button-secondary"
@@ -603,7 +723,7 @@ export function ConnectivityPanel({
           </details>
         </>
       )}
-      {graph && (
+      {graph && !setupOnly && (
         <details open>
           <summary>Electrical graph · {graph.nodes.length} nodes</summary>
           {(view!.graphStale || workspaceDirty) && (
@@ -678,110 +798,116 @@ export function ConnectivityPanel({
           </details>
         </details>
       )}
-      <details>
-        <summary>Reference circuit and fault diagnosis</summary>
-        <p>
-          Upload JSON containing a configurable reference and explicit component
-          mapping. Transistor package pinout and the intended real schematic
-          must be verified separately. Synthetic references remain labeled
-          synthetic.
-        </p>
-        <input
-          type="file"
-          aria-label="Connectivity reference circuit"
-          accept="application/json,.json"
-          disabled={disabled}
-          onChange={async (e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            if (f.size > 262144)
-              return setError("Reference must be under 256 KB.");
-            setRefText(await f.text());
-          }}
-        />
-        <button
-          type="button"
-          className="button button-secondary"
-          disabled={disabled || !permitted || !input || !refText}
-          onClick={() => {
-            try {
-              const r = JSON.parse(refText);
-              void action("register-connectivity-reference", {
-                ...meta,
-                reference: r.reference ?? r,
-                mapping: r.mapping ?? {},
-              });
-            } catch {
-              setError("Reference JSON is invalid.");
-            }
-          }}
-        >
-          Register reference and mapping
-        </button>
-        {view?.references.map((r) => (
-          <div key={r.id}>
-            <p>
-              {r.reference.name} · {r.reference.qualification}
-            </p>
-            <button
-              type="button"
-              className="button button-secondary"
-              disabled={disabled || view.graphStale || workspaceDirty || !graph}
-              onClick={() =>
-                void action("compare-connectivity", {
-                  expectedRevision: revision,
-                  referenceId: r.id,
-                })
+      {!setupOnly && (
+        <details>
+          <summary>Reference circuit and fault diagnosis</summary>
+          <p>
+            Upload JSON containing a configurable reference and explicit
+            component mapping. Transistor package pinout and the intended real
+            schematic must be verified separately. Synthetic references remain
+            labeled synthetic.
+          </p>
+          <input
+            type="file"
+            aria-label="Connectivity reference circuit"
+            accept="application/json,.json"
+            disabled={disabled}
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              if (!f) return;
+              if (f.size > 262144)
+                return setError("Reference must be under 256 KB.");
+              setRefText(await f.text());
+            }}
+          />
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={disabled || !permitted || !input || !refText}
+            onClick={() => {
+              try {
+                const r = JSON.parse(refText);
+                void action("register-connectivity-reference", {
+                  ...meta,
+                  reference: r.reference ?? r,
+                  mapping: r.mapping ?? {},
+                });
+              } catch {
+                setError("Reference JSON is invalid.");
               }
-            >
-              Compare connectivity with reference
-            </button>
-          </div>
-        ))}
-        {view?.comparisons
-          .filter(
-            (c) =>
-              c.comparison.graphHash === graph?.graphHash &&
-              c.sourceRevision === revision &&
-              !view.graphStale &&
-              !workspaceDirty,
-          )
-          .flatMap((c) =>
-            c.comparison.findings.map((f) => (
-              <div key={`${c.id}:${f.id}`}>
-                <strong>
-                  {f.status} · {f.scope}
-                </strong>
-                <p>{f.reason}</p>
-                <p>
-                  Expected {f.expected.from} ↔ {f.expected.to}. Observed jumper:{" "}
-                  {f.observed.jumperId ?? "unknown"}.
-                </p>
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => {
-                    const points =
-                      graph?.nodes.find(
-                        (n) => n.id === f.highlight.destinationNodeId,
-                      )?.members ?? [];
-                    onHighlight({
-                      pointIds: [
-                        ...points,
-                        ...f.observed.endpointIds.map((id) => `terminal:${id}`),
-                      ],
-                      componentIds: f.highlight.componentIds,
-                      connectionIds: f.highlight.connectionIds,
-                    });
-                  }}
-                >
-                  Highlight finding and supported destination
-                </button>
-              </div>
-            )),
-          )}
-      </details>
-      {view && (
+            }}
+          >
+            Register reference and mapping
+          </button>
+          {view?.references.map((r) => (
+            <div key={r.id}>
+              <p>
+                {r.reference.name} · {r.reference.qualification}
+              </p>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={
+                  disabled || view.graphStale || workspaceDirty || !graph
+                }
+                onClick={() =>
+                  void action("compare-connectivity", {
+                    expectedRevision: revision,
+                    referenceId: r.id,
+                  })
+                }
+              >
+                Compare connectivity with reference
+              </button>
+            </div>
+          ))}
+          {view?.comparisons
+            .filter(
+              (c) =>
+                c.comparison.graphHash === graph?.graphHash &&
+                c.sourceRevision === revision &&
+                !view.graphStale &&
+                !workspaceDirty,
+            )
+            .flatMap((c) =>
+              c.comparison.findings.map((f) => (
+                <div key={`${c.id}:${f.id}`}>
+                  <strong>
+                    {f.status} · {f.scope}
+                  </strong>
+                  <p>{f.reason}</p>
+                  <p>
+                    Expected {f.expected.from} ↔ {f.expected.to}. Observed
+                    jumper: {f.observed.jumperId ?? "unknown"}.
+                  </p>
+                  <button
+                    type="button"
+                    className="button button-secondary"
+                    onClick={() => {
+                      const points =
+                        graph?.nodes.find(
+                          (n) => n.id === f.highlight.destinationNodeId,
+                        )?.members ?? [];
+                      onHighlight({
+                        pointIds: [
+                          ...points,
+                          ...f.observed.endpointIds.map(
+                            (id) => `terminal:${id}`,
+                          ),
+                        ],
+                        componentIds: f.highlight.componentIds,
+                        connectionIds: f.highlight.connectionIds,
+                      });
+                    }}
+                  >
+                    Highlight finding and supported destination
+                  </button>
+                </div>
+              )),
+            )}
+        </details>
+      )}
+      {view && !setupOnly && (
         <>
           <p>
             {view.history.length} immutable review/import events. Additional

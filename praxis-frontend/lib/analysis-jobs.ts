@@ -59,7 +59,13 @@ export const attemptSchema = z
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
     sceneOperation: z
-      .enum(["inventory", "guided", "terminals", "reconcile"])
+      .enum([
+        "inventory",
+        "guided",
+        "terminals",
+        "reconcile",
+        "capture_endpoints",
+      ])
       .optional(),
     terminalObjectIds: z.array(z.uuid()).max(2).optional(),
     junctionPlanId: z
@@ -98,6 +104,14 @@ const snapshotRefSchema = z
 export const analysisJobSchema = z
   .object({
     runtime: runtimeSchema.optional(),
+    captureContext: z
+      .object({
+        planId: z.string().regex(/^[a-f0-9]{64}$/),
+        captureId: z.uuid(),
+        sessionId: z.uuid(),
+      })
+      .strict()
+      .optional(),
     analysisId: z.uuid(),
     imageHash: z.string().regex(/^[a-f0-9]{64}$/),
     image: z

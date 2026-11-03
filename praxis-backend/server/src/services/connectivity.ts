@@ -24,6 +24,8 @@ export const deviceTypes = new Set([
   'power_source',
   'battery',
   'dc_power_source',
+  'switch',
+  'button',
 ]);
 const sorted = <T extends { id: string }>(v: T[]) =>
   [...v].sort((a, b) => a.id.localeCompare(b.id));
@@ -49,6 +51,29 @@ export function validateCircuitInput(raw: unknown): CircuitInput {
       throw Error('Invalid component terminal ownership.');
     if (conductiveTypes.has(c.type) && c.terminalIds.length !== 2)
       throw Error('A conductor must have exactly two terminals.');
+    if (['switch', 'button'].includes(c.type)) {
+      const aliases = c.contactAliases ?? [],
+        aliasIds = new Set(aliases.map((a) => a.terminalId));
+      if (
+        aliasIds.size !== aliases.length ||
+        c.terminalIds.filter((id) => !aliasIds.has(id)).length !== 2
+      )
+        throw Error(
+          'A switch must have exactly two effective contacts with unique physical-leg aliases.',
+        );
+      for (const a of aliases)
+        if (
+          !c.terminalIds.includes(a.terminalId) ||
+          !c.terminalIds.includes(a.contactTerminalId) ||
+          aliasIds.has(a.contactTerminalId) ||
+          a.terminalId === a.contactTerminalId ||
+          terminals.get(a.terminalId)?.role !== null
+        )
+          throw Error(
+            'Switch aliases must map a separate physical leg directly to one effective contact, never another alias.',
+          );
+    } else if (c.contactAliases?.length)
+      throw Error('Contact aliases require a switch device.');
   }
   for (const t of input.terminals)
     if (!components.get(t.componentId)?.terminalIds.includes(t.id))
@@ -138,7 +163,12 @@ export function buildConnectivity(raw: unknown) {
     id: string;
     from: string;
     to: string;
-    type: 'topology' | 'wire' | 'insertion' | 'conductive_contact';
+    type:
+      | 'topology'
+      | 'wire'
+      | 'insertion'
+      | 'conductive_contact'
+      | 'switch_contact_alias';
     state: 'confirmed_auto' | 'confirmed_manual';
     evidenceIds: string[];
     componentId: string | null;
@@ -152,6 +182,8 @@ export function buildConnectivity(raw: unknown) {
     ...input.components,
     ...input.terminals,
     ...input.associations,
+    ...input.components.flatMap((c) => c.contactAliases ?? []),
+    ...input.components.map((c) => ({ evidence: c.switchStateEvidence ?? [] })),
   ])
     for (const p of v.evidence) {
       const prior = proofMap.get(p.id);
@@ -324,6 +356,42 @@ export function buildConnectivity(raw: unknown) {
   }
   for (const c of sorted(input.components)) {
     if (c.state === 'rejected') continue;
+    if (['switch', 'button'].includes(c.type))
+      for (const alias of c.contactAliases ?? []) {
+        if (
+          confirmed(c.state) &&
+          confirmed(alias.state) &&
+          alias.evidence.some((p) =>
+            ['human_review', 'synthetic_fixture'].includes(p.source),
+          )
+        ) {
+          edge({
+            id: `switch-alias:${alias.terminalId}`,
+            from: terminalKey(alias.terminalId),
+            to: terminalKey(alias.contactTerminalId),
+            type: 'switch_contact_alias',
+            state: 'confirmed_manual',
+            evidenceIds: alias.evidence.map((p) => p.id),
+            componentId: c.id,
+          });
+        } else
+          unresolved.push({
+            id: `switch-alias:${alias.terminalId}`,
+            terminalId: alias.terminalId,
+            reason: 'The physical switch leg/contact mapping is unverified.',
+            blocksConductiveCompleteness: true,
+          });
+      }
+    if (
+      ['switch', 'button'].includes(c.type) &&
+      c.switchState === 'closed' &&
+      !c.switchStateEvidence?.some((p) =>
+        ['human_review', 'synthetic_fixture'].includes(p.source),
+      )
+    )
+      warnings.push(
+        `Switch ${c.id} has an unsupported closed-state claim; treat its state as unknown.`,
+      );
     if (conductiveTypes.has(c.type)) {
       if (confirmed(c.state) && confirmed(c.continuity) && c.evidence.length)
         edge({
@@ -396,11 +464,22 @@ export function buildConnectivity(raw: unknown) {
       id: `device:${c.id}`,
       componentId: c.id,
       type: c.type,
-      terminals: c.terminalIds.map((id) => ({
-        terminalId: id,
-        nodeId: membership.get(terminalKey(id))!,
-      })),
+      terminals: c.terminalIds
+        .filter((id) => !c.contactAliases?.some((a) => a.terminalId === id))
+        .map((id) => ({
+          terminalId: id,
+          nodeId: membership.get(terminalKey(id))!,
+        })),
       behavior: 'typed_device_not_a_short' as const,
+      switchState: ['switch', 'button'].includes(c.type)
+        ? c.switchState === 'closed' &&
+          !c.switchStateEvidence?.some((p) =>
+            ['human_review', 'synthetic_fixture'].includes(p.source),
+          )
+          ? 'unknown'
+          : (c.switchState ?? 'unknown')
+        : null,
+      switchStateEvidence: c.switchStateEvidence ?? [],
     }));
   const graph = {
     schemaVersion: 'praxis-electrical-graph-v1' as const,

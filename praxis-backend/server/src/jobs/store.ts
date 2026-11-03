@@ -1,4 +1,9 @@
 import {
+  ensureCircuitSessionTables,
+  circuitSessionTables,
+} from './circuit-session-records.js';
+import type { CaptureContext } from '../schemas/circuit-session.js';
+import {
   ensureConnectivityTables,
   connectivityTables,
 } from './connectivity.js';
@@ -83,7 +88,8 @@ export interface Attempt {
   recoveryReport?: RecoveryReport;
   outputSnapshotId?: string;
   outputSnapshotHash?: string;
-  sceneOperation?: 'inventory' | 'guided' | 'terminals' | 'reconcile';
+  sceneOperation?:
+    'inventory' | 'guided' | 'terminals' | 'reconcile' | 'capture_endpoints';
   terminalObjectIds?: string[];
   junctionPlanId?: string;
   guidedObjectIds?: string[];
@@ -92,6 +98,7 @@ export interface Attempt {
   sceneSnapshotHash?: string;
 }
 export interface Job {
+  captureContext?: CaptureContext;
   analysisId: string;
   imageHash: string;
   image: { width: number; height: number };
@@ -253,6 +260,7 @@ export class JobStore {
     ensureConnectorValidationTables(this);
     ensureJunctionTables(this);
     ensureConnectivityTables(this);
+    ensureCircuitSessionTables(this);
     this.transaction(() => {
       for (const row of this.db
         .prepare(
@@ -477,6 +485,14 @@ export class JobStore {
         job.analysisId,
       );
   }
+  assertOrdinaryInference(id: string) {
+    if (this.get(id).captureContext)
+      throw new AppError(
+        409,
+        'CAPTURE_BUDGET_FROZEN',
+        'Camera captures use a frozen four-SAM/one-endpoint manifest. Prepare a new capture instead.',
+      );
+  }
   image(id: string): Buffer {
     const row = this.db.prepare('SELECT image FROM jobs WHERE id=?').get(id);
     if (!row)
@@ -496,8 +512,19 @@ export class JobStore {
     this.db.exec(
       'DELETE FROM sam_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM scene_snapshots WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM experiments WHERE analysis_id NOT IN(SELECT id FROM jobs); DELETE FROM scene_requests WHERE analysis_id NOT IN(SELECT id FROM jobs)',
     );
+    for (const table of circuitSessionTables)
+      this.db
+        .prepare(
+          `DELETE FROM ${table} WHERE analysis_id IS NOT NULL AND analysis_id NOT IN (SELECT id FROM jobs)`,
+        )
+        .run();
   }
-  create(bytes: Buffer, image: PreparedImage): Job {
+  create(
+    bytes: Buffer,
+    image: PreparedImage,
+    captureContext?: CaptureContext,
+    bind?: (job: Job) => void,
+  ): Job {
     return this.transaction(() => {
       this.cleanup();
       if (
@@ -513,6 +540,7 @@ export class JobStore {
       const now = Date.now();
       const job: Job = {
         analysisId: randomUUID(),
+        ...(captureContext ? { captureContext } : {}),
         imageHash: createHash('sha256').update(bytes).digest('hex'),
         image: { width: image.width, height: image.height },
         status: 'queued',
@@ -523,10 +551,10 @@ export class JobStore {
         settings: {
           maxDimension: this.config.MUSE_MAX_DIMENSION,
           minimalPrompt: this.config.MUSE_MINIMAL_PROMPT,
-          mode: this.config.VISION_MODE,
+          mode: captureContext ? 'combined' : this.config.VISION_MODE,
           samModel: this.config.META_SAM_MODEL,
           museModel: this.config.META_REASONING_MODEL,
-          dynamicScene: this.config.DYNAMIC_SCENE_ENABLED,
+          dynamicScene: !captureContext && this.config.DYNAMIC_SCENE_ENABLED,
           sceneTimeoutMs: this.config.SCENE_STAGE_TIMEOUT_MS,
           sceneMaxRequests: this.config.SCENE_MAX_GUIDED_REQUESTS,
           sceneMaxPixels: this.config.SCENE_MAX_GUIDED_PIXELS,
@@ -540,7 +568,7 @@ export class JobStore {
         muse: { status: 'not_started', attempts: [] },
         recovery: emptyRecovery(),
         wireIdentities: [],
-        ...(this.config.DYNAMIC_SCENE_ENABLED
+        ...(!captureContext && this.config.DYNAMIC_SCENE_ENABLED
           ? {
               scene: {
                 status: 'queued' as const,
@@ -559,11 +587,13 @@ export class JobStore {
           'INSERT INTO jobs (id,data,image,expires_at,queued_stage) VALUES (?,?,?,?,?)',
         )
         .run(job.analysisId, JSON.stringify(job), bytes, job.expiresAt, 'sam');
+      bind?.(job);
       return job;
     });
   }
   /** Explicit opt-in for a saved photograph. Never reruns or replaces baseline predictions. */
   requestScene(id: string): Job {
+    this.assertOrdinaryInference(id);
     return this.transaction(() => {
       const job = this.get(id);
       if (
@@ -629,6 +659,7 @@ export class JobStore {
     operation: 'reconcile' | 'terminals' | 'guided' | 'inventory',
     body: unknown,
   ): Job {
+    this.assertOrdinaryInference(id);
     return this.transaction(() => {
       const job = this.get(id);
       const parsed = z
@@ -1035,6 +1066,7 @@ export class JobStore {
     });
   }
   retry(id: string, stage: 'sam' | 'muse' | 'scene'): Job {
+    this.assertOrdinaryInference(id);
     return this.transaction(() => {
       const job = this.get(id);
       if (this.experiments.active())
@@ -1120,6 +1152,7 @@ export class JobStore {
     candidateId?: string,
     target?: unknown,
   ): Job {
+    this.assertOrdinaryInference(id);
     return this.transaction(() => {
       const job = this.get(id);
       if (
@@ -1293,6 +1326,7 @@ export class JobStore {
     });
   }
   interpretRecovery(id: string): Job {
+    this.assertOrdinaryInference(id);
     return this.transaction(() => {
       const job = this.get(id),
         ref = job.recovery.snapshotRef;
@@ -1420,6 +1454,7 @@ export class JobStore {
       'connector_retrospective_evaluations',
       ...junctionTables,
       ...connectivityTables,
+      ...circuitSessionTables,
     ])
       this.db
         .prepare(
@@ -1610,6 +1645,7 @@ export class JobStore {
         'connector_retrospective_evaluations',
         ...junctionTables,
         ...connectivityTables,
+        ...circuitSessionTables,
       ])
         this.db.prepare(`DELETE FROM ${table} WHERE analysis_id=?`).run(id);
       this.db
@@ -1625,6 +1661,7 @@ export function publicJob(job: Job) {
   return {
     runtime: RUNTIME,
     analysisId: job.analysisId,
+    ...(job.captureContext ? { captureContext: job.captureContext } : {}),
     imageHash: job.imageHash,
     image: job.image,
     status: job.status,

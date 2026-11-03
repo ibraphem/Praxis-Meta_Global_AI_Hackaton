@@ -1,3 +1,5 @@
+import { circuitCaptureClient } from './circuit-capture-client.js';
+import { runCaptureEndpoints } from './circuit-endpoint-worker.js';
 import { RUNTIME } from '../lib/runtime.js';
 import { runSceneStage } from './scene-worker.js';
 import { checkpointScene, getSceneSnapshot } from './scene-snapshots.js';
@@ -104,11 +106,25 @@ export class AnalysisWorker {
         job.settings.sceneMaxCropPixels ??
         this.config.SCENE_MAX_CROP_PIXELS,
     };
-    const client =
+    const ordinaryClient =
       this.sceneClient && stage === 'scene'
         ? admittedClient(this.store, undefined, this.sceneClient)
         : admittedClient(this.store);
-    const stages = this.stages ?? createVisionStages(settings, client);
+    const client = job.captureContext
+      ? circuitCaptureClient(
+          this.store,
+          job,
+          this.owner,
+          stage,
+          attemptId,
+          this.sceneClient
+            ? admittedClient(this.store, undefined, this.sceneClient)
+            : ordinaryClient,
+        )
+      : ordinaryClient;
+    const stages = job.captureContext
+      ? createVisionStages(settings, client)
+      : (this.stages ?? createVisionStages(settings, client));
     const heartbeat = setInterval(() => {
       try {
         if (
@@ -148,6 +164,22 @@ export class AnalysisWorker {
         abort = () => reject(controller.signal.reason);
         controller.signal.addEventListener('abort', abort, { once: true });
       });
+      if (stage === 'scene' && job.captureContext) {
+        await Promise.race([
+          runCaptureEndpoints(
+            this.store,
+            job,
+            this.owner,
+            attemptId,
+            settings,
+            client,
+            controller.signal,
+            trace,
+          ),
+          aborted,
+        ]);
+        return;
+      }
       if (stage === 'scene') {
         await Promise.race([
           runSceneStage(
@@ -295,6 +327,11 @@ export class AnalysisWorker {
             j.candidateResult = partial;
             delete j.candidatePublicationError;
           }
+          if (j.captureContext) {
+            j.status = 'completed';
+            j.revision = attemptId;
+            return;
+          }
           if (settings.VISION_MODE === 'combined') {
             delete j.recovery.snapshotRef;
             delete j.recovery.report;
@@ -433,13 +470,13 @@ export class AnalysisWorker {
           ['PROVIDER_CONNECTION_ERROR', 'STAGE_FAILED'].includes(e.code)
             ? 'unknown'
             : 'response_received';
-        a.retryPolicy = [
-          'INVALID_IMAGE',
-          'UNSUPPORTED_IMAGE',
-          'IMAGE_TOO_LARGE',
-        ].includes(e.code)
+        a.retryPolicy = job.captureContext
           ? 'not_retryable'
-          : 'manual_only';
+          : ['INVALID_IMAGE', 'UNSUPPORTED_IMAGE', 'IMAGE_TOO_LARGE'].includes(
+                e.code,
+              )
+            ? 'not_retryable'
+            : 'manual_only';
         if (stage === 'scene' && a.sceneOperation !== 'inventory')
           a.retryPolicy = 'not_retryable';
         if (stage === 'muse' && completedInterpretation)

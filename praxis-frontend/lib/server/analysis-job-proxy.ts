@@ -191,6 +191,16 @@ export function createAnalysisJobProxy(
           MAX_FILE_BYTES + 64 * 1024,
           signal,
         );
+        const capturePlan = request.headers.get("x-praxis-capture-plan");
+        if (capturePlan) {
+          if (!/^[a-f0-9]{64}$/.test(capturePlan))
+            return fail(
+              400,
+              "INVALID_CAPTURE_PLAN",
+              "Prepare a frozen camera capture first.",
+            );
+          upstreamHeaders["X-Praxis-Capture-Plan"] = capturePlan;
+        }
         upstreamHeaders["Content-Type"] = contentType;
       }
       phase = "backend.connect";

@@ -74,7 +74,7 @@ test("Muse timeout keeps reviewable SAM candidates; saved link reloads image and
     job = { ...completed, analysisId: id };
     return route.fulfill({ status: 202, json: job });
   });
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);
@@ -129,7 +129,7 @@ test("pausing observation leaves the saved job available for reconnection", asyn
   await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
     route.fulfill({ json: job }),
   );
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);
@@ -185,7 +185,7 @@ test("experiment reservations leave SAM review available and suppress model retr
   await page.route(`**/api/analyses/${job.analysisId}`, (route) =>
     route.fulfill({ json: job }),
   );
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);
@@ -339,7 +339,7 @@ test("wire identity verification and timed-out crop recovery preserve review and
     });
     return route.fulfill({ status: 202, json: job });
   });
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);
@@ -481,7 +481,7 @@ test("reconciled reviews disclose provenance and pending re-review without promo
     });
     return route.fulfill({ json: job });
   });
-  await page.goto(`/?analysis=${id}`);
+  await page.goto(`/workspace?analysis=${id}`);
   const panel = page.getByRole("region", {
     name: "Wire coverage and identity review",
   });
@@ -532,7 +532,7 @@ test("targeted recovery separates automatic scans from an original-image reviewe
     job.recovery!.budget.rounds++;
     return route.fulfill({ status: 202, json: job });
   });
-  await page.goto(`/?analysis=${id}`);
+  await page.goto(`/workspace?analysis=${id}`);
   const panel = page.getByRole("region", {
     name: "Wire coverage and identity review",
   });
@@ -705,7 +705,7 @@ test("recovered geometry becomes selectable while scene interpretation remains t
     ];
     return route.fulfill({ status: 202, json: job });
   });
-  await page.goto("/");
+  await page.goto("/workspace");
   await page
     .getByLabel("Upload a workspace photograph")
     .setInputFiles(photograph);

@@ -37,7 +37,7 @@ test("download includes complete scene evidence and latency before calibration, 
   await page.route(`**/api/analyses/${job.analysisId}/image`, (route) =>
     route.fulfill({ contentType: "image/png", body: image }),
   );
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   const exportButton = page.getByRole("button", {
     name: "Export evaluation bundle",
     exact: true,
@@ -105,7 +105,7 @@ test("mismatched photo blocks the download and explains the evidence mismatch", 
   );
   let downloads = 0;
   page.on("download", () => downloads++);
-  await page.goto(`/?analysis=${job.analysisId}`);
+  await page.goto(`/workspace?analysis=${job.analysisId}`);
   await page
     .getByRole("button", { name: "Export evaluation bundle", exact: true })
     .click();

@@ -473,6 +473,8 @@ export class ConnectivityService {
           'terminal',
           'association',
           'add_component',
+          'switch_state',
+          'switch_contact',
           'coverage',
         ]),
         targetId: identity,
@@ -503,6 +505,68 @@ export class ConnectivityService {
           evidence: [p],
         };
       }
+      if (body.action === 'switch_contact') {
+        const v = z
+            .object({
+              physicalLegId: identity,
+              contactTerminalId: identity,
+              contactMappingSource: z.string().trim().min(8).max(1500),
+            })
+            .strict()
+            .parse(body.value),
+          c = s.input.components.find((c) => c.id === body.targetId);
+        if (
+          !c ||
+          !['switch', 'button'].includes(c.type) ||
+          !c.terminalIds.includes(v.contactTerminalId) ||
+          c.contactAliases?.some((a) => a.terminalId === v.contactTerminalId)
+        )
+          throw Error('Choose one effective contact of this switch.');
+        const tid = `${c.id}:leg:${v.physicalLegId}`;
+        if (!s.input.terminals.some((t) => t.id === tid)) {
+          c.terminalIds.push(tid);
+          s.input.terminals.push({
+            id: tid,
+            componentId: c.id,
+            label: `Physical leg ${v.physicalLegId}`,
+            role: null,
+            roleState: 'unresolved',
+            position: null,
+            evidence: [p],
+          });
+        }
+        const proof = {
+          ...p,
+          note: `${p.note} Contacts: ${v.contactMappingSource}`,
+        };
+        // Keep one proof identity byte-equivalent throughout this review event.
+        p.note = proof.note;
+        c.contactAliases = [
+          ...(c.contactAliases ?? []).filter((a) => a.terminalId !== tid),
+          {
+            terminalId: tid,
+            contactTerminalId: v.contactTerminalId,
+            state: 'confirmed_manual',
+            evidence: [p],
+          },
+        ];
+      }
+      if (body.action === 'switch_state') {
+        const v = z
+            .object({
+              state: z.enum(['open', 'closed', 'unknown']),
+              contactMappingSource: z.string().trim().min(8).max(2000),
+            })
+            .strict()
+            .parse(body.value),
+          c = s.input.components.find((c) => c.id === body.targetId);
+        if (!c || !['switch', 'button'].includes(c.type))
+          throw Error('Choose a reviewed switch.');
+        c.switchState = v.state;
+        c.switchStateEvidence = [
+          { ...p, note: `${p.note} Contacts: ${v.contactMappingSource}` },
+        ];
+      }
       if (body.action === 'add_component') {
         const v = z
           .object({
@@ -515,6 +579,8 @@ export class ConnectivityService {
               'power_source',
               'jumper_wire',
               'conductor',
+              'switch',
+              'button',
               'unknown',
             ]),
           })
@@ -572,6 +638,10 @@ export class ConnectivityService {
                 'battery',
                 'power_source',
                 'dc_power_source',
+                'switch',
+                'button',
+                'switch',
+                'button',
                 'unknown',
               ]),
               confirmed: z.boolean(),

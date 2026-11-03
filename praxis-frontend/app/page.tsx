@@ -1,5 +1,4 @@
-import { VisionWorkspace } from "@/components/vision-workspace";
-
+import { CircuitCameraWorkspace } from "@/components/circuit-camera-workspace";
 export default function Home() {
-  return <VisionWorkspace />;
+  return <CircuitCameraWorkspace />;
 }

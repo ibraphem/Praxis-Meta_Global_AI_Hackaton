@@ -13,7 +13,8 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "sourceMap": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "rewriteRelativeImportExtensions": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }
