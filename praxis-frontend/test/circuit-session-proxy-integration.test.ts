@@ -53,6 +53,8 @@ test("session proxy creates a real backend session and prepares a capture withou
     assert.equal(created.status, 200, await created.clone().text());
     const initial = await created.json();
     const id = initial.session.sessionId;
+    // The real worker polls while a person positions the circuit before capture.
+    assert.equal(store.claim("idle-worker-before-capture"), undefined);
     const prepared = await proxy(
       new Request(`http://localhost/api/circuit-sessions/${id}/prepare-capture`, {
         method: "POST",
@@ -74,8 +76,17 @@ test("session proxy creates a real backend session and prepares a capture withou
     assert.equal(view.captures.length, 1);
     assert.equal(view.captures[0].plan.purpose, "setup");
     assert.equal(view.captures[0].analysisId, null);
+    assert.equal(store.claim("idle-worker-before-approval"), undefined);
+    const restored = await proxy(
+      new Request(`http://localhost/api/circuit-sessions/${id}`),
+      "get",
+      id,
+    );
+    assert.equal(restored.status, 200, await restored.clone().text());
+    assert.equal((await restored.json()).captures.length, 1);
     assert.equal(providerCalls, 0);
   } finally {
     await app.close();
+    store.close();
   }
 });
