@@ -1,0 +1,286 @@
+.camera-shell {
+  max-width: 1440px;
+  margin: auto;
+  padding: 28px;
+  color: #263f38;
+  font-family: var(--font-geist-sans), sans-serif;
+}
+.camera-shell header {
+  display: flex;
+  align-items: center;
+  gap: 30px;
+  border-bottom: 1px solid #d9dfd4;
+  padding-bottom: 20px;
+}
+.camera-shell header > a {
+  font-size: 30px;
+  font-weight: 750;
+  color: #204d40;
+  text-decoration: none;
+}
+.camera-shell h1 {
+  font-size: 32px;
+  margin: 0;
+}
+.camera-shell h2 {
+  font-size: 21px;
+  margin: 0 0 14px;
+}
+.camera-shell p {
+  line-height: 1.6;
+  margin: 10px 0;
+}
+.camera-shell section,
+.camera-shell aside,
+.camera-setup {
+  padding: 24px;
+  margin: 18px 0;
+  background: #fafbf7;
+  border: 1px solid #dce2d6;
+  border-radius: 12px;
+}
+.camera-toolbar,
+.camera-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.camera-shell button,
+.camera-shell a[download] {
+  border: 1px solid #b9c8bc;
+  background: #245f4d;
+  color: white;
+  border-radius: 7px;
+  padding: 11px 15px;
+  font-size: 14px;
+  cursor: pointer;
+  min-height: 42px;
+}
+.camera-shell button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.camera-shell label {
+  display: block;
+  font-size: 14px;
+  margin: 10px 0;
+  line-height: 1.6;
+}
+.camera-shell input:not([type="checkbox"]),
+.camera-shell select,
+.camera-shell textarea {
+  display: block;
+  padding: 9px;
+  border: 1px solid #c7cfc3;
+  border-radius: 5px;
+  background: white;
+  color: #233d33;
+  max-width: 100%;
+  width: 100%;
+  min-height: 40px;
+}
+.camera-shell input[type="checkbox"] {
+  margin-right: 10px;
+}
+.camera-shell textarea {
+  min-height: 78px;
+}
+.camera-shell button + button {
+  margin-left: 8px;
+}
+.camera-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 20px;
+}
+.camera-columns section,
+.camera-columns aside {
+  margin: 0;
+}
+.camera-video {
+  position: relative;
+  background: #172c26;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.camera-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  display: block;
+}
+.camera-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  color: #d9e2d9;
+  padding: 30px;
+}
+.camera-caption {
+  font-size: 12px;
+  color: #60756b;
+}
+.camera-state,
+.camera-tag {
+  background: #e8eee2;
+  border-radius: 8px;
+  padding: 10px;
+}
+.camera-tag {
+  font-size: 12px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.camera-state.state-resolved {
+  background: #ccebd5;
+  color: #155b35;
+}
+.camera-state.state-fault_found,
+.camera-state.state-repair_guidance {
+  background: #fce4de;
+  color: #9f3026;
+}
+.camera-error {
+  padding: 15px;
+  background: #fae5df;
+  border: 1px solid #dfb5a9;
+  border-radius: 8px;
+}
+.camera-preflight img {
+  max-height: 320px;
+  width: auto;
+  max-width: 100%;
+  display: block;
+}
+.camera-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+}
+.camera-shell summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.camera-reference-image {
+  position: relative;
+  max-width: 760px;
+}
+.camera-reference-image img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.camera-arrow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.camera-shell pre {
+  max-height: 280px;
+  overflow: auto;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.camera-device-list {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.camera-device-list span {
+  background: #eef1e8;
+  border: 1px solid #d5dfcf;
+  border-radius: 7px;
+  padding: 10px;
+}
+.camera-device-list small {
+  display: block;
+  font-size: 11px;
+}
+.camera-shell table {
+  width: 100%;
+  text-align: left;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.camera-shell th,
+.camera-shell td {
+  padding: 9px;
+  border-bottom: 1px solid #dce1d4;
+}
+.camera-shell .photo-stage {
+  margin-top: 12px;
+}
+@media (max-width: 850px) {
+  .camera-columns {
+    grid-template-columns: 1fr;
+  }
+  .camera-shell {
+    padding: 16px;
+  }
+  .camera-shell header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .camera-tag {
+    margin-left: 0;
+  }
+  .camera-shell section {
+    padding: 16px;
+  }
+}
+.camera-video {
+  margin-inline: auto;
+}
+.camera-video video {
+  position: absolute;
+  inset: 0;
+  object-fit: contain;
+}
+@keyframes camera-fault-pulse {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .camera-shell .wire-mask {
+    animation: none !important;
+  }
+}
+.camera-evidence-overlays {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.camera-object-box {
+  position: absolute;
+  border: 1px dashed #69b1a0;
+  pointer-events: none;
+}
+.camera-object-box span {
+  position: absolute;
+  left: 0;
+  top: 0;
+  background: #204e43df;
+  color: #fff;
+  font-size: 11px;
+  padding: 3px 5px;
+  white-space: nowrap;
+}
+.camera-video .wire-mask-label {
+  font-size: 11px;
+  padding: 4px;
+  pointer-events: auto;
+}
+.camera-video .camera-arrow {
+  z-index: 140;
+}
