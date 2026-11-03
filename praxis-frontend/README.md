@@ -74,7 +74,8 @@ Open **http://127.0.0.1:3001**. The backend defaults to port 3000; the frontend 
 
 For a phone camera over Wi-Fi, use `npm run dev:https` after setting up a trusted
 LAN certificate. HTTP access through the computer's IP cannot start the phone's
-camera. See the [phone setup instructions](../docs/camera-demo.md#use-the-camera-from-a-phone).
+camera. See the [local phone setup instructions](../docs/camera-demo.md#use-the-camera-from-a-phone-on-the-local-network),
+or [deploy the frontend with an ngrok backend tunnel](../docs/camera-demo.md#deploy-the-frontend-and-tunnel-the-local-backend-with-ngrok).
 
 The default backend URL works without a frontend env file. If the backend uses a
 different address or requires a token:
