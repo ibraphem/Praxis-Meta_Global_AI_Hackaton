@@ -1,5 +1,11 @@
 # Praxis — vision workspace
 
+The home page and `/camera` now provide [automatic circuit inspection](../docs/automatic-circuit-inspection.md):
+AI proposes a board grid, components and terminal insertions from a captured or
+uploaded photograph, followed by individual human confirmation and a computed
+connection graph. No fixed reference circuit is supplied. The original photograph
+workspace described below remains at `/workspace`.
+
 A mobile-friendly Next.js interface for Praxis's first perception milestone.
 Upload a photograph, send it to the backend, and inspect the returned breadboards,
 LEDs, resistors, and jumper wires directly over the image.

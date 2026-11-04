@@ -1,6 +1,11 @@
 # Fixed-camera two-LED demonstration
 
-Open **Camera demo** from the photograph workspace, or visit `/camera`.
+**Historical workflow:** the home page and `/camera` now use the general
+[automatic circuit inspection flow](automatic-circuit-inspection.md). The fixed
+two-LED session implementation described below is retained for compatibility,
+but is no longer the default camera UI.
+
+The original fixed-camera demonstration used explicit circuit setup sessions.
 The implementation uses explicit captured frames and human-reviewed contacts.
 It does not track hands or continuously infer wiring from video.
 

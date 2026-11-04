@@ -49,7 +49,7 @@ const hash = z.string().regex(/^[a-f0-9]{64}$/),
       height: z.number().int().positive(),
     })
     .strict();
-const projection = z
+export const projection = z
   .object({
     nodes: z.array(
       z

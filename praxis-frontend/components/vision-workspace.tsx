@@ -367,7 +367,7 @@ export function VisionWorkspace() {
           Your hands. A little more insight.
         </span>
         <Link className="button button-secondary" href="/camera">
-          Camera demo
+          Inspect circuit
         </Link>
         <div className="header-mode">
           <span className="status-dot" />

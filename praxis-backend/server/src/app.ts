@@ -16,6 +16,9 @@ import { createEndpointProposalService } from './services/endpoint-proposals.js'
 import { logTrace, type TraceLogger } from './lib/diagnostics.js';
 import { ConnectorWorkflowService } from './jobs/connector-workflow.js';
 import type { MetaClient } from './lib/meta-client.js';
+import { createMetaClient } from './lib/meta-client.js';
+import { AutomaticCircuitService } from './jobs/automatic-circuits.js';
+import { registerAutomaticCircuitRoutes } from './routes/automatic-circuits.js';
 
 /** Build separately from listen(), so HTTP behavior can be tested without ports. */
 export async function buildApp(
@@ -108,6 +111,15 @@ export async function buildApp(
       config.NODE_ENV === 'test' ? ':memory:' : config.ANALYSIS_JOB_DIR,
     );
   const client = admittedClient(jobStore);
+  const automaticCircuits = new AutomaticCircuitService(
+    jobStore,
+    admittedClient(
+      jobStore,
+      undefined,
+      jobOptions?.experimentClient ?? createMetaClient(config),
+    ),
+  );
+  registerAutomaticCircuitRoutes(app, automaticCircuits);
   const worker = new AnalysisWorker(
     jobStore,
     config,
@@ -132,6 +144,7 @@ export async function buildApp(
     worker.start();
   });
   app.addHook('onClose', async () => {
+    await automaticCircuits.close();
     await connectorWorkflow.close();
     await worker.close();
     if (!jobOptions?.store) jobStore.close();

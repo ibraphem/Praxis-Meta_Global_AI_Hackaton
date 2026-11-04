@@ -32,6 +32,8 @@ const environmentSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   SCENE_STAGE_TIMEOUT_MS: integer(45000, 90000),
+  CIRCUIT_INSPECTION_REQUEST_TIMEOUT_MS: integer(90000, 120000),
+  CIRCUIT_INSPECTION_TIMEOUT_MS: integer(300000, 600000),
   SCENE_MAX_TERMINAL_REQUESTS: z.coerce.number().int().min(0).max(8).default(2),
   SCENE_MAX_TERMINAL_PIXELS: integer(4000000, 16000000),
   SCENE_MAX_GUIDED_REQUESTS: z.coerce.number().int().min(0).max(8).default(3),

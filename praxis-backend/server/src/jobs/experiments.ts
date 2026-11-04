@@ -240,7 +240,15 @@ export class ExperimentRegistry {
         .run(JSON.stringify(record), id);
     });
   }
-  enterLegacyRequest(): () => void {
+  enterLegacyRequest(
+    timeoutMs = this.store.config.ANALYSIS_TIMEOUT_MS,
+  ): () => void {
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 600000)
+      throw new AppError(
+        400,
+        'INVALID_REQUEST_DEADLINE',
+        'The model admission deadline is invalid.',
+      );
     const id = randomUUID();
     this.store.transaction(() => {
       this.recover();
@@ -252,7 +260,7 @@ export class ExperimentRegistry {
         );
       this.store.db
         .prepare('INSERT INTO legacy_requests VALUES (?,?)')
-        .run(id, Date.now() + this.store.config.ANALYSIS_TIMEOUT_MS + 15000);
+        .run(id, Date.now() + timeoutMs + 15000);
     });
     return () => {
       this.store.db.prepare('DELETE FROM legacy_requests WHERE id=?').run(id);

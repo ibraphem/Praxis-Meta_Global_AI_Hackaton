@@ -1,5 +1,11 @@
 # Praxis backend
 
+The default camera UI now uses [automatic circuit inspection](../docs/automatic-circuit-inspection.md)
+through `/api/circuit-inspections`. It proposes calibration, component terminals
+and hole associations with the configured Meta vision model, then calculates a
+graph from explicit human confirmations. This is separate from the original
+perception endpoints described below; it does not assume a fixed circuit.
+
 Praxis's baseline still-image perception returns visible **breadboards, LEDs,
 resistors, and jumper wires**. The opt-in [dynamic scene inventory](#dynamic-scene-inventory-release-1-opt-in) adds open-vocabulary object hypotheses and guided segmentation.
 This is not yet a circuit verifier. It does not identify breadboard holes, determine
