@@ -16,6 +16,9 @@ import {
 } from "../../praxis-backend/server/src/shared/calibration";
 import { CircuitGraph } from "./circuit-graph";
 import { BenchIcon } from "./bench-ui";
+import { measureBreadboard, measureEndpoints } from "@/lib/cv/browser";
+import { confirmClearProposals, canConfirmMeasuredGrid } from "@/lib/cv/review";
+import type { GeometryResult } from "@/lib/cv/geometry";
 import "./circuit-camera.css";
 import "./automatic-circuit.css";
 
@@ -26,6 +29,39 @@ type Picking =
   | { kind: "rail"; board: number; index: number; end: "first" | "last" };
 const active = (v: CircuitInspection | null) =>
   v?.status === "queued" || v?.status === "running";
+function adjustedGridIssue(observations: Observations | null) {
+  if (!observations?.boards.length) return "Add a board grid first.";
+  for (const [index, board] of observations.boards.entries()) {
+    const name = observations.boards.length > 1 ? `Board ${index + 1}: ` : "";
+    if (board.landmarks.length < 6)
+      return `${name}place at least six labelled holes before fitting.`;
+    if (
+      board.landmarks.some((landmark) =>
+        landmark.position.every((v) => v === 0),
+      )
+    )
+      return `${name}use “Place” to mark every added hole in the photograph.`;
+    const labels = board.landmarks.map((landmark) => landmark.hole),
+      valid = labels.every((label) => {
+        const match = /^([a-j])([1-9][0-9]?)$/.exec(label);
+        return !!match && Number(match[2]) <= board.rows;
+      });
+    if (!valid)
+      return `${name}use hole labels a1–j${board.rows} that match the printed board.`;
+    if (new Set(labels).size !== labels.length)
+      return `${name}each landmark must identify a different hole.`;
+    const columns = labels.map((label) => {
+        const column = "abcdefghij".indexOf(label[0]);
+        return column < 5 ? column : column + 2;
+      }),
+      rows = labels.map((label) => Number(label.slice(1)));
+    if (Math.max(...columns) - Math.min(...columns) < 7)
+      return `${name}place landmarks on both sides of the centre channel.`;
+    if (Math.max(...rows) - Math.min(...rows) < board.rows / 4)
+      return `${name}spread landmarks across at least a quarter of the board length.`;
+  }
+  return null;
+}
 async function json(response: Response) {
   const v = await response.json();
   if (!response.ok)
@@ -67,6 +103,10 @@ export function AutomaticCircuitWorkspace() {
     [selected, setSelected] = useState<string | null>(null),
     [picking, setPicking] = useState<Picking | null>(null),
     [gridVisible, setGridVisible] = useState(true);
+  const [localStage, setLocalStage] = useState(""),
+    [localBusy, setLocalBusy] = useState(false),
+    [localGeometry, setLocalGeometry] = useState<GeometryResult | null>(null),
+    [showAllParts, setShowAllParts] = useState(false);
   const video = useRef<HTMLVideoElement>(null),
     stream = useRef<MediaStream | null>(null),
     objectUrl = useRef<string | null>(null),
@@ -102,6 +142,7 @@ export function AutomaticCircuitWorkspace() {
   }, []);
   useEffect(() => {
     mounted.current = true;
+    const restoreGeneration = generation.current;
     const id = localStorage.getItem("praxis-automatic-inspection");
     queueMicrotask(() => {
       if (mounted.current)
@@ -111,7 +152,8 @@ export function AutomaticCircuitWorkspace() {
       fetch(`/api/circuit-inspections/${id}`, { cache: "no-store" })
         .then(json)
         .then((v) => {
-          if (mounted.current) accept(parseInspection(v, id));
+          if (mounted.current && generation.current === restoreGeneration)
+            accept(parseInspection(v, id));
         })
         .catch(() => {});
     return () => {
@@ -148,6 +190,61 @@ export function AutomaticCircuitWorkspace() {
       controller.abort();
     };
   }, [view, accept]);
+  useEffect(() => {
+    if (
+      !view?.hybrid ||
+      active(view) ||
+      !view.input ||
+      view.hybrid.localStatus !== "pending"
+    )
+      return;
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) {
+        setLocalBusy(true);
+        setLocalStage("Matching wire shapes to measured holes on this device");
+      }
+    });
+    void measureEndpoints(view, controller.signal)
+      .then(async (endpoints) => {
+        const response = await fetch(
+          `/api/circuit-inspections/${view.id}/localize`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              expectedRevision: view.revision,
+              imageHash: view.imageHash,
+              endpoints,
+            }),
+            signal: controller.signal,
+          },
+        );
+        if (response.status === 409) {
+          const current = await json(
+            await fetch(`/api/circuit-inspections/${view.id}`, {
+              signal: controller.signal,
+              cache: "no-store",
+            }),
+          );
+          if (!controller.signal.aborted)
+            accept(parseInspection(current, view.id));
+          return;
+        }
+        const next = parseInspection(await json(response), view.id);
+        if (!controller.signal.aborted) accept(next);
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e.message);
+      })
+      .finally(() => {
+        if (mounted.current) {
+          setLocalBusy(false);
+          setLocalStage("");
+        }
+      });
+    return () => controller.abort();
+  }, [view, accept]);
   const work = async (fn: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true;
@@ -156,6 +253,7 @@ export function AutomaticCircuitWorkspace() {
     try {
       await fn();
     } catch (e) {
+      setLocalStage("");
       if (mounted.current)
         setError(e instanceof Error ? e.message : "Circuit inspection failed.");
     } finally {
@@ -194,6 +292,8 @@ export function AutomaticCircuitWorkspace() {
     setCameraOn(true);
   };
   const stage = (file: File) => {
+    setLocalGeometry(null);
+    setLocalStage("");
     if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
       throw Error("Choose a JPEG, PNG or WebP photograph.");
     if (file.size > 8 * 1024 * 1024)
@@ -233,8 +333,20 @@ export function AutomaticCircuitWorkspace() {
   };
   const analyze = async () => {
     if (!pending) return;
+    setLocalStage("Measuring hole geometry on this device");
+    const geometry = await measureBreadboard(pending);
+    setLocalGeometry(geometry);
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      await pending.arrayBuffer(),
+    );
+    const sourceHash = Array.from(new Uint8Array(digest), (b) =>
+      b.toString(16).padStart(2, "0"),
+    ).join("");
     const form = new FormData();
     form.append("image", pending);
+    form.append("geometry", JSON.stringify({ sourceHash, geometry }));
+    setLocalStage("Identifying components and printed labels");
     const v = parseInspection(
       await json(
         await fetch("/api/circuit-inspections", { method: "POST", body: form }),
@@ -242,6 +354,7 @@ export function AutomaticCircuitWorkspace() {
     );
     accept(v);
     setPending(null);
+    setLocalStage("");
   };
   const edit = (fn: (v: CircuitInput) => void) => {
     if (!draft) return;
@@ -310,6 +423,8 @@ export function AutomaticCircuitWorkspace() {
     setPicking(null);
   };
   const reset = () => {
+    setLocalGeometry(null);
+    setLocalStage("");
     stop();
     replacePhoto("");
     setPhoto(null);
@@ -329,7 +444,10 @@ export function AutomaticCircuitWorkspace() {
       })),
     ) ?? [];
   const running = active(view),
-    ready = !!draft && !running && !cameraOn;
+    ready = !!draft && !running && !cameraOn && !localBusy;
+  const adjustedGridProblem = adjustedGridIssue(observations);
+  const clearCount =
+    view?.hybrid?.endpoints.filter((e) => e.status === "supported").length ?? 0;
   const confirmed =
       draft?.associations.filter((a) => a.state === "confirmed_manual")
         .length ?? 0,
@@ -357,8 +475,8 @@ export function AutomaticCircuitWorkspace() {
           <span className="ai-eyebrow">CAPTURE · INSPECT · CONFIRM</span>
           <h1>Your circuit, mapped from the photo.</h1>
           <p>
-            AI proposes the board grid and physical connections. You review the
-            evidence and confirm what is connected.
+            Computer vision measures the grid and connections. AI identifies the
+            parts. Confirm clear proposals together, then review the exceptions.
           </p>
         </div>
         {view && (
@@ -412,6 +530,24 @@ export function AutomaticCircuitWorkspace() {
                   src={photo}
                   alt="Captured breadboard circuit for connection review"
                 />
+                {!draft && localGeometry?.fit && (
+                  <svg
+                    viewBox={`0 0 ${localGeometry.image.width} ${localGeometry.image.height}`}
+                    aria-label="Locally measured hole centres"
+                  >
+                    {localGeometry.fit.holes.map((p, i) => (
+                      <circle
+                        key={i}
+                        cx={p.x}
+                        cy={p.y}
+                        r={localGeometry.image.width / 500}
+                        stroke="#00b9a9"
+                        fill="none"
+                        strokeWidth={localGeometry.image.width / 1500}
+                      />
+                    ))}
+                  </svg>
+                )}
                 {view && draft && (
                   <svg
                     viewBox={`0 0 ${view.image.width} ${view.image.height}`}
@@ -419,6 +555,53 @@ export function AutomaticCircuitWorkspace() {
                     aria-label="Proposed grid and terminals"
                     style={{ cursor: picking ? "crosshair" : "default" }}
                   >
+                    {view.hybrid?.wireMasks
+                      .filter(
+                        (m) => m.componentId && selected === m.componentId,
+                      )
+                      .map((m) => (
+                        <g
+                          key={`mask-${m.id}`}
+                          transform={`translate(${m.bbox[0]} ${m.bbox[1]}) scale(${m.bbox[2] / m.mask.width} ${m.bbox[3] / m.mask.height})`}
+                        >
+                          <path
+                            d={m.mask.path}
+                            fill="#5fc6aa"
+                            fillOpacity=".2"
+                            stroke="#23a787"
+                            strokeWidth="3"
+                            vectorEffect="non-scaling-stroke"
+                          />
+                        </g>
+                      ))}
+                    {view.hybrid?.endpoints
+                      .filter(
+                        (e) =>
+                          e.position &&
+                          !draft.terminals.find((t) => t.id === e.terminalId)
+                            ?.position,
+                      )
+                      .map((e) => (
+                        <g
+                          key={`cv-${e.terminalId}`}
+                          onClick={() => setSelected(e.componentId)}
+                        >
+                          <circle
+                            cx={e.position!.x}
+                            cy={e.position!.y}
+                            r={view.image.width / 140}
+                            fill="none"
+                            stroke={
+                              e.status === "supported" ? "#dc9729" : "#bd6857"
+                            }
+                            strokeWidth={view.image.width / 700}
+                            strokeDasharray={
+                              e.basis === "exposed_lead" ? undefined : "9 5"
+                            }
+                          />
+                          <title>{e.reason}</title>
+                        </g>
+                      ))}
                     {gridVisible &&
                       holes.map(({ board, h, position }) => (
                         <circle
@@ -600,7 +783,7 @@ export function AutomaticCircuitWorkspace() {
                 disabled={busy}
                 onClick={() => work(analyze)}
               >
-                {busy ? "Uploading…" : "Analyze circuit"}
+                {busy ? "Inspecting…" : "Analyze circuit"}
               </button>
             )}
             {view && (
@@ -614,17 +797,22 @@ export function AutomaticCircuitWorkspace() {
               </label>
             )}
           </div>
+          {localStage && (
+            <p className="ai-help" role="status">
+              {localStage}
+            </p>
+          )}
           {pending && (
             <p className="ai-help">
-              Analysis finds the grid and components, then inspects a crop of
-              each component. No reference schematic is supplied.
+              Grid detection runs on this device. The photo goes to Meta for
+              component identification and wire segmentation.
             </p>
           )}
           {view && (
             <div className="ai-photo-legend">
               <span>
                 <i />
-                AI proposal
+                Unconfirmed proposal
               </span>
               <span>
                 <i className="confirmed" />
@@ -652,10 +840,10 @@ export function AutomaticCircuitWorkspace() {
               </span>
             )}
           </div>
-          {running ? (
+          {running || localBusy ? (
             <div className="ai-progress" role="status">
               <i className="bench-spinner" />
-              <h2>{view?.stage}</h2>
+              <h2>{localBusy ? localStage : view?.stage}</h2>
               <p>
                 You can leave and reopen this inspection. Requests are not
                 repeated when you refresh.
@@ -665,7 +853,10 @@ export function AutomaticCircuitWorkspace() {
             <div className="ai-intro">
               <ol>
                 <li>Capture or upload your circuit.</li>
-                <li>AI fits the grid and proposes components and terminals.</li>
+                <li>
+                  Local computer vision measures the grid; AI identifies the
+                  parts.
+                </li>
                 <li>
                   Check the overlays, adjust uncertain points, and confirm
                   connections.
@@ -679,6 +870,94 @@ export function AutomaticCircuitWorkspace() {
                 <p className="ai-warning" role="alert">
                   {view.error}
                 </p>
+              )}
+              {view?.hybrid && (
+                <section className="ai-review-section ai-quick-review">
+                  <h2>Review the exceptions</h2>
+                  <div className="ai-clear-parts">
+                    {draft.components
+                      .filter(
+                        (c) =>
+                          c.terminalIds.length > 0 &&
+                          c.terminalIds.every((id) =>
+                            view.hybrid!.endpoints.some(
+                              (e) =>
+                                e.terminalId === id && e.status === "supported",
+                            ),
+                          ),
+                      )
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          className="bench-link-button"
+                          onClick={() => setSelected(c.id)}
+                        >
+                          {c.label} ·{" "}
+                          {view
+                            .hybrid!.endpoints.filter(
+                              (e) =>
+                                e.componentId === c.id &&
+                                e.status === "supported",
+                            )
+                            .map((e) => e.candidates[0]?.holeId.toUpperCase())
+                            .filter(Boolean)
+                            .join(" ↔ ")}
+                        </button>
+                      ))}
+                  </div>
+                  <label className="ai-check">
+                    <input
+                      type="checkbox"
+                      checked={
+                        draft.boards.length > 0 &&
+                        draft.boards.every(
+                          (b) => b.topologyState === "confirmed_manual",
+                        ) &&
+                        draft.components
+                          .filter((c) => c.state !== "rejected")
+                          .every((c) => c.state === "confirmed_manual")
+                      }
+                      onChange={(e) =>
+                        edit((input) => {
+                          for (const b of input.boards)
+                            b.topologyState = e.target.checked
+                              ? "confirmed_manual"
+                              : "unresolved";
+                          for (const c of input.components)
+                            if (c.state !== "rejected") {
+                              c.state = e.target.checked
+                                ? "confirmed_manual"
+                                : "unresolved";
+                              if (!e.target.checked)
+                                c.continuity = "unresolved";
+                            }
+                          if (!e.target.checked)
+                            for (const a of input.associations)
+                              a.state = "unresolved";
+                        })
+                      }
+                    />
+                    The identified parts and printed grid labels look correct
+                  </label>
+                  <p>
+                    {view.hybrid.geometry.fit?.holes.length ?? 0} measured holes
+                    · {clearCount} clear connection proposals. Printed labels
+                    and physical contact remain subject to your confirmation.
+                  </p>
+                  <label className="ai-check">
+                    <input
+                      type="checkbox"
+                      checked={showAllParts}
+                      onChange={(e) => setShowAllParts(e.target.checked)}
+                    />
+                    Show every component
+                  </label>
+                  <p>
+                    Use “Confirm clear proposals and save” below to approve the
+                    marked grid, identified parts and clear connections
+                    together.
+                  </p>
+                </section>
               )}
               <section className="ai-review-section">
                 <h2>1. Check the board grid</h2>
@@ -799,6 +1078,14 @@ export function AutomaticCircuitWorkspace() {
                           <option value={63}>63</option>
                         </select>
                       </label>
+                      <p
+                        className={
+                          b.landmarks.length < 6 ? "ai-warning" : "ai-help"
+                        }
+                      >
+                        {b.landmarks.length} labelled hole
+                        {b.landmarks.length === 1 ? "" : "s"} placed · minimum 6
+                      </p>
                       {b.landmarks.map((l, li) => (
                         <div key={li}>
                           <input
@@ -983,7 +1270,7 @@ export function AutomaticCircuitWorkspace() {
                   )}
                   <button
                     className="bench-button bench-button-quiet"
-                    disabled={busy || !gridDirty}
+                    disabled={busy || !gridDirty || !!adjustedGridProblem}
                     onClick={() =>
                       work(() =>
                         post("calibrate", {
@@ -996,6 +1283,11 @@ export function AutomaticCircuitWorkspace() {
                   >
                     Fit adjusted grid
                   </button>
+                  {gridDirty && adjustedGridProblem && (
+                    <p className="ai-warning" role="status">
+                      {adjustedGridProblem}
+                    </p>
+                  )}
                   {dirty && (
                     <p className="ai-help">
                       Fitting keeps your edits and clears confirmations so the
@@ -1011,375 +1303,460 @@ export function AutomaticCircuitWorkspace() {
                   contacts can remain unresolved. Confirm a wire’s two ends and
                   continuity separately.
                 </p>
-                {draft.components.map((c) => (
-                  <details
-                    className={`ai-component ${selected === c.id ? "is-selected" : ""}`}
-                    key={c.id}
-                    id={`review-${c.id}`}
-                    open={selected === c.id || undefined}
-                  >
-                    <summary
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setSelected(selected === c.id ? null : c.id);
-                      }}
+                {draft.components
+                  .filter(
+                    (c) =>
+                      !view?.hybrid ||
+                      showAllParts ||
+                      selected === c.id ||
+                      !c.terminalIds.length ||
+                      c.terminalIds.some(
+                        (id) =>
+                          !view.hybrid!.endpoints.some(
+                            (e) =>
+                              e.terminalId === id && e.status === "supported",
+                          ),
+                      ),
+                  )
+                  .map((c) => (
+                    <details
+                      className={`ai-component ${selected === c.id ? "is-selected" : ""}`}
+                      key={c.id}
+                      id={`review-${c.id}`}
+                      open={selected === c.id || undefined}
                     >
-                      <span>{c.label}</span>
-                      <small>
-                        {c.type.replaceAll("_", " ")} · {c.terminalIds.length}{" "}
-                        contacts
-                      </small>
-                    </summary>
-                    <div className="ai-component-body">
-                      <label>
-                        Part label
-                        <input
-                          value={c.label}
-                          onChange={(e) =>
-                            edit((v) => {
-                              v.components.find((x) => x.id === c.id)!.label =
-                                e.target.value;
-                            })
-                          }
-                        />
-                      </label>
-                      <label>
-                        Part type
-                        <select
-                          value={c.type}
-                          onChange={(e) =>
-                            edit((v) => {
-                              const comp = v.components.find(
-                                (x) => x.id === c.id,
-                              )!;
-                              comp.type = e.target.value;
-                              comp.state = "unresolved";
-                              comp.continuity = "unresolved";
-                              for (const a of v.associations)
-                                if (comp.terminalIds.includes(a.terminalId))
-                                  a.state = "unresolved";
-                            })
-                          }
-                        >
-                          {[
-                            ...new Set([
-                              c.type,
-                              "jumper_wire",
-                              "resistor",
-                              "led",
-                              "switch_assembly",
-                              "power_module",
-                              "capacitor",
-                              "transistor",
-                              "integrated_circuit",
-                              "connector",
-                              "unknown",
-                            ]),
-                          ].map((t) => (
-                            <option key={t} value={t}>
-                              {t.replaceAll("_", " ")}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="ai-check">
-                        <input
-                          type="checkbox"
-                          checked={c.state === "confirmed_manual"}
-                          onChange={(e) =>
-                            edit((v) => {
-                              v.components.find((x) => x.id === c.id)!.state = e
-                                .target.checked
-                                ? "confirmed_manual"
-                                : "unresolved";
-                              for (const a of v.associations)
-                                if (c.terminalIds.includes(a.terminalId))
-                                  a.state = "unresolved";
-                            })
-                          }
-                        />
-                        I confirm this component’s identity
-                      </label>
-                      <label className="ai-check">
-                        <input
-                          type="checkbox"
-                          checked={c.state === "rejected"}
-                          onChange={(e) =>
-                            edit((v) => {
-                              v.components.find((x) => x.id === c.id)!.state = e
-                                .target.checked
-                                ? "rejected"
-                                : "unresolved";
-                              for (const a of v.associations)
-                                if (c.terminalIds.includes(a.terminalId))
-                                  a.state = "unresolved";
-                            })
-                          }
-                        />
-                        Reject this detection
-                      </label>
-                      {c.type === "jumper_wire" && (
-                        <label className="ai-check">
+                      <summary
+                        onClick={(e) => {
+                          e.preventDefault();
+                          setSelected(selected === c.id ? null : c.id);
+                        }}
+                      >
+                        <span>{c.label}</span>
+                        <small>
+                          {c.type.replaceAll("_", " ")} · {c.terminalIds.length}{" "}
+                          contacts
+                        </small>
+                      </summary>
+                      <div className="ai-component-body">
+                        <label>
+                          Part label
                           <input
-                            type="checkbox"
-                            checked={c.continuity === "confirmed_manual"}
+                            value={c.label}
                             onChange={(e) =>
                               edit((v) => {
-                                v.components.find(
-                                  (x) => x.id === c.id,
-                                )!.continuity = e.target.checked
-                                  ? "confirmed_manual"
-                                  : "unresolved";
+                                v.components.find((x) => x.id === c.id)!.label =
+                                  e.target.value;
                               })
                             }
                           />
-                          Both ends belong to this single intact wire
                         </label>
-                      )}
-                      {c.terminalIds.map((tid) => {
-                        const t = draft.terminals.find((t) => t.id === tid)!,
-                          a = draft.associations.find(
-                            (a) => a.terminalId === tid,
-                          )!;
-                        return (
-                          <div className="ai-terminal" key={tid}>
-                            <div className="ai-terminal-title">
-                              <strong>{t.label}</strong>
-                              <span>
-                                {a.state === "confirmed_manual"
-                                  ? "Confirmed"
-                                  : t.position
-                                    ? "Proposed · check insertion"
-                                    : "Unresolved · position hidden"}
-                              </span>
-                            </div>
-                            <button
-                              className="bench-link-button"
-                              onClick={() =>
-                                setPicking({ kind: "terminal", id: tid })
+                        <label>
+                          Part type
+                          <select
+                            value={c.type}
+                            onChange={(e) =>
+                              edit((v) => {
+                                const comp = v.components.find(
+                                  (x) => x.id === c.id,
+                                )!;
+                                comp.type = e.target.value;
+                                comp.state = "unresolved";
+                                comp.continuity = "unresolved";
+                                for (const a of v.associations)
+                                  if (comp.terminalIds.includes(a.terminalId))
+                                    a.state = "unresolved";
+                              })
+                            }
+                          >
+                            {[
+                              ...new Set([
+                                c.type,
+                                "jumper_wire",
+                                "resistor",
+                                "led",
+                                "switch_assembly",
+                                "power_module",
+                                "capacitor",
+                                "transistor",
+                                "integrated_circuit",
+                                "connector",
+                                "unknown",
+                              ]),
+                            ].map((t) => (
+                              <option key={t} value={t}>
+                                {t.replaceAll("_", " ")}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="ai-check">
+                          <input
+                            type="checkbox"
+                            checked={c.state === "confirmed_manual"}
+                            onChange={(e) =>
+                              edit((v) => {
+                                v.components.find((x) => x.id === c.id)!.state =
+                                  e.target.checked
+                                    ? "confirmed_manual"
+                                    : "unresolved";
+                                for (const a of v.associations)
+                                  if (c.terminalIds.includes(a.terminalId))
+                                    a.state = "unresolved";
+                              })
+                            }
+                          />
+                          I confirm this component’s identity
+                        </label>
+                        <label className="ai-check">
+                          <input
+                            type="checkbox"
+                            checked={c.state === "rejected"}
+                            onChange={(e) =>
+                              edit((v) => {
+                                v.components.find((x) => x.id === c.id)!.state =
+                                  e.target.checked ? "rejected" : "unresolved";
+                                for (const a of v.associations)
+                                  if (c.terminalIds.includes(a.terminalId))
+                                    a.state = "unresolved";
+                              })
+                            }
+                          />
+                          Reject this detection
+                        </label>
+                        {c.type === "jumper_wire" && (
+                          <label className="ai-check">
+                            <input
+                              type="checkbox"
+                              checked={c.continuity === "confirmed_manual"}
+                              onChange={(e) =>
+                                edit((v) => {
+                                  v.components.find(
+                                    (x) => x.id === c.id,
+                                  )!.continuity = e.target.checked
+                                    ? "confirmed_manual"
+                                    : "unresolved";
+                                })
                               }
-                            >
-                              Locate insertion in photo
-                            </button>
-                            <label>
-                              Connection
-                              <select
-                                aria-label={`${c.label} ${t.label} connection`}
-                                value={targetValue(a)}
-                                onChange={(e) =>
-                                  edit((v) => {
-                                    const association = v.associations.find(
-                                      (x) => x.id === a.id,
-                                    )!;
-                                    const [boardId, holeId] =
-                                      e.target.value.split("/");
-                                    association.target = !boardId
-                                      ? null
-                                      : boardId === "terminal"
-                                        ? {
-                                            kind: "terminal",
-                                            terminalId: holeId,
-                                          }
-                                        : {
-                                            kind: "hole",
-                                            boardId,
-                                            holeId,
-                                            calibrationRevision: v.boards.find(
-                                              (b) => b.id === boardId,
-                                            )!.revision,
-                                          };
-                                    association.type =
-                                      boardId === "terminal"
-                                        ? "conductive_contact"
-                                        : "insertion";
-                                    association.state = "unresolved";
-                                  })
+                            />
+                            Both ends belong to this single intact wire
+                          </label>
+                        )}
+                        {c.terminalIds.map((tid) => {
+                          const t = draft.terminals.find((t) => t.id === tid)!,
+                            a = draft.associations.find(
+                              (a) => a.terminalId === tid,
+                            )!;
+                          return (
+                            <div className="ai-terminal" key={tid}>
+                              <div className="ai-terminal-title">
+                                <strong>{t.label}</strong>
+                                <span>
+                                  {a.state === "confirmed_manual"
+                                    ? "Confirmed"
+                                    : t.position
+                                      ? "Proposed · check insertion"
+                                      : "Unresolved · position hidden"}
+                                </span>
+                              </div>
+                              {view?.hybrid?.endpoints.find(e=>e.terminalId===tid)?.status==='unresolved'&&<p className="ai-help">{view.hybrid.endpoints.find(e=>e.terminalId===tid)!.reason}</p>}
+                              {view?.hybrid?.endpoints.find(
+                                (e) => e.terminalId === tid,
+                              )?.status === "ambiguous" && (
+                                <div className="ai-candidate-options">
+                                  <p className="ai-help">
+                                    {
+                                      view.hybrid.endpoints.find(
+                                        (e) => e.terminalId === tid,
+                                      )!.reason
+                                    }
+                                  </p>
+                                  {view.hybrid.endpoints
+                                    .find((e) => e.terminalId === tid)!
+                                    .candidates.filter(
+                                      (candidate) =>
+                                        candidate.distancePitch <= 0.85,
+                                    )
+                                    .map((candidate) => (
+                                      <button
+                                        key={`${candidate.boardId}/${candidate.holeId}`}
+                                        className="bench-button bench-button-quiet"
+                                        disabled={
+                                          c.state !== "confirmed_manual" ||
+                                          draft.boards.find(
+                                            (b) => b.id === candidate.boardId,
+                                          )?.topologyState !==
+                                            "confirmed_manual"
+                                        }
+                                        onClick={() =>
+                                          edit((input) => {
+                                            const board = input.boards.find(
+                                                (b) =>
+                                                  b.id === candidate.boardId,
+                                              )!,
+                                              hole = allHoles(
+                                                board.calibration as Calibration,
+                                                board.rails as Rail[],
+                                              ).find(
+                                                (h) =>
+                                                  h.id === candidate.holeId,
+                                              )!;
+                                            const association =
+                                              input.associations.find(
+                                                (x) => x.terminalId === tid,
+                                              )!;
+                                            association.target = {
+                                              kind: "hole",
+                                              boardId: board.id,
+                                              holeId: hole.id,
+                                              calibrationRevision:
+                                                board.revision,
+                                            };
+                                            association.type = "insertion";
+                                            association.state =
+                                              "confirmed_manual";
+                                            input.terminals.find(
+                                              (x) => x.id === tid,
+                                            )!.position = project(
+                                              board.calibration as Calibration,
+                                              hole.grid,
+                                            );
+                                          })
+                                        }
+                                      >
+                                        Confirm {candidate.holeId.toUpperCase()}
+                                      </button>
+                                    ))}
+                                </div>
+                              )}
+                              <button
+                                className="bench-link-button"
+                                onClick={() =>
+                                  setPicking({ kind: "terminal", id: tid })
                                 }
                               >
-                                <option value="">Unresolved</option>
-                                {draft.boards.map((b) => (
-                                  <optgroup key={b.id} label={b.id}>
-                                    {holes
-                                      .filter((h) => h.board.id === b.id)
-                                      .map(({ h }) => (
+                                Locate insertion in photo
+                              </button>
+                              <label>
+                                Connection
+                                <select
+                                  aria-label={`${c.label} ${t.label} connection`}
+                                  value={targetValue(a)}
+                                  onChange={(e) =>
+                                    edit((v) => {
+                                      const association = v.associations.find(
+                                        (x) => x.id === a.id,
+                                      )!;
+                                      const [boardId, holeId] =
+                                        e.target.value.split("/");
+                                      association.target = !boardId
+                                        ? null
+                                        : boardId === "terminal"
+                                          ? {
+                                              kind: "terminal",
+                                              terminalId: holeId,
+                                            }
+                                          : {
+                                              kind: "hole",
+                                              boardId,
+                                              holeId,
+                                              calibrationRevision:
+                                                v.boards.find(
+                                                  (b) => b.id === boardId,
+                                                )!.revision,
+                                            };
+                                      association.type =
+                                        boardId === "terminal"
+                                          ? "conductive_contact"
+                                          : "insertion";
+                                      association.state = "unresolved";
+                                    })
+                                  }
+                                >
+                                  <option value="">Unresolved</option>
+                                  {draft.boards.map((b) => (
+                                    <optgroup key={b.id} label={b.id}>
+                                      {holes
+                                        .filter((h) => h.board.id === b.id)
+                                        .map(({ h }) => (
+                                          <option
+                                            key={h.id}
+                                            value={`${b.id}/${h.id}`}
+                                          >
+                                            {b.id} / {h.id.toUpperCase()}
+                                          </option>
+                                        ))}
+                                    </optgroup>
+                                  ))}
+                                  <optgroup label="Direct contact to another terminal">
+                                    {draft.terminals
+                                      .filter(
+                                        (other) =>
+                                          other.componentId !== c.id &&
+                                          draft.components.find(
+                                            (c) => c.id === other.componentId,
+                                          )?.state === "confirmed_manual",
+                                      )
+                                      .map((other) => (
                                         <option
-                                          key={h.id}
-                                          value={`${b.id}/${h.id}`}
+                                          key={other.id}
+                                          value={`terminal/${other.id}`}
                                         >
-                                          {b.id} / {h.id.toUpperCase()}
+                                          {
+                                            draft.components.find(
+                                              (c) => c.id === other.componentId,
+                                            )?.label
+                                          }{" "}
+                                          / {other.label}
                                         </option>
                                       ))}
                                   </optgroup>
-                                ))}
-                                <optgroup label="Direct contact to another terminal">
-                                  {draft.terminals
-                                    .filter(
-                                      (other) =>
-                                        other.componentId !== c.id &&
-                                        draft.components.find(
-                                          (c) => c.id === other.componentId,
-                                        )?.state === "confirmed_manual",
-                                    )
-                                    .map((other) => (
-                                      <option
-                                        key={other.id}
-                                        value={`terminal/${other.id}`}
-                                      >
-                                        {
-                                          draft.components.find(
-                                            (c) => c.id === other.componentId,
-                                          )?.label
-                                        }{" "}
-                                        / {other.label}
-                                      </option>
-                                    ))}
-                                </optgroup>
-                              </select>
-                            </label>
-                            <label className="ai-check">
-                              <input
-                                type="checkbox"
-                                checked={a.state === "confirmed_manual"}
-                                disabled={
-                                  gridDirty ||
-                                  c.state !== "confirmed_manual" ||
-                                  !a.target ||
-                                  (a.target.kind === "hole" &&
-                                    draft.boards.find(
-                                      (b) =>
-                                        b.id ===
-                                        (a.target as { boardId: string })
-                                          .boardId,
-                                    )?.topologyState !== "confirmed_manual")
-                                }
-                                onChange={(e) =>
-                                  edit((v) => {
-                                    v.associations.find(
-                                      (x) => x.id === a.id,
-                                    )!.state = e.target.checked
-                                      ? "confirmed_manual"
-                                      : "unresolved";
-                                  })
-                                }
-                              />
-                              I confirm this physical connection
-                            </label>
-                            <label>
-                              Electrical role, if known
-                              <input
-                                placeholder="Unknown"
-                                value={t.role ?? ""}
-                                onChange={(e) =>
-                                  edit((v) => {
-                                    const terminal = v.terminals.find(
-                                      (x) => x.id === tid,
-                                    )!;
-                                    terminal.role = e.target.value || null;
-                                    terminal.roleState = "unresolved";
-                                  })
-                                }
-                              />
-                            </label>
-                            {t.role && (
+                                </select>
+                              </label>
                               <label className="ai-check">
                                 <input
                                   type="checkbox"
-                                  checked={t.roleState === "confirmed_manual"}
+                                  checked={a.state === "confirmed_manual"}
+                                  disabled={
+                                    gridDirty ||
+                                    c.state !== "confirmed_manual" ||
+                                    !a.target ||
+                                    (a.target.kind === "hole" &&
+                                      draft.boards.find(
+                                        (b) =>
+                                          b.id ===
+                                          (a.target as { boardId: string })
+                                            .boardId,
+                                      )?.topologyState !== "confirmed_manual")
+                                  }
                                   onChange={(e) =>
                                     edit((v) => {
-                                      v.terminals.find(
-                                        (x) => x.id === tid,
-                                      )!.roleState = e.target.checked
+                                      v.associations.find(
+                                        (x) => x.id === a.id,
+                                      )!.state = e.target.checked
                                         ? "confirmed_manual"
                                         : "unresolved";
                                     })
                                   }
                                 />
-                                Role checked against marking or part information
+                                I confirm this physical connection
                               </label>
-                            )}
-                            {t.evidence
-                              .filter((e) => e.source === "scene_observation")
-                              .map((e) => (
-                                <p className="ai-help" key={e.id}>
-                                  {e.note}
-                                </p>
-                              ))}
-                            <button
-                              className="bench-link-button"
-                              onClick={() =>
-                                edit((v) => {
-                                  const component = v.components.find(
-                                    (x) => x.id === c.id,
-                                  )!;
-                                  component.terminalIds =
-                                    component.terminalIds.filter(
-                                      (id) => id !== tid,
-                                    );
-                                  component.state = "unresolved";
-                                  v.terminals = v.terminals.filter(
-                                    (x) => x.id !== tid,
-                                  );
-                                  v.associations = v.associations.filter(
-                                    (x) => x.terminalId !== tid,
-                                  );
-                                  for (const other of v.associations) {
-                                    if (
-                                      other.target?.kind === "terminal" &&
-                                      other.target.terminalId === tid
-                                    )
-                                      other.target = null;
-                                    if (
-                                      component.terminalIds.includes(
-                                        other.terminalId,
-                                      ) ||
-                                      !other.target
-                                    )
-                                      other.state = "unresolved";
+                              <label>
+                                Electrical role, if known
+                                <input
+                                  placeholder="Unknown"
+                                  value={t.role ?? ""}
+                                  onChange={(e) =>
+                                    edit((v) => {
+                                      const terminal = v.terminals.find(
+                                        (x) => x.id === tid,
+                                      )!;
+                                      terminal.role = e.target.value || null;
+                                      terminal.roleState = "unresolved";
+                                    })
                                   }
-                                })
-                              }
-                            >
-                              Remove this terminal
-                            </button>
-                          </div>
-                        );
-                      })}
-                      <button
-                        className="bench-link-button"
-                        onClick={() =>
-                          edit((v) => {
-                            const comp = v.components.find(
-                              (x) => x.id === c.id,
-                            )!;
-                            const tid = `${c.id}_manual_${crypto.randomUUID().replaceAll("-", "")}`;
-                            comp.terminalIds.push(tid);
-                            v.terminals.push({
-                              id: tid,
-                              componentId: c.id,
-                              label: `Contact ${comp.terminalIds.length}`,
-                              role: null,
-                              roleState: "unresolved",
-                              position: null,
-                              evidence: [],
-                            });
-                            v.associations.push({
-                              id: `a_${tid}`,
-                              terminalId: tid,
-                              target: null,
-                              type: "insertion",
-                              state: "unresolved",
-                              evidence: [],
-                              originalProposalRef: null,
-                            });
-                          })
-                        }
-                      >
-                        Add missing terminal
-                      </button>
-                    </div>
-                  </details>
-                ))}
+                                />
+                              </label>
+                              {t.role && (
+                                <label className="ai-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={t.roleState === "confirmed_manual"}
+                                    onChange={(e) =>
+                                      edit((v) => {
+                                        v.terminals.find(
+                                          (x) => x.id === tid,
+                                        )!.roleState = e.target.checked
+                                          ? "confirmed_manual"
+                                          : "unresolved";
+                                      })
+                                    }
+                                  />
+                                  Role checked against marking or part
+                                  information
+                                </label>
+                              )}
+                              {t.evidence
+                                .filter((e) => e.source === "scene_observation")
+                                .map((e) => (
+                                  <p className="ai-help" key={e.id}>
+                                    {e.note}
+                                  </p>
+                                ))}
+                              <button
+                                className="bench-link-button"
+                                onClick={() =>
+                                  edit((v) => {
+                                    const component = v.components.find(
+                                      (x) => x.id === c.id,
+                                    )!;
+                                    component.terminalIds =
+                                      component.terminalIds.filter(
+                                        (id) => id !== tid,
+                                      );
+                                    component.state = "unresolved";
+                                    v.terminals = v.terminals.filter(
+                                      (x) => x.id !== tid,
+                                    );
+                                    v.associations = v.associations.filter(
+                                      (x) => x.terminalId !== tid,
+                                    );
+                                    for (const other of v.associations) {
+                                      if (
+                                        other.target?.kind === "terminal" &&
+                                        other.target.terminalId === tid
+                                      )
+                                        other.target = null;
+                                      if (
+                                        component.terminalIds.includes(
+                                          other.terminalId,
+                                        ) ||
+                                        !other.target
+                                      )
+                                        other.state = "unresolved";
+                                    }
+                                  })
+                                }
+                              >
+                                Remove this terminal
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <button
+                          className="bench-link-button"
+                          onClick={() =>
+                            edit((v) => {
+                              const comp = v.components.find(
+                                (x) => x.id === c.id,
+                              )!;
+                              const tid = `${c.id}_manual_${crypto.randomUUID().replaceAll("-", "")}`;
+                              comp.terminalIds.push(tid);
+                              v.terminals.push({
+                                id: tid,
+                                componentId: c.id,
+                                label: `Contact ${comp.terminalIds.length}`,
+                                role: null,
+                                roleState: "unresolved",
+                                position: null,
+                                evidence: [],
+                              });
+                              v.associations.push({
+                                id: `a_${tid}`,
+                                terminalId: tid,
+                                target: null,
+                                type: "insertion",
+                                state: "unresolved",
+                                evidence: [],
+                                originalProposalRef: null,
+                              });
+                            })
+                          }
+                        >
+                          Add missing terminal
+                        </button>
+                      </div>
+                    </details>
+                  ))}
                 <button
                   className="bench-link-button"
                   onClick={() =>
@@ -1416,6 +1793,28 @@ export function AutomaticCircuitWorkspace() {
                     placeholder="Who checked the wiring?"
                   />
                 </label>
+                {view?.hybrid && clearCount > 0 && (
+                  <button
+                    className="bench-button bench-button-dark"
+                    disabled={
+                      busy ||
+                      !reviewer.trim() ||
+                      gridDirty ||
+                      !canConfirmMeasuredGrid(view, draft)
+                    }
+                    onClick={() =>
+                      work(() =>
+                        post("review", {
+                          expectedRevision: view.revision,
+                          reviewer,
+                          input: confirmClearProposals(view, draft),
+                        }),
+                      )
+                    }
+                  >
+                    Confirm clear proposals and save
+                  </button>
+                )}
                 <button
                   className="bench-button bench-button-dark"
                   disabled={busy || !reviewer.trim() || gridDirty}

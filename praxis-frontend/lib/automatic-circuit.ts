@@ -2,6 +2,7 @@ import { z } from "zod";
 import { inventorySchema } from "../../praxis-backend/server/src/shared/automatic-circuit";
 import { circuitInputSchema } from "../../praxis-backend/server/src/schemas/connectivity";
 import { projection } from "./circuit-session";
+import { hybridStateSchema } from "../../praxis-backend/server/src/shared/hybrid-geometry";
 export type { CircuitInspection } from "../../praxis-backend/server/src/shared/automatic-circuit";
 export type { CircuitInput } from "../../praxis-backend/server/src/schemas/connectivity";
 export const inspectionSchema = z
@@ -25,6 +26,7 @@ export const inspectionSchema = z
     graph: projection.nullable(),
     reviewedAt: z.number().nullable(),
     reviewer: z.string().nullable(),
+    hybrid: hybridStateSchema.optional(),
   })
   .strict();
 export function parseInspection(raw: unknown, id?: string) {

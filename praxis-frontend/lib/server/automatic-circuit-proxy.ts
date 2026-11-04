@@ -1,7 +1,14 @@
 import { readBounded, BoundedReadError } from "./bounded-body";
 import { parseInspection } from "../automatic-circuit";
 type Action =
-  "create" | "get" | "image" | "review" | "calibrate" | "evidence" | "delete";
+  | "create"
+  | "get"
+  | "image"
+  | "review"
+  | "calibrate"
+  | "localize"
+  | "evidence"
+  | "delete";
 export function createAutomaticCircuitProxy(
   options: {
     fetcher?: typeof fetch;
@@ -54,10 +61,14 @@ export function createAutomaticCircuitProxy(
           !contentType.includes("boundary="))
       )
         return fail(415, "Choose a circuit photograph.");
-      const body = ["create", "review", "calibrate"].includes(action)
+      const body = ["create", "review", "calibrate", "localize"].includes(
+        action,
+      )
         ? await readBounded(
             request.body,
-            action === "create" ? 8 * 1024 * 1024 + 65536 : 2 * 1024 * 1024,
+            action === "create"
+              ? 8 * 1024 * 1024 + 512 * 1024
+              : 2 * 1024 * 1024,
             signal,
           )
         : undefined;

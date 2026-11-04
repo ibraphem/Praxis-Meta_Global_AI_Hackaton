@@ -14,7 +14,7 @@ export async function POST(
   { params }: RouteContext<"/api/circuit-inspections/[id]/[action]">,
 ) {
   const { id, action } = await params;
-  return action === "review" || action === "calibrate"
+  return action === "review" || action === "calibrate" || action === "localize"
     ? proxy(request, action, id)
     : new Response(null, { status: 404 });
 }

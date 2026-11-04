@@ -53,3 +53,6 @@ SKILL.md
 
 # Private benchmark evidence archives (independent of job retention)
 benchmark-evidence/
+
+# Generated pinned OpenCV runtime and browser worker
+praxis-frontend/public/cv/

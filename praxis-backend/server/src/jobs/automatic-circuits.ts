@@ -20,16 +20,31 @@ import {
 } from '../shared/automatic-circuit.js';
 import {
   allHoles,
+  calibrateBoard,
+  project,
+  unproject,
   type Calibration,
   type Rail,
 } from '../shared/calibration.js';
 import { circuitInputSchema } from '../schemas/connectivity.js';
+import {
+  geometryUploadSchema,
+  localEndpointSchema,
+} from '../shared/hybrid-geometry.js';
+import { proposeHybridCircuit } from '../services/hybrid-circuit.js';
 
 const inspectionReviewSchema = z
   .object({
     expectedRevision: z.number().int().nonnegative(),
     reviewer: z.string().trim().min(1).max(100),
     input: circuitInputSchema,
+  })
+  .strict();
+const recalibrationRequestSchema = z
+  .object({
+    expectedRevision: z.number().int().nonnegative(),
+    observations: inventorySchema,
+    input: circuitInputSchema.optional(),
   })
   .strict();
 
@@ -81,7 +96,7 @@ export class AutomaticCircuitService {
       .prepare('SELECT image FROM automatic_circuit_inspections WHERE id=?')
       .get(id)!.image as Uint8Array;
   }
-  async create(bytes: Buffer) {
+  async create(bytes: Buffer, rawGeometry?: unknown) {
     if (this.tasks.size >= this.store.config.MAX_CONCURRENT_ANALYSES)
       throw new AppError(
         503,
@@ -97,6 +112,83 @@ export class AutomaticCircuitService {
     this.tasks.set(id, { controller, promise: Promise.resolve() });
     try {
       const image = await prepareImage(bytes, this.store.config);
+      const parsed =
+        rawGeometry === undefined
+          ? null
+          : geometryUploadSchema.safeParse(rawGeometry);
+      if (parsed && !parsed.success)
+        throw new AppError(
+          400,
+          'INVALID_GEOMETRY',
+          'Local grid measurements are invalid.',
+        );
+      const supplied = parsed?.success ? parsed.data : null;
+      if (
+        supplied &&
+        (supplied.sourceHash !==
+          createHash('sha256').update(bytes).digest('hex') ||
+          supplied.geometry.image.width !== image.width ||
+          supplied.geometry.image.height !== image.height)
+      )
+        throw new AppError(
+          400,
+          'GEOMETRY_IMAGE_MISMATCH',
+          'Local geometry must match the uploaded photograph.',
+        );
+      if (supplied) {
+        const fit = supplied.geometry.fit;
+        if ((supplied.geometry.status === 'measured') !== !!fit)
+          throw new AppError(
+            400,
+            'INVALID_GEOMETRY',
+            'Grid measurements are incomplete.',
+          );
+        if (fit) {
+          let c: Calibration;
+          try {
+            c = calibrateBoard(
+              'board_1',
+              fit.rows,
+              { width: image.width, height: image.height },
+              fit.anchors,
+            );
+          } catch {
+            throw new AppError(
+              400,
+              'INVALID_GEOMETRY',
+              'Grid anchors do not define a valid board within this photograph.',
+            );
+          }
+          if (fit.observedRows > fit.rows)
+            throw new AppError(
+              400,
+              'INVALID_GEOMETRY',
+              'Observed rows exceed the supported board.',
+            );
+          const rms =
+            Math.sqrt(
+              fit.holes.reduce((sum, h) => {
+                const p = project(c, {
+                  x: h.column < 5 ? h.column : h.column + 2,
+                  y: h.row,
+                });
+                return sum + (p.x - h.x) ** 2 + (p.y - h.y) ** 2;
+              }, 0) / fit.holes.length,
+            ) / fit.pitch;
+          if (
+            rms > 0.15 ||
+            fit.holes.some(
+              (h) =>
+                h.x >= image.width || h.y >= image.height || h.row >= fit.rows,
+            )
+          )
+            throw new AppError(
+              400,
+              'INVALID_GEOMETRY',
+              'Measured hole centres disagree with the proposed grid.',
+            );
+        }
+      }
       const canonical = Buffer.from(image.dataUrl.split(',')[1]!, 'base64');
       const now = Date.now();
       this.store.db
@@ -155,7 +247,7 @@ export class AutomaticCircuitService {
         try {
           v.status = 'running';
           this.save(v);
-          await proposeAutomaticCircuit({
+          const callbacks = {
             config: this.store.config,
             client: this.client,
             image,
@@ -166,11 +258,17 @@ export class AutomaticCircuitService {
               v.requestCount++;
               this.save(v);
             },
-            checkpoint: (p) => {
+            checkpoint: (p: Partial<CircuitInspection>) => {
               Object.assign(v, p);
               this.save(v);
             },
-          });
+          };
+          if (supplied)
+            await proposeHybridCircuit({
+              ...callbacks,
+              geometry: supplied.geometry,
+            });
+          else await proposeAutomaticCircuit(callbacks);
           v.status = 'needs_review';
           v.stage = 'Confirm the grid and proposed connections';
         } catch (error) {
@@ -193,6 +291,7 @@ export class AutomaticCircuitService {
                 JSON.stringify({
                   input: v.input,
                   observations: v.observations,
+                  ...(v.hybrid ? { hybrid: v.hybrid } : {}),
                   model: v.model,
                   requestCount: v.requestCount,
                 }),
@@ -210,15 +309,137 @@ export class AutomaticCircuitService {
       throw error;
     }
   }
-  recalibrate(id: string, raw: unknown) {
+  localize(id: string, raw: unknown) {
     const body = z
       .object({
         expectedRevision: z.number().int().nonnegative(),
-        observations: inventorySchema,
-        input: circuitInputSchema.optional(),
+        imageHash: z.string(),
+        endpoints: z.array(localEndpointSchema).max(500),
       })
       .strict()
       .parse(raw);
+    const v = this.editable(id, body.expectedRevision);
+    if (v.status === 'reviewed')
+      throw new AppError(
+        409,
+        'REVIEW_ALREADY_SAVED',
+        'Local proposals cannot replace a saved human review.',
+      );
+    if (!v.hybrid || !v.input || body.imageHash !== v.imageHash)
+      throw new AppError(
+        409,
+        'GEOMETRY_IMAGE_MISMATCH',
+        'Endpoint measurements must belong to this inspection.',
+      );
+    const seen = new Set<string>();
+    const numbering = v.hybrid.numbering,
+      fit = v.hybrid.geometry.fit;
+    const numberingKnown =
+      !!fit &&
+      !!numbering &&
+      numbering.rowDirection !== 'unknown' &&
+      numbering.columnDirection !== 'unknown' &&
+      numbering.firstPrintedRow ===
+        (numbering.rowDirection === 'reverse' ? fit.rows : 1) &&
+      fit.observedRows === fit.rows;
+    for (const e of body.endpoints) {
+      if (
+        seen.has(e.terminalId) ||
+        !v.input.terminals.some(
+          (t) => t.id === e.terminalId && t.componentId === e.componentId,
+        )
+      )
+        throw new AppError(
+          400,
+          'INVALID_ENDPOINT',
+          'Unknown or duplicate terminal measurement.',
+        );
+      seen.add(e.terminalId);
+      if (
+        e.position &&
+        (e.position.x >= v.image.width || e.position.y >= v.image.height)
+      )
+        throw new AppError(
+          400,
+          'INVALID_ENDPOINT',
+          'Endpoint lies outside the captured photograph.',
+        );
+      const target = proposedHole(v.input, e.position),
+        association = v.input.associations.find(
+          (a) => a.terminalId === e.terminalId,
+        )!;
+      association.state = 'unresolved';
+      association.target = e.status === 'supported' && target ? target : null;
+      association.type = 'insertion';
+      association.originalProposalRef = `cv:${e.terminalId}`;
+      association.evidence = [
+        {
+          id: `cv_${e.terminalId}`,
+          source: 'derived',
+          reviewer: null,
+          timestamp: Date.now(),
+          note: `OpenCV ${e.basis}: ${e.reason}. Geometric proposal only; physical contact requires human confirmation.`,
+        },
+      ];
+      if (e.status === 'supported' && !target) {
+        e.status = 'ambiguous';
+        e.reason = 'Endpoint does not uniquely match a registered hole.';
+      }
+      const position = e.position;
+      e.candidates = position
+        ? v.input.boards
+            .flatMap((b) => {
+              const grid = unproject(b.calibration as Calibration, position);
+              return allHoles(
+                b.calibration as Calibration,
+                b.rails as Rail[],
+              ).map((h) => ({
+                boardId: b.id,
+                holeId: h.id,
+                distancePitch: Math.hypot(grid.x - h.grid.x, grid.y - h.grid.y),
+              }));
+            })
+            .sort((a, b) => a.distancePitch - b.distancePitch)
+            .slice(0, 3)
+        : [];
+    }
+    v.hybrid.endpoints = body.endpoints;
+    v.hybrid.localStatus = body.endpoints.some((e) => e.status === 'supported')
+      ? 'ready'
+      : 'unresolved';
+    if (
+      !numberingKnown &&
+      !v.warnings.includes(
+        'Check the printed row and column labels before confirming local endpoint proposals.',
+      )
+    )
+      v.warnings.push(
+        'Check the printed row and column labels before confirming local endpoint proposals.',
+      );
+    v.revision++;
+    v.input.revision = v.revision;
+    v.graph = null;
+    v.status = 'needs_review';
+    this.save(v);
+    return v;
+  }
+  recalibrate(id: string, raw: unknown) {
+    const parsed = recalibrationRequestSchema.safeParse(raw);
+    if (!parsed.success) {
+      const tooFewLandmarks = parsed.error.issues.some(
+        (issue) =>
+          issue.code === 'too_small' &&
+          issue.path.at(-1) === 'landmarks',
+      );
+      throw new AppError(
+        400,
+        'INVALID_GRID',
+        tooFewLandmarks
+          ? 'Place at least six labelled hole landmarks on the breadboard before fitting the grid.'
+          : 'The adjusted grid data is invalid. Check the labelled holes and try again.',
+      );
+    }
+    const body = parsed.data;
     const v = this.editable(id, body.expectedRevision);
     if (!v.input)
       throw new AppError(
@@ -248,6 +469,16 @@ export class AutomaticCircuitService {
         warnings.join(' ').slice(0, 1000) || 'Supply supported grid landmarks.',
       );
     v.input.boards = boards;
+    if (v.hybrid) {
+      v.hybrid.endpoints = [];
+      v.hybrid.localStatus = 'pending';
+      v.hybrid.numbering = {
+        firstPrintedRow: null,
+        rowDirection: 'unknown',
+        columnDirection: 'unknown',
+        note: 'Grid was adjusted. Check the printed numbering before confirming.',
+      };
+    }
     for (const c of v.input.components) {
       c.state = 'unresolved';
       c.continuity = 'unresolved';
@@ -440,6 +671,8 @@ export class AutomaticCircuitService {
           }),
         );
       v.input = input;
+      if (v.hybrid?.localStatus === 'pending')
+        v.hybrid.localStatus = 'unresolved';
       v.graph = graph;
       v.revision = input.revision;
       v.reviewer = body.reviewer;

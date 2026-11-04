@@ -13,9 +13,14 @@
     "test:e2e": "playwright test",
     "benchmark:grounding": "node --import tsx scripts/score-grounding.mts",
     "benchmark:replay": "node --import tsx scripts/replay-endpoints.ts",
-    "benchmark:refine": "node --import tsx scripts/evaluate-refinement.mts"
+    "benchmark:refine": "node --import tsx scripts/evaluate-refinement.mts",
+    "build:cv": "node scripts/build-cv.mjs",
+    "predev": "npm run build:cv",
+    "predev:https": "npm run build:cv",
+    "prebuild": "npm run build:cv"
   },
   "dependencies": {
+    "@techstark/opencv-js": "4.12.0-release.1",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -27,6 +32,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "esbuild": "0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.3",
     "tailwindcss": "^4",

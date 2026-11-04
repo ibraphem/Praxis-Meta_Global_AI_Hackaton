@@ -3,21 +3,174 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { AutomaticCircuitService } from '../src/jobs/automatic-circuits.js';
 import { JobStore } from '../src/jobs/store.js';
 import { fitObservedBoard } from '../src/services/automatic-calibration.js';
-import { calibrateBoard, project } from '../src/shared/calibration.js';
+import {
+  calibrateBoard,
+  project,
+  terminalHoles,
+} from '../src/shared/calibration.js';
 import type { MetaClient } from '../src/lib/meta-client.js';
 import { buildApp } from '../src/app.js';
 import {
   completion,
+  samEnvelope,
   imageBytes,
   multipartBody,
   testConfig,
 } from './helpers.js';
 import type { CircuitInspection } from '../src/shared/automatic-circuit.js';
+import type { MeasuredGeometry } from '../src/shared/hybrid-geometry.js';
 
 const image = { width: 640, height: 960 };
+function measuredGeometry(): MeasuredGeometry {
+  const calibration = calibrateBoard('board_1', 30, image, [
+    { x: 100, y: 100 },
+    { x: 430, y: 100 },
+    { x: 430, y: 900 },
+    { x: 100, y: 900 },
+  ]);
+  return {
+    version: 'opencv-lattice-v1',
+    image,
+    processing: image,
+    status: 'measured',
+    reason: 'Synthetic measured grid',
+    holeCount: 300,
+    fit: {
+      rows: 30,
+      observedRows: 30,
+      anchors: calibration.anchors,
+      holes: terminalHoles(calibration).map((h) => ({
+        ...project(calibration, h.grid),
+        column: 'abcdefghij'.indexOf(h.id[0]!),
+        row: Number(h.id.slice(1)) - 1,
+      })),
+      pitch: 30,
+      rmsPitch: 0,
+      inlierRatio: 1,
+    },
+  };
+}
+function semanticClient() {
+  let calls = 0;
+  return {
+    calls: () => calls,
+    client: {
+      async post(path: string, body: Record<string, unknown>) {
+        calls++;
+        if (path === 'responses') return samEnvelope('<0f>');
+        const prompt = JSON.stringify(body.messages);
+        assert.ok(
+          prompt.includes('Do not predict hole centres or terminal positions'),
+        );
+        return completion({
+          numbering: {
+            firstPrintedRow: 1,
+            rowDirection: 'forward',
+            columnDirection: 'forward',
+            note: 'Readable labels',
+          },
+          components: [
+            {
+              label: 'Observed conductor',
+              type: 'jumper_wire',
+              bbox: [100, 150, 600, 500],
+              wireMaskId: null,
+            },
+          ],
+          warnings: [],
+        });
+      },
+    } as MetaClient,
+  };
+}
+test('hybrid geometry replaces model coordinates and local proposals remain unconfirmed until review', async () => {
+  const store = new JobStore(testConfig(), ':memory:'),
+    fake = semanticClient(),
+    service = new AutomaticCircuitService(store, fake.client);
+  try {
+    const bytes = await imageBytes(640, 960),
+      initial = await service.create(bytes, {
+        sourceHash: createHash('sha256').update(bytes).digest('hex'),
+        geometry: measuredGeometry(),
+      }),
+      v = await done(service, initial.id);
+    assert.equal(v.status, 'needs_review');
+    assert.equal(v.requestCount, 2);
+    assert.equal(fake.calls(), 2);
+    assert.equal(v.hybrid!.geometry.fit!.holes.length, 300);
+    assert.ok(v.input!.terminals.every((t) => t.position === null));
+    const endpoints = v.input!.terminals.map((t, i) => ({
+      terminalId: t.id,
+      componentId: t.componentId,
+      position: fixture().pixel(i ? 'f5' : 'a5'),
+      basis: 'mask_endpoint',
+      status: 'supported',
+      reason: 'Measured synthetic mask',
+      candidates: [],
+    }));
+    const localized = service.localize(v.id, {
+      expectedRevision: v.revision,
+      imageHash: v.imageHash,
+      endpoints,
+    });
+    assert.equal(localized.hybrid!.localStatus, 'ready');
+    assert.deepEqual(
+      localized
+        .input!.associations.map((a) =>
+          a.target?.kind === 'hole' ? a.target.holeId : null,
+        )
+        .sort(),
+      ['a5', 'f5'],
+    );
+    assert.ok(
+      localized.input!.associations.every((a) => a.state === 'unresolved'),
+    );
+    assert.equal(fake.calls(), 2);
+    assert.throws(
+      () =>
+        service.localize(v.id, {
+          expectedRevision: v.revision,
+          imageHash: v.imageHash,
+          endpoints,
+        }),
+      /changed/,
+    );
+    const confirmed = service.review(v.id, reviewed(localized));
+    assert.equal(confirmed.graph!.wires[0]!.confirmed, true);
+    assert.throws(()=>service.localize(v.id,{expectedRevision:confirmed.revision,imageHash:v.imageHash,endpoints}),/saved human review/);
+    assert.equal(fake.calls(), 2);
+  } finally {
+    await service.close();
+    store.close();
+  }
+});
+test('foreign or inconsistent browser geometry is rejected before provider dispatch', async () => {
+  const store = new JobStore(testConfig(), ':memory:'),
+    fake = semanticClient(),
+    service = new AutomaticCircuitService(store, fake.client);
+  try {
+    const bytes = await imageBytes(640, 960),
+      geometry = measuredGeometry(),
+      sourceHash = createHash('sha256').update(bytes).digest('hex');
+    await assert.rejects(
+      service.create(bytes, { sourceHash: 'b'.repeat(64), geometry }),
+      /match the uploaded/,
+    );
+    geometry.fit!.holes[0]!.x += 100;
+    await assert.rejects(
+      service.create(bytes, { sourceHash, geometry }),
+      /disagree/,
+    );
+    assert.equal(fake.calls(), 0);
+  } finally {
+    await service.close();
+    store.close();
+  }
+});
 function fixture(rotated = false, rows: 30 | 63 = 30) {
   const calibration = calibrateBoard(
     'board_1',
@@ -312,6 +465,32 @@ test('grid refit preserves edits, resets confirmations, and binds reviews to the
     const wrong = reviewed(recalibrated);
     wrong.input.imageHash = 'b'.repeat(64);
     assert.throws(() => service.review(v.id, wrong), /captured image/);
+  } finally {
+    await service.close();
+    store.close();
+  }
+});
+
+test('grid refit explains the six-landmark minimum without exposing schema errors', async () => {
+  const store = new JobStore(testConfig(), ':memory:'),
+    service = new AutomaticCircuitService(store, fakeClient().client);
+  try {
+    const initial = await service.create(await imageBytes(640, 960)),
+      v = await done(service, initial.id),
+      observations = structuredClone(v.observations!);
+    observations.boards[0]!.landmarks = observations.boards[0]!.landmarks.slice(
+      0,
+      5,
+    );
+    assert.throws(
+      () =>
+        service.recalibrate(v.id, {
+          expectedRevision: v.revision,
+          observations,
+          input: v.input,
+        }),
+      /Place at least six labelled hole landmarks/,
+    );
   } finally {
     await service.close();
     store.close();

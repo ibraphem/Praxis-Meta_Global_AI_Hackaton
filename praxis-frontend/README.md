@@ -1,9 +1,10 @@
 # Praxis — vision workspace
 
 The home page and `/camera` now provide [automatic circuit inspection](../docs/automatic-circuit-inspection.md):
-AI proposes a board grid, components and terminal insertions from a captured or
-uploaded photograph, followed by individual human confirmation and a computed
-connection graph. No fixed reference circuit is supplied. The original photograph
+OpenCV.js measures hole geometry in a browser worker; SAM segments wires and Muse
+identifies components. Clear connections can be confirmed together, with individual
+review reserved for exceptions. The graph is computed from reviewed data, with no
+fixed reference circuit. The original photograph
 workspace described below remains at `/workspace`.
 
 A mobile-friendly Next.js interface for Praxis's first perception milestone.

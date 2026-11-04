@@ -1,7 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { calibrateBoard } from "../../../praxis-backend/server/src/shared/calibration";
+import { createRequire } from "node:module";
+import {
+  calibrateBoard,
+  terminalHoles,
+  project,
+} from "../../../praxis-backend/server/src/shared/calibration";
 import { buildConnectivity } from "../../../praxis-backend/server/src/services/connectivity";
 import { connectionProjection } from "../../../praxis-backend/server/src/services/connection-projection";
 import type { CircuitInspection } from "../../lib/automatic-circuit";
@@ -152,10 +157,68 @@ function fixture(): CircuitInspection {
     },
   };
 }
-async function mock(page: Page, restore = false) {
+async function mock(page: Page, restore = false, hybrid = false) {
+  const raster = hybrid
+    ? await createRequire(
+        resolve(process.cwd(), "../praxis-backend/server/package.json"),
+      )("sharp")({
+        create: { width: 640, height: 960, channels: 3, background: "#ffffff" },
+      })
+        .jpeg()
+        .toBuffer()
+    : null;
   let v = fixture(),
     uploads = 0,
     reviews = 0;
+  if (hybrid) {
+    const c = v.input!.boards[0].calibration;
+    v.input!.terminals.forEach((t) => (t.position = null));
+    v.hybrid = {
+      geometry: {
+        version: "opencv-lattice-v1",
+        image: v.image,
+        processing: v.image,
+        status: "measured",
+        reason: "Synthetic grid",
+        holeCount: 300,
+        fit: {
+          rows: 30,
+          observedRows: 30,
+          anchors: c.anchors,
+          holes: terminalHoles(c as Parameters<typeof terminalHoles>[0]).map(
+            (h) => ({
+              ...project(c as Parameters<typeof project>[0], h.grid),
+              column: "abcdefghij".indexOf(h.id[0]),
+              row: Number(h.id.slice(1)) - 1,
+            }),
+          ),
+          pitch: 30,
+          rmsPitch: 0,
+          inlierRatio: 1,
+        },
+      },
+      numbering: {
+        firstPrintedRow: 1,
+        rowDirection: "forward",
+        columnDirection: "forward",
+        note: "Synthetic labels",
+      },
+      wireMasks: [
+        {
+          id: "mask1",
+          componentId: "wire",
+          bbox: [95, 205, 220, 175],
+          mask: {
+            width: 220,
+            height: 175,
+            path: "M1 6L81 171L217 6L213 2L81 163L5 2Z",
+          },
+        },
+      ],
+      endpoints: [],
+      localStatus: "pending",
+    };
+  }
   await page.addInitScript(
     ({ id, restore }) => {
       localStorage.clear();
@@ -172,8 +235,10 @@ async function mock(page: Page, restore = false) {
   );
   await page.route(`**/api/circuit-inspections/${id}/image`, (route) =>
     route.fulfill({
-      contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="960"><rect width="640" height="960" fill="#e7ebe0"/><rect x="80" y="80" width="380" height="840" rx="12" fill="white"/><path d="M100 210C200 90 300 330 310 210" fill="none" stroke="#364e48" stroke-width="12"/><text x="100" y="60" font-size="15">Synthetic circuit for software tests</text></svg>',
+      contentType: raster ? "image/jpeg" : "image/svg+xml",
+      body:
+        raster ??
+        '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="960"><rect width="640" height="960" fill="#e7ebe0"/><rect x="80" y="80" width="380" height="840" rx="12" fill="white"/><path d="M100 210C200 90 300 330 310 210" fill="none" stroke="#364e48" stroke-width="12"/><text x="100" y="60" font-size="15">Synthetic circuit for software tests</text></svg>',
     }),
   );
   await page.route(`**/api/circuit-inspections/${id}/review`, async (route) => {
@@ -201,6 +266,29 @@ async function mock(page: Page, restore = false) {
     };
     await route.fulfill({ json: v });
   });
+  await page.route(
+    `**/api/circuit-inspections/${id}/localize`,
+    async (route) => {
+      const body = route.request().postDataJSON();
+      expect(body.imageHash).toBe(v.imageHash);
+      v.hybrid!.endpoints = body.endpoints;
+      v.hybrid!.localStatus = "ready";
+      v.revision++;
+      for (const e of v.hybrid!.endpoints) {
+        const a = v.input!.associations.find(
+          (a) => a.terminalId === e.terminalId,
+        );
+        if (a && e.status === "supported" && e.candidates[0])
+          a.target = {
+            kind: "hole",
+            boardId: e.candidates[0].boardId,
+            holeId: e.candidates[0].holeId,
+            calibrationRevision: 1,
+          };
+      }
+      await route.fulfill({ json: v });
+    },
+  );
   return { counts: () => ({ uploads, reviews }), get: () => v };
 }
 test("default camera has a general inspection flow and no fixed reference circuit", async ({
@@ -229,13 +317,11 @@ test("upload leads to individual confirmation, unresolved hidden contacts and a 
 }, info) => {
   const fake = await mock(page);
   await page.goto("/camera");
-  await page
-    .getByLabel("Upload circuit photo")
-    .setInputFiles({
-      name: "circuit.jpg",
-      mimeType: "image/jpeg",
-      buffer: image,
-    });
+  await page.getByLabel("Upload circuit photo").setInputFiles({
+    name: "circuit.jpg",
+    mimeType: "image/jpeg",
+    buffer: image,
+  });
   await page
     .getByRole("button", { name: "Analyze circuit", exact: true })
     .dblclick();
@@ -317,4 +403,40 @@ test("permission denial displays a recoverable error and leaves photo upload ava
     page.getByRole("alert").filter({ hasText: "Camera permission denied" }),
   ).toContainText("Camera permission denied");
   await expect(page.getByLabel("Upload circuit photo")).toBeEnabled();
+});
+test("hybrid worker matches a wire locally and confirms clear connections in one review action", async ({
+  page,
+}, info) => {
+  const fake = await mock(page, true, true);
+  await page.goto("/camera");
+  await expect(
+    page.getByRole("heading", { name: "Review the exceptions", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("2 clear connection proposals.", { exact: false }),
+  ).toBeVisible();
+  await expect(page.locator("#review-wire")).toHaveCount(0);
+  await expect(page.locator("#review-module")).toBeVisible();
+  await page.getByLabel("Reviewer name").fill("Human reviewer");
+  await page
+    .getByRole("button", {
+      name: "Confirm clear proposals and save",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("img", { name: "Observed circuit connection graph" }),
+  ).toBeVisible();
+  expect(
+    fake
+      .get()
+      .input!.associations.slice(0, 2)
+      .every((a) => a.state === "confirmed_manual"),
+  ).toBe(true);
+  expect(fake.get().input!.associations[2].state).toBe("unresolved");
+  expect(fake.counts()).toEqual({ uploads: 0, reviews: 1 });
+  await page.screenshot({
+    path: info.outputPath("hybrid-one-action-review.png"),
+    fullPage: true,
+  });
 });

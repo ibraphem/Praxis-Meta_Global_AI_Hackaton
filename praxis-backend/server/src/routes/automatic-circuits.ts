@@ -16,7 +16,28 @@ export function registerAutomaticCircuitRoutes(
         'Upload one circuit photograph.',
       );
     let bytes: Buffer | undefined;
-    for await (const part of request.parts()) {
+    let geometry: unknown;
+    for await (const part of request.parts({
+      limits: { fields: 1, parts: 2, fieldSize: 512 * 1024 },
+    })) {
+      if (
+        part.type === 'field' &&
+        part.fieldname === 'geometry' &&
+        geometry === undefined &&
+        !part.valueTruncated &&
+        typeof part.value === 'string'
+      ) {
+        try {
+          geometry = JSON.parse(part.value);
+        } catch {
+          throw new AppError(
+            400,
+            'INVALID_GEOMETRY',
+            'Local grid measurements are invalid.',
+          );
+        }
+        continue;
+      }
       if (part.type !== 'file' || part.fieldname !== 'image' || bytes)
         throw new AppError(400, 'INVALID_UPLOAD', 'Upload one image field.');
       bytes = await part.toBuffer();
@@ -33,7 +54,7 @@ export function registerAutomaticCircuitRoutes(
         'MISSING_IMAGE',
         'A circuit photograph is required.',
       );
-    return reply.code(202).send(await service.create(bytes));
+    return reply.code(202).send(await service.create(bytes, geometry));
   });
   app.get(
     '/api/circuit-inspections/:id',
@@ -57,15 +78,17 @@ export function registerAutomaticCircuitRoutes(
     service.remove(id(request.params));
     return reply.code(204).send();
   });
-  for (const action of ['review', 'calibrate'] as const)
+  for (const action of ['review', 'calibrate', 'localize'] as const)
     app.post(
       `/api/circuit-inspections/:id/${action}`,
       { bodyLimit: 2 * 1024 * 1024 },
       async (request) => {
         try {
-          return action === 'review'
-            ? service.review(id(request.params), request.body)
-            : service.recalibrate(id(request.params), request.body);
+          return action === 'localize'
+            ? service.localize(id(request.params), request.body)
+            : action === 'review'
+              ? service.review(id(request.params), request.body)
+              : service.recalibrate(id(request.params), request.body);
         } catch (error) {
           if (error instanceof AppError) throw error;
           throw new AppError(
