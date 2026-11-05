@@ -70,6 +70,7 @@ try {
       assignedMasks: view.hybrid?.wireMasks.filter((m) => m.componentId).length,
       numbering: view.hybrid?.numbering,
       clearConnections:view.hybrid?.endpoints.filter(e=>e.status==='supported').length,
+      externalConnections:view.hybrid?.endpoints.filter(e=>e.status==='external').length,
       ambiguousConnections:view.hybrid?.endpoints.filter(e=>e.status==='ambiguous').length,
       error: view.error,
       output,

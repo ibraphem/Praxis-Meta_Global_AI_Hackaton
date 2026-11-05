@@ -32,6 +32,7 @@ import {
   localEndpointSchema,
 } from '../shared/hybrid-geometry.js';
 import { proposeHybridCircuit } from '../services/hybrid-circuit.js';
+import { inferAutomaticDiagnosis } from '../services/automatic-diagnosis.js';
 
 const inspectionReviewSchema = z
   .object({
@@ -47,12 +48,20 @@ const recalibrationRequestSchema = z
     input: circuitInputSchema.optional(),
   })
   .strict();
+const diagnosisRequestSchema = z
+  .object({
+    expectedRevision: z.number().int().nonnegative(),
+    goal: z.string().trim().max(500).default(''),
+    verificationOf: z.uuid().nullable().default(null),
+  })
+  .strict();
 
 export class AutomaticCircuitService {
   private tasks = new Map<
     string,
     { controller: AbortController; promise: Promise<void> }
   >();
+  private diagnosing = new Set<string>();
   constructor(
     private store: JobStore,
     private client: MetaClient,
@@ -343,6 +352,7 @@ export class AutomaticCircuitService {
         (numbering.rowDirection === 'reverse' ? fit.rows : 1) &&
       fit.observedRows === fit.rows;
     for (const e of body.endpoints) {
+      const component = v.input.components.find((c) => c.id === e.componentId);
       if (
         seen.has(e.terminalId) ||
         !v.input.terminals.some(
@@ -353,6 +363,18 @@ export class AutomaticCircuitService {
           400,
           'INVALID_ENDPOINT',
           'Unknown or duplicate terminal measurement.',
+        );
+      if (
+        e.status === 'external' &&
+        (component?.type !== 'jumper_wire' ||
+          !e.position ||
+          e.candidates.length ||
+          e.basis !== 'external_connector')
+      )
+        throw new AppError(
+          400,
+          'INVALID_ENDPOINT',
+          'External endpoint evidence must be a visible jumper-wire end outside the board.',
         );
       seen.add(e.terminalId);
       if (
@@ -386,7 +408,9 @@ export class AutomaticCircuitService {
         e.reason = 'Endpoint does not uniquely match a registered hole.';
       }
       const position = e.position;
-      e.candidates = position
+      e.candidates = e.status === 'external'
+        ? []
+        : position
         ? v.input.boards
             .flatMap((b) => {
               const grid = unproject(b.calibration as Calibration, position);
@@ -497,6 +521,7 @@ export class AutomaticCircuitService {
     }
     v.observations = body.observations;
     v.graph = null;
+    delete v.diagnosis;
     v.status = 'needs_review';
     v.revision++;
     v.reviewedAt = null;
@@ -674,6 +699,7 @@ export class AutomaticCircuitService {
       if (v.hybrid?.localStatus === 'pending')
         v.hybrid.localStatus = 'unresolved';
       v.graph = graph;
+      delete v.diagnosis;
       v.revision = input.revision;
       v.reviewer = body.reviewer;
       v.reviewedAt = proof.timestamp;
@@ -682,6 +708,91 @@ export class AutomaticCircuitService {
       this.save(v);
     });
     return v;
+  }
+  async diagnose(id: string, raw: unknown) {
+    const body = diagnosisRequestSchema.parse(raw),
+      v = this.editable(id, body.expectedRevision);
+    if (v.status !== 'reviewed' || !v.input || !v.graph)
+      throw new AppError(
+        409,
+        'REVIEW_REQUIRED',
+        'Save the reviewed connections before diagnosing the circuit.',
+      );
+    if (this.diagnosing.has(id))
+      throw new AppError(
+        409,
+        'DIAGNOSIS_RUNNING',
+        'Circuit diagnosis is already running.',
+      );
+    let requestedGoal = body.goal;
+    if (body.verificationOf) {
+      if (body.verificationOf === id)
+        throw new AppError(
+          400,
+          'INVALID_VERIFICATION',
+          'A repair must be verified using a fresh inspection.',
+        );
+      const source = this.get(body.verificationOf);
+      if (source.diagnosis?.status !== 'repair_ready' || !source.diagnosis.repair)
+        throw new AppError(
+          409,
+          'INVALID_VERIFICATION',
+          'The source inspection does not contain a repair ready for verification.',
+        );
+      requestedGoal =
+        requestedGoal ||
+        source.diagnosis.requestedGoal ||
+        source.diagnosis.intendedBehavior;
+    }
+    const release = this.store.experiments.enterLegacyRequest(
+        this.store.config.CIRCUIT_INSPECTION_TIMEOUT_MS,
+      ),
+      controller = new AbortController(),
+      timer = setTimeout(
+        () => controller.abort(),
+        this.store.config.CIRCUIT_INSPECTION_TIMEOUT_MS,
+      );
+    this.diagnosing.add(id);
+    try {
+      v.requestCount++;
+      v.stage = body.verificationOf
+        ? 'Checking the fresh capture against the repair intent'
+        : 'Inferring circuit intent and validating a repair';
+      this.save(v);
+      const image = await prepareImage(
+          Buffer.from(this.image(id)),
+          this.store.config,
+        ),
+        diagnosis = await inferAutomaticDiagnosis({
+          config: this.store.config,
+          client: this.client,
+          image,
+          input: v.input,
+          sourceRevision: v.revision,
+          sourceImageHash: v.imageHash,
+          requestedGoal,
+          verificationOf: body.verificationOf,
+          signal: controller.signal,
+        });
+      v.diagnosis = diagnosis;
+      v.revision++;
+      v.stage =
+        diagnosis.status === 'repair_ready'
+          ? 'Validated repair ready'
+          : diagnosis.status === 'no_fault'
+            ? body.verificationOf
+              ? 'Repair verified from fresh capture'
+              : 'No mismatch found for the inferred intent'
+            : diagnosis.status === 'needs_intent'
+              ? 'Describe the intended circuit behavior'
+              : 'No safe single-lead repair could be validated';
+      this.save(v);
+      return v;
+    } finally {
+      clearTimeout(timer);
+      release();
+      this.diagnosing.delete(id);
+    }
   }
   evidence(id: string) {
     const proposal = this.store.db

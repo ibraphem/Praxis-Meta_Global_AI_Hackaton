@@ -23,6 +23,22 @@ fixed component list, expected netlist, or photograph-specific coordinates.
 5. Inspect the remaining exceptions, then save the review. Power-rail continuity,
    device polarity and internal module or switch contact mappings need supporting
    information; a grid fit does not establish those facts.
+6. Saving advances automatically to **Diagnose and repair**. Muse receives the
+   reviewed component/terminal IDs and observed nets and proposes the most likely
+   intended behavior. It never chooses a pixel or hole. When several circuit purposes
+   remain plausible, enter one short intended-behavior sentence and diagnose again.
+7. A single-lead instruction appears only when the proposal names a board-inserted
+   jumper end or visible lead of a reviewed two-terminal LED, resistor or capacitor,
+   plus a target terminal with reviewed evidence. The backend chooses
+   the nearest empty hole on the target electrical group, simulates the move, confirms
+   the required relationship, and rejects moves that short a typed device. Disconnect
+   power, make the displayed move, then select **I moved the lead — capture
+   verification**.
+8. Capture and review a fresh photograph. Praxis re-runs calibration and terminal
+   discovery, carries only the intended behavior (not old observed coordinates), and
+   diagnoses the fresh graph. A verified result requires the new reviewed terminals to
+   satisfy every inferred relationship. Photograph agreement still does not prove that
+   voltage, polarity or physical operation is correct.
 
 The local grid overlay and original photograph remain visible. Advanced controls
 can adjust grid landmarks, register missing rails, reject detections, and add missing
@@ -48,12 +64,27 @@ measurement. Reopening an inspection does not repeat provider inference.
   footprint measurements produce endpoint references. The calibrated hole resolver
   ranks nearby holes and rejects ambiguous or distant assignments. Cropped ends and
   fragmented/uncertain identities do not become confirmed electrical connections.
+- When SAM omits a visibly colored conductor, a bounded high-chroma trace inside the
+  identified wire region can recover its connected path from original pixels. This
+  fallback is independent of color names in the semantic label. Wire ends outside the
+  calibrated board are retained as external connections instead of being offered as
+  unrelated hole candidates.
+- Two-terminal lead detection resolves collinear line fragments to their calibrated
+  extremes and prevents an already claimed resistor hole from being reused by an
+  overlapping LED search region. Short rows of printed text are excluded from the
+  physical hole lattice.
 - The frontend submits image-bound measurements with an expected revision. The
   backend revalidates image binding, calibration geometry and hole associations.
   All electrical proposals remain unresolved until an explicit human action.
 - The existing connectivity engine computes nets from reviewed evidence. Resistors,
   LEDs, switches and unknown assemblies keep separate device ports; no internal
   connection is invented to match an expected circuit.
+- Post-review intent inference is a separate bounded Muse request. The model may name
+  only existing terminal IDs and disclose its assumptions; it cannot name destination
+  holes. IC, transistor, switch, module, connector, hidden and unreviewed terminals
+  are never eligible moves. Low-confidence or ambiguous intent becomes `needs_intent`. Exact repair
+  geometry is deterministic, occupancy-aware and counterfactually validated by the
+  connectivity engine.
 
 The supported capture contains one standard ten-column breadboard with 30 or 63
 terminal rows. Unsupported layouts, unreadable numbering, blur and occlusion can
@@ -73,6 +104,8 @@ Each request uses `CIRCUIT_INSPECTION_REQUEST_TIMEOUT_MS` (default 90 seconds), 
 by `PROVIDER_TIMEOUT_MS`; use a global ceiling of at least 90000 for the full window.
 There are no automatic inference retries. Grid measurement, endpoint matching,
 review, graph calculation, polling and evidence export make no provider requests.
+Post-review intent/repair diagnosis makes one explicit Muse request and persists its
+model, assumptions, source revision, image hash and verification linkage.
 
 Inspections and review revisions are stored in the private job SQLite database.
 `MAX_STORED_JOBS` and `JOB_RETENTION_HOURS` bound retention. Source photographs and

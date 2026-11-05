@@ -7,6 +7,7 @@ type Action =
   | "review"
   | "calibrate"
   | "localize"
+  | "diagnose"
   | "evidence"
   | "delete";
 export function createAutomaticCircuitProxy(
@@ -38,7 +39,10 @@ export function createAutomaticCircuitProxy(
     if (active >= 4) return fail(503, "Inspection connection is busy.");
     active++;
     const controller = new AbortController(),
-      timer = setTimeout(() => controller.abort(), 30000),
+      timer = setTimeout(
+        () => controller.abort(),
+        action === "diagnose" ? 120000 : 30000,
+      ),
       signal = AbortSignal.any([request.signal, controller.signal]);
     try {
       const env = options.environment ?? process.env,
@@ -61,7 +65,13 @@ export function createAutomaticCircuitProxy(
           !contentType.includes("boundary="))
       )
         return fail(415, "Choose a circuit photograph.");
-      const body = ["create", "review", "calibrate", "localize"].includes(
+      const body = [
+        "create",
+        "review",
+        "calibrate",
+        "localize",
+        "diagnose",
+      ].includes(
         action,
       )
         ? await readBounded(

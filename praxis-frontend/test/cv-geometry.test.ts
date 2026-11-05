@@ -8,6 +8,7 @@ import {
   calibrateBoard,
   terminalHoles,
   project,
+  type Calibration,
 } from "../../praxis-backend/server/src/shared/calibration";
 import type { CircuitInput, CircuitInspection } from "../lib/automatic-circuit";
 import {
@@ -97,6 +98,17 @@ test("OpenCV extracts actual pixels and fits the generated hole pattern", () => 
   assert.equal(result.status, "measured", result.reason);
   assert.ok(result.fit!.holes.length >= 280);
   assert.ok(result.fit!.rmsPitch < 0.03);
+});
+test("short text-like rows outside the terminal lattice are ignored", () => {
+  const g = grid(),
+    points = [...g.points];
+  for (const row of [-1, 30])
+    for (const x of [0, 1, 2, 3])
+      points.push(project(g.calibration, { x, y: row }));
+  const result = fitHoleLattice(points, g.width, g.height);
+  assert.equal(result.rows, 30);
+  assert.equal(result.observedRows, 30);
+  assert.ok(result.holes.length >= 280);
 });
 test("rail geometry is fitted independently and carries no continuity claim", () => {
   const g = grid(),
@@ -239,6 +251,55 @@ test("missing or duplicate wire masks stay unresolved", () => {
       results.every((r) => r.status === "unresolved" && r.position === null),
     );
   }
+});
+test("a visible chromatic wire recovers one board insertion and one external end", () => {
+  const { input } = endpointFixture(),
+    rgba = new Uint8ClampedArray(640 * 960 * 4).fill(255),
+    boardEnd = project(input.boards[0].calibration as Calibration, {
+      x: 0,
+      y: 4,
+    }),
+    externalEnd = { x: 48, y: 42 };
+  input.components[0].bbox = [35, 30, 80, 200];
+  const steps = Math.ceil(
+    Math.hypot(boardEnd.x - externalEnd.x, boardEnd.y - externalEnd.y),
+  );
+  for (let n = 0; n <= steps; n++) {
+    const x = Math.round(
+        externalEnd.x + ((boardEnd.x - externalEnd.x) * n) / steps,
+      ),
+      y = Math.round(
+        externalEnd.y + ((boardEnd.y - externalEnd.y) * n) / steps,
+      );
+    for (let dy = -3; dy <= 3; dy++)
+      for (let dx = -3; dx <= 3; dx++) {
+        const i = ((y + dy) * 640 + x + dx) * 4;
+        rgba[i] = 210;
+        rgba[i + 1] = 24;
+        rgba[i + 2] = 32;
+      }
+  }
+  const results = matchLocalEndpoints(cv, rgba, 640, 960, input, []);
+  assert.deepEqual(
+    results.map((r) => r.status).sort(),
+    ["external", "supported"],
+  );
+  assert.equal(
+    results.find((r) => r.status === "supported")!.candidates[0].holeId,
+    "a5",
+  );
+  assert.equal(
+    results.find((r) => r.status === "supported")!.basis,
+    "chromatic_trace",
+  );
+  assert.equal(
+    results.find((r) => r.status === "external")!.basis,
+    "external_connector",
+  );
+  assert.deepEqual(
+    results.find((r) => r.status === "external")!.candidates,
+    [],
+  );
 });
 test("batch review confirms clear proposals while leaving unresolved contacts and roles untouched", () => {
   const { input, mask, rgba } = endpointFixture(),

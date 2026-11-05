@@ -23,6 +23,9 @@ import {
 } from './helpers.js';
 import type { CircuitInspection } from '../src/shared/automatic-circuit.js';
 import type { MeasuredGeometry } from '../src/shared/hybrid-geometry.js';
+import { inferAutomaticDiagnosis } from '../src/services/automatic-diagnosis.js';
+import { prepareImage } from '../src/services/image.js';
+import type { CircuitInput } from '../src/schemas/connectivity.js';
 
 const image = { width: 640, height: 960 };
 function measuredGeometry(): MeasuredGeometry {
@@ -148,6 +151,261 @@ test('hybrid geometry replaces model coordinates and local proposals remain unco
     store.close();
   }
 });
+test('local endpoint evidence separates a board insertion from an external wire end', async () => {
+  const store = new JobStore(testConfig(), ':memory:'),
+    fake = semanticClient(),
+    service = new AutomaticCircuitService(store, fake.client);
+  try {
+    const bytes = await imageBytes(640, 960),
+      initial = await service.create(bytes, {
+        sourceHash: createHash('sha256').update(bytes).digest('hex'),
+        geometry: measuredGeometry(),
+      }),
+      v = await done(service, initial.id),
+      component = v.input!.components.find((c) => c.type === 'jumper_wire')!,
+      localized = service.localize(v.id, {
+        expectedRevision: v.revision,
+        imageHash: v.imageHash,
+        endpoints: [
+          {
+            terminalId: component.terminalIds[0],
+            componentId: component.id,
+            position: fixture().pixel('a5'),
+            basis: 'mask_endpoint',
+            status: 'supported',
+            reason: 'Measured mask endpoint',
+            candidates: [],
+          },
+          {
+            terminalId: component.terminalIds[1],
+            componentId: component.id,
+            position: { x: 20, y: 20 },
+            basis: 'external_connector',
+            status: 'external',
+            reason: 'Visible wire end outside the board',
+            candidates: [],
+          },
+        ],
+      });
+    assert.equal(localized.hybrid!.localStatus, 'ready');
+    assert.equal(
+      localized.hybrid!.endpoints.find((e) => e.status === 'external')!
+        .candidates.length,
+      0,
+    );
+    assert.equal(
+      localized.input!.associations.filter((a) => a.target).length,
+      1,
+    );
+    assert.equal(
+      localized.input!.associations.find(
+        (a) => a.terminalId === component.terminalIds[0],
+      )!.target!.kind,
+      'hole',
+    );
+  } finally {
+    await service.close();
+    store.close();
+  }
+});
+test('intent inference can name terminals but only server geometry chooses a safe empty repair hole', async () => {
+  const config = testConfig(),
+    calibration = calibrateBoard('board_1', 30, image, [
+      { x: 100, y: 100 },
+      { x: 430, y: 100 },
+      { x: 430, y: 900 },
+      { x: 100, y: 900 },
+    ]),
+    proof = {
+      id: 'review_1',
+      source: 'human_review' as const,
+      reviewer: 'Test reviewer',
+      note: 'Reviewed synthetic diagnosis fixture.',
+      timestamp: 1,
+    },
+    input: CircuitInput = {
+      schemaVersion: 'praxis-connectivity-input-v1',
+      analysisId: '11111111-1111-4111-8111-111111111111',
+      imageHash: 'a'.repeat(64),
+      revision: 1,
+      validationScope: 'photograph',
+      coverage: { state: 'unresolved', evidence: [] },
+      boards: [
+        {
+          id: 'board_1',
+          revision: 1,
+          calibration,
+          rails: [],
+          topologyState: 'confirmed_manual',
+          evidence: [proof],
+        },
+      ],
+      components: [
+        {
+          id: 'red_wire',
+          label: 'red battery lead',
+          type: 'jumper_wire',
+          objectRef: { kind: 'manual', id: 'red_wire' },
+          bbox: null,
+          terminalIds: ['red_board', 'red_external'],
+          state: 'confirmed_manual',
+          continuity: 'unresolved',
+          evidence: [proof],
+        },
+        {
+          id: 'resistor',
+          label: 'series resistor',
+          type: 'resistor',
+          objectRef: { kind: 'manual', id: 'resistor' },
+          bbox: null,
+          terminalIds: ['resistor_left', 'resistor_right'],
+          state: 'confirmed_manual',
+          continuity: 'unresolved',
+          evidence: [proof],
+        },
+      ],
+      terminals: [
+        ['red_board', 'red_wire'],
+        ['red_external', 'red_wire'],
+        ['resistor_left', 'resistor'],
+        ['resistor_right', 'resistor'],
+      ].map(([id, componentId]) => ({
+        id: id!,
+        componentId: componentId!,
+        label: id!,
+        role: null,
+        roleState: 'unresolved' as const,
+        position: null,
+        evidence: [proof],
+      })),
+      associations: [
+        ['red_board', 'a9'],
+        ['resistor_left', 'e7'],
+        ['resistor_right', 'f7'],
+      ].map(([terminalId, holeId]) => ({
+        id: `association_${terminalId}`,
+        terminalId: terminalId!,
+        target: {
+          kind: 'hole' as const,
+          boardId: 'board_1',
+          holeId: holeId!,
+          calibrationRevision: 1,
+        },
+        type: 'insertion' as const,
+        state: 'confirmed_manual' as const,
+        evidence: [proof],
+        originalProposalRef: terminalId!,
+      })),
+    },
+    prepared = await prepareImage(await imageBytes(640, 960), config),
+    response: Record<string, unknown> = {
+      outcome: 'repair_candidate',
+      intendedBehavior: 'Feed the series resistor from the battery lead.',
+      confidence: 'high',
+      assumptions: ['The labelled red lead is the intended positive feed.'],
+      relationships: [
+        {
+          fromTerminalId: 'red_board',
+          toTerminalId: 'resistor_left',
+          reason: 'The source must feed the resistor input.',
+        },
+      ],
+      repair: {
+        movableTerminalId: 'red_board',
+        targetTerminalId: 'resistor_left',
+        reason: 'The lead is two rows below the resistor input net.',
+      },
+      explanation: 'One lead is on the wrong terminal strip.',
+    },
+    client = {
+      async post() {
+        return completion(response);
+      },
+    } as MetaClient;
+  const diagnosis = await inferAutomaticDiagnosis({
+    config,
+    client,
+    image: prepared,
+    input,
+    sourceRevision: 1,
+    sourceImageHash: input.imageHash,
+    requestedGoal: '',
+    verificationOf: null,
+    signal: new AbortController().signal,
+  });
+  assert.equal(diagnosis.status, 'repair_ready');
+  assert.equal(diagnosis.repair!.from.holeId, 'a9');
+  assert.equal(diagnosis.repair!.to.holeId, 'a7');
+  assert.match(diagnosis.repair!.instruction, /Move the red battery lead/);
+
+  response.repair = {
+    movableTerminalId: 'resistor_left',
+    targetTerminalId: 'red_board',
+    reason: 'Move the visible resistor lead onto the source terminal strip.',
+  };
+  const discreteLead = await inferAutomaticDiagnosis({
+    config,
+    client,
+    image: prepared,
+    input,
+    sourceRevision: 1,
+    sourceImageHash: input.imageHash,
+    requestedGoal: '',
+    verificationOf: null,
+    signal: new AbortController().signal,
+  });
+  assert.equal(discreteLead.status, 'repair_ready');
+  assert.equal(discreteLead.repair!.from.holeId, 'e7');
+  assert.equal(discreteLead.repair!.to.holeId, 'e9');
+  assert.match(discreteLead.repair!.instruction, /series resistor/);
+
+  response.repair = {
+    movableTerminalId: 'red_external',
+    targetTerminalId: 'resistor_left',
+    reason: 'The external end has no reviewed board insertion.',
+  };
+  const rejected = await inferAutomaticDiagnosis({
+    config,
+    client,
+    image: prepared,
+    input,
+    sourceRevision: 1,
+    sourceImageHash: input.imageHash,
+    requestedGoal: '',
+    verificationOf: null,
+    signal: new AbortController().signal,
+  });
+  assert.equal(rejected.status, 'no_safe_repair');
+  assert.equal(rejected.repair, null);
+
+  const fixed = structuredClone(input),
+    fixedAssociation = fixed.associations.find(
+      (association) => association.terminalId === 'red_board',
+    )!;
+  fixedAssociation.target = {
+    kind: 'hole',
+    boardId: 'board_1',
+    holeId: 'a7',
+    calibrationRevision: 1,
+  };
+  response.outcome = 'no_fault';
+  response.repair = null;
+  response.explanation = 'The fresh capture now satisfies the intended feed.';
+  const verified = await inferAutomaticDiagnosis({
+    config,
+    client,
+    image: prepared,
+    input: fixed,
+    sourceRevision: 2,
+    sourceImageHash: fixed.imageHash,
+    requestedGoal: 'Feed the resistor from the battery lead.',
+    verificationOf: '22222222-2222-4222-8222-222222222222',
+    signal: new AbortController().signal,
+  });
+  assert.equal(verified.status, 'no_fault');
+  assert.equal(verified.verificationOf, '22222222-2222-4222-8222-222222222222');
+  assert.equal(verified.relationships[0]!.satisfied, true);
+});
 test('foreign or inconsistent browser geometry is rejected before provider dispatch', async () => {
   const store = new JobStore(testConfig(), ':memory:'),
     fake = semanticClient(),
@@ -256,6 +514,16 @@ function fakeClient(rotated = false): {
         };
         if (format.json_schema.name === 'breadboard_inventory')
           return completion(f.inventory);
+        if (format.json_schema.name === 'automatic_circuit_intent')
+          return completion({
+            outcome: 'needs_intent',
+            intendedBehavior: 'Several circuit purposes remain plausible.',
+            confidence: 'low',
+            assumptions: [],
+            relationships: [],
+            repair: null,
+            explanation: 'Describe the intended behavior before repair.',
+          });
         const messages = body.messages as { content: unknown }[];
         const text = (messages[1]!.content as { text?: string }[])[0]!.text!;
         if (text.includes('Unidentified module'))
@@ -591,6 +859,18 @@ test('HTTP upload, polling, image, review and deletion use the existing private 
     });
     assert.equal(review.statusCode, 200);
     assert.equal(review.json().status, 'reviewed');
+    const diagnosis = await app.inject({
+      method: 'POST',
+      url: `/api/circuit-inspections/${id}/diagnose`,
+      headers: auth,
+      payload: {
+        expectedRevision: review.json().revision,
+        goal: '',
+        verificationOf: null,
+      },
+    });
+    assert.equal(diagnosis.statusCode, 200);
+    assert.equal(diagnosis.json().diagnosis.status, 'needs_intent');
     assert.equal(
       (
         await app.inject({
@@ -610,7 +890,7 @@ test('HTTP upload, polling, image, review and deletion use the existing private 
       ).statusCode,
       404,
     );
-    assert.equal(fake.calls(), 3);
+    assert.equal(fake.calls(), 4);
   } finally {
     await app.close();
     store.close();

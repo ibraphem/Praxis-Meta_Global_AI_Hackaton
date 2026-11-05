@@ -169,7 +169,8 @@ async function mock(page: Page, restore = false, hybrid = false) {
     : null;
   let v = fixture(),
     uploads = 0,
-    reviews = 0;
+    reviews = 0,
+    diagnoses = 0;
   if (hybrid) {
     const c = v.input!.boards[0].calibration;
     v.input!.terminals.forEach((t) => (t.position = null));
@@ -267,6 +268,67 @@ async function mock(page: Page, restore = false, hybrid = false) {
     await route.fulfill({ json: v });
   });
   await page.route(
+    `**/api/circuit-inspections/${id}/diagnose`,
+    async (route) => {
+      diagnoses++;
+      const body = route.request().postDataJSON();
+      const calibration = v.input!.boards[0]!.calibration;
+      v = {
+        ...v,
+        revision: v.revision + 1,
+        stage: "Validated repair ready",
+        diagnosis: {
+          status: "repair_ready",
+          sourceRevision: v.revision,
+          sourceImageHash: v.imageHash,
+          verificationOf: body.verificationOf,
+          requestedGoal: body.goal,
+          intendedBehavior: "Connect the observed conductor to the intended device net.",
+          confidence: "high",
+          assumptions: ["Synthetic browser-test intent."],
+          relationships: [
+            {
+              fromTerminalId: "wire_a",
+              toTerminalId: "module_a",
+              reason: "Required test relationship.",
+              satisfied: false,
+            },
+          ],
+          explanation: "One reviewed lead is on the wrong strip.",
+          repair: {
+            id: "repair_test",
+            componentId: "wire",
+            terminalId: "wire_a",
+            targetTerminalId: "module_a",
+            from: {
+              boardId: "board_1",
+              holeId: "a5",
+              position: project(
+                calibration as Parameters<typeof project>[0],
+                { x: 0, y: 4 },
+              ),
+            },
+            to: {
+              boardId: "board_1",
+              holeId: "a6",
+              position: project(
+                calibration as Parameters<typeof project>[0],
+                { x: 0, y: 5 },
+              ),
+            },
+            instruction:
+              "Disconnect power. Move the observed conductor end from A5 to A6.",
+            rationale: "The intended device net is on row 6.",
+            safety: "Disconnect the power source before moving the lead.",
+          },
+          model: "mock vision model",
+          createdAt: 2,
+        },
+      };
+      await route.fulfill({ json: v });
+    },
+  );
+  await page.route(
     `**/api/circuit-inspections/${id}/localize`,
     async (route) => {
       const body = route.request().postDataJSON();
@@ -289,14 +351,19 @@ async function mock(page: Page, restore = false, hybrid = false) {
       await route.fulfill({ json: v });
     },
   );
-  return { counts: () => ({ uploads, reviews }), get: () => v };
+  return {
+    counts: () => ({ uploads, reviews }),
+    diagnoses: () => diagnoses,
+    get: () => v,
+  };
 }
 test("default camera has a general inspection flow and no fixed reference circuit", async ({
   page,
 }, info) => {
   await page.goto("/");
+  await expect(page.getByText("Workspace", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Your circuit, mapped from the photo." }),
+    page.getByText("SCENE UNDERSTANDING", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Start camera", exact: true }),
@@ -354,13 +421,24 @@ test("upload leads to individual confirmation, unresolved hidden contacts and a 
       .locator("#review-module")
       .getByLabel("I confirm this physical connection", { exact: true }),
   ).toBeDisabled();
-  await page.getByLabel("Reviewer name").fill("Human reviewer");
   await page
-    .getByRole("button", { name: "Save review and build graph" })
+    .getByRole("button", { name: "Troubleshoot circuit" })
     .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Review saved" }),
+  ).toContainText("Observed connections rebuilt below");
   await expect(
     page.getByRole("img", { name: "Observed circuit connection graph" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Troubleshooting complete" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("heading", {
+      name: "Disconnect power. Move the observed conductor end from A5 to A6.",
+    }),
+  ).toBeVisible();
+  expect(fake.diagnoses()).toBe(1);
   expect(fake.counts()).toEqual({ uploads: 1, reviews: 1 });
   expect(fake.get().input!.associations[2].state).toBe("unresolved");
   await page.screenshot({
@@ -413,20 +491,35 @@ test("hybrid worker matches a wire locally and confirms clear connections in one
     page.getByRole("heading", { name: "Review the exceptions", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("2 clear connection proposals.", { exact: false }),
+    page.getByText("2 clear board-contact proposals", { exact: false }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(
+    page.getByText("2/3 proposals selected", { exact: true }),
   ).toBeVisible();
+  await expect(
+    page.getByLabel("Confirm clear proposals", { exact: false }),
+  ).toBeChecked();
   await expect(page.locator("#review-wire")).toHaveCount(0);
   await expect(page.locator("#review-module")).toBeVisible();
-  await page.getByLabel("Reviewer name").fill("Human reviewer");
-  await page
-    .getByRole("button", {
-      name: "Confirm clear proposals and save",
-      exact: true,
-    })
-    .click();
+  await page.getByRole("button", { name: "Troubleshoot circuit" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Review saved" }),
+  ).toContainText("2 confirmed, 1 unresolved");
   await expect(
     page.getByRole("img", { name: "Observed circuit connection graph" }),
   ).toBeVisible();
+  await expect(
+    page.getByLabel("Confirm clear proposals", { exact: false }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Troubleshooting complete" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", {
+      name: "I moved the lead — verify with a new photo",
+    }),
+  ).toBeVisible();
+  expect(fake.diagnoses()).toBe(1);
   expect(
     fake
       .get()
@@ -435,6 +528,21 @@ test("hybrid worker matches a wire locally and confirms clear connections in one
   ).toBe(true);
   expect(fake.get().input!.associations[2].state).toBe("unresolved");
   expect(fake.counts()).toEqual({ uploads: 0, reviews: 1 });
+  await page.screenshot({
+    path: info.outputPath("hybrid-repair-ready.png"),
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", {
+      name: "I moved the lead — verify with a new photo",
+    })
+    .click();
+  await expect(
+    page.getByRole("heading", {
+      name: "Capture the circuit again after moving the lead.",
+    }),
+  ).toBeVisible();
+  await expect(page.getByLabel("Upload circuit photo")).toBeEnabled();
   await page.screenshot({
     path: info.outputPath("hybrid-one-action-review.png"),
     fullPage: true,

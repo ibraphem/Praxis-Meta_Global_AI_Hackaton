@@ -69,11 +69,13 @@ export const localEndpointSchema = z
     position: point.nullable(),
     basis: z.enum([
       'mask_endpoint',
+      'chromatic_trace',
       'exposed_lead',
       'connector_footprint',
+      'external_connector',
       'unresolved',
     ]),
-    status: z.enum(['supported', 'ambiguous', 'unresolved']),
+    status: z.enum(['supported', 'external', 'ambiguous', 'unresolved']),
     reason: z.string().max(1000),
     candidates: z
       .array(

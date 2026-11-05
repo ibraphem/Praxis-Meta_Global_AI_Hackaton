@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { CircuitInput } from '../schemas/connectivity.js';
 import type { connectionProjection } from '../services/connection-projection.js';
 import type { HybridState } from './hybrid-geometry.js';
+import type { AutomaticDiagnosis } from './automatic-diagnosis.js';
 
 export const normalizedPoint = z.tuple([
   z.number().finite().min(0).max(999),
@@ -107,4 +108,5 @@ export interface CircuitInspection {
   reviewedAt: number | null;
   reviewer: string | null;
   hybrid?: HybridState;
+  diagnosis?: AutomaticDiagnosis;
 }

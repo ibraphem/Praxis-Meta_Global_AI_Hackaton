@@ -270,6 +270,133 @@ function skeletonEnds(mask: RasterMask) {
       "Endpoints measured along a connected wire mask; hidden insertion remains a proposal.",
   };
 }
+function chromaticWireMask(
+  rgba: Uint8ClampedArray,
+  width: number,
+  height: number,
+  bbox: [number, number, number, number],
+  pitch: number,
+  componentId: string,
+): RasterMask | null {
+  const pad = pitch * 1.8,
+    left = Math.max(0, Math.floor(bbox[0] - pad)),
+    top = Math.max(0, Math.floor(bbox[1] - pad)),
+    right = Math.min(width, Math.ceil(bbox[0] + bbox[2] + pad)),
+    bottom = Math.min(height, Math.ceil(bbox[1] + bbox[3] + pad)),
+    w = right - left,
+    h = bottom - top;
+  if (w < 3 || h < 3) return null;
+  const saturated = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const i = ((top + y) * width + left + x) * 4,
+        r = rgba[i],
+        g = rgba[i + 1],
+        b = rgba[i + 2],
+        high = Math.max(r, g, b),
+        low = Math.min(r, g, b),
+        chroma = high - low;
+      if (high >= 70 && chroma >= 42 && chroma / high >= 0.28)
+        saturated[y * w + x] = 1;
+    }
+  // Bridge one-pixel highlight gaps without introducing a color-specific rule.
+  const joined = new Uint8Array(saturated);
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (saturated[i]) continue;
+      let neighbors = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++)
+          neighbors += saturated[(y + dy) * w + x + dx];
+      if (neighbors >= 3) joined[i] = 1;
+    }
+  const seen = new Uint8Array(joined.length),
+    offsets = [-w - 1, -w, -w + 1, -1, 1, w - 1, w, w + 1];
+  let best: number[] = [],
+    bestScore = -Infinity;
+  for (let start = 0; start < joined.length; start++) {
+    if (!joined[start] || seen[start]) continue;
+    const queue = [start];
+    seen[start] = 1;
+    let minX = start % w,
+      maxX = minX,
+      minY = Math.floor(start / w),
+      maxY = minY;
+    for (let head = 0; head < queue.length; head++) {
+      const i = queue[head],
+        x = i % w,
+        y = Math.floor(i / w);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      for (const delta of offsets) {
+        const n = i + delta;
+        if (
+          n < 0 ||
+          n >= joined.length ||
+          Math.abs((n % w) - x) > 1 ||
+          !joined[n] ||
+          seen[n]
+        )
+          continue;
+        seen[n] = 1;
+        queue.push(n);
+      }
+    }
+    const bw = maxX - minX + 1,
+      bh = maxY - minY + 1,
+      length = Math.hypot(bw, bh),
+      fill = queue.length / (bw * bh),
+      score = length + queue.length / Math.max(1, pitch);
+    if (
+      queue.length >= pitch * 0.8 &&
+      length >= pitch * 2 &&
+      fill < 0.42 &&
+      score > bestScore
+    ) {
+      best = queue;
+      bestScore = score;
+    }
+  }
+  if (!best.length) return null;
+  const data = new Uint8Array(w * h);
+  best.forEach((i) => (data[i] = 1));
+  return { componentId, data, width: w, height: h, left, top };
+}
+function collinearExtremes(
+  candidates: { p: { x: number; y: number }; length: number; hole: string }[],
+  pitch: number,
+) {
+  if (candidates.length < 2) return null;
+  let best: [typeof candidates[number], typeof candidates[number]] | null = null,
+    separation = 0;
+  for (let i = 0; i < candidates.length; i++)
+    for (let j = i + 1; j < candidates.length; j++) {
+      const a = candidates[i],
+        b = candidates[j],
+        d = Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y);
+      if (d > separation) {
+        separation = d;
+        best = [a, b];
+      }
+    }
+  if (!best || separation < pitch * 0.75) return null;
+  const [a, b] = best,
+    dx = b.p.x - a.p.x,
+    dy = b.p.y - a.p.y;
+  if (
+    candidates.some(
+      (c) =>
+        Math.abs((c.p.x - a.p.x) * dy - (c.p.y - a.p.y) * dx) /
+          separation >
+        pitch * 0.3,
+    )
+  )
+    return null;
+  return best;
+}
 /** Raster masks and image evidence locate references; no LLM terminal coordinates enter this function. */
 export function matchLocalEndpoints(
   cv: CV,
@@ -338,8 +465,13 @@ export function matchLocalEndpoints(
         11 /
         Math.sqrt(sx * sy)
       : 20;
-    const footprints = connectorFootprints(cv, gray, pitch, masks);
-    for (const c of input.components) {
+    const footprints = connectorFootprints(cv, gray, pitch, masks),
+      claimedLeadHoles = new Set<string>(),
+      componentPriority = (type: string) =>
+        type === "resistor" ? 0 : ["led", "capacitor"].includes(type) ? 1 : 2;
+    for (const c of [...input.components].sort(
+      (a, b) => componentPriority(a.type) - componentPriority(b.type),
+    )) {
       if (c.state === "rejected" || !c.terminalIds.length) continue;
       if (!holes.length) {
         unresolved(c, "A measured board grid is required.");
@@ -349,7 +481,22 @@ export function matchLocalEndpoints(
         reason = "",
         basis: LocalEndpoint["basis"] = "unresolved";
       if (c.type === "jumper_wire") {
-        const selected = masks.filter((m) => m.componentId === c.id);
+        let selected = masks.filter((m) => m.componentId === c.id);
+        let chromatic = false;
+        if (!selected.length && c.bbox) {
+          const derived = chromaticWireMask(
+            rgba,
+            width,
+            height,
+            [c.bbox[0] / sx, c.bbox[1] / sy, c.bbox[2] / sx, c.bbox[3] / sy],
+            pitch,
+            c.id,
+          );
+          if (derived) {
+            selected = [derived];
+            chromatic = true;
+          }
+        }
         if (selected.length !== 1) {
           unresolved(
             c,
@@ -361,8 +508,10 @@ export function matchLocalEndpoints(
         }
         const ends = skeletonEnds(selected[0]);
         points = ends.points;
-        reason = ends.reason;
-        basis = "mask_endpoint";
+        reason = chromatic
+          ? "A connected high-chroma conductor trace supplies two image endpoints independently of the semantic label."
+          : ends.reason;
+        basis = chromatic ? "chromatic_trace" : "mask_endpoint";
         const feet = footprints
           .filter((f) => f.componentId === c.id)
           .map((f) => ({
@@ -441,16 +590,26 @@ export function matchLocalEndpoints(
               if (
                 nearest &&
                 nearest.distancePitch < 0.23 &&
+                !claimedLeadHoles.has(nearest.holeId) &&
                 !candidates.some((v) => v.hole === nearest.holeId)
               )
                 candidates.push({ p, length, hole: nearest.holeId });
             }
           }
           candidates.sort((a, b) => b.length - a.length);
-          if (candidates.length === 2) {
-            points = candidates.map((c) => ({ x: c.p.x / sx, y: c.p.y / sy }));
+          const selected =
+            candidates.length === 2
+              ? candidates
+              : collinearExtremes(candidates, pitch);
+          if (selected) {
+            selected.forEach((candidate) =>
+              claimedLeadHoles.add(candidate.hole),
+            );
+            points = selected.map((c) => ({ x: c.p.x / sx, y: c.p.y / sy }));
             reason =
-              "Two local lead-line endpoints uniquely meet hole candidates.";
+              candidates.length === 2
+                ? "Two local lead-line endpoints uniquely meet hole candidates."
+                : "Multiple line fragments form one continuous lead axis; its two calibrated extremes meet unique holes.";
             basis = "exposed_lead";
           } else
             reason =
@@ -485,19 +644,28 @@ export function matchLocalEndpoints(
             : 1;
         const boundary =
           p.x < 3 || p.y < 3 || p.x > width - 4 || p.y > height - 4;
+        const external =
+          c.type === "jumper_wire" &&
+          best &&
+          best.distancePitch > 1.5 &&
+          !boundary;
         result.push({
           terminalId: c.terminalIds[i],
           componentId: c.id,
           position,
-          basis,
+          basis: external ? "external_connector" : basis,
           status:
-            !boundary && best && best.distancePitch <= 0.32 && margin >= 0.15
+            external
+              ? "external"
+              : !boundary && best && best.distancePitch <= 0.32 && margin >= 0.15
               ? "supported"
               : "ambiguous",
-          reason: boundary
-            ? "Mask terminates at the image boundary; the physical end may be outside the photo."
-            : reason,
-          candidates,
+          reason: external
+            ? "The traced conductor end is outside the calibrated breadboard and is retained as an external connection."
+            : boundary
+              ? "Mask terminates at the image boundary; the physical end may be outside the photo."
+              : reason,
+          candidates: external ? [] : candidates,
         });
       }
     }

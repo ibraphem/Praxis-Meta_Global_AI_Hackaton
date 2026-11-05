@@ -70,7 +70,7 @@ if (invalidInputs.length) {
       `Relative paths are resolved from: ${process.cwd()}`,
       "bundle.json and truth.json in the README command are example filenames, not generated files.",
       "Export the evaluation bundle from Praxis and supply a separate truth JSON containing the physical holes recorded before inference. Do not derive truth from reviewed corrections.",
-      "The photograph is the third argument. Use its actual path, such as ../jumper_wires_breadboard.png when it is in the repository root.",
+      "The photograph is the third argument. Use its actual path, such as test/fixtures/exact-hole-v1/jumper_wires_breadboard.png for the frozen fixture.",
       "See README.md: Archive complete inputs and evaluate unfamiliar photographs.",
     ].join("\n"),
   );

@@ -91,6 +91,43 @@ test("inspection upload forwards the photograph and private bearer token once", 
   assert.equal((await response.json()).id, id);
   assert.equal(calls, 1);
 });
+test("diagnosis is forwarded as bounded JSON through the private backend", async () => {
+  let calls = 0;
+  const proxy = createAutomaticCircuitProxy({
+    fetcher: async (input, init) => {
+      calls++;
+      assert.equal(
+        String(input),
+        `http://127.0.0.1:3000/api/circuit-inspections/${id}/diagnose`,
+      );
+      assert.equal(init?.method, "POST");
+      assert.equal(new Headers(init?.headers).get("content-type"), "application/json");
+      assert.deepEqual(
+        JSON.parse(new TextDecoder().decode(init?.body as Uint8Array)),
+        { expectedRevision: 1, goal: "Light one LED", verificationOf: null },
+      );
+      return Response.json(inspection);
+    },
+  });
+  const response = await proxy(
+    new Request(
+      `http://localhost:3001/api/circuit-inspections/${id}/diagnose`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedRevision: 1,
+          goal: "Light one LED",
+          verificationOf: null,
+        }),
+      },
+    ),
+    "diagnose",
+    id,
+  );
+  assert.equal(response.status, 200);
+  assert.equal(calls, 1);
+});
 test("inspection proxy rejects mismatched responses and unsafe backend configuration", async () => {
   const proxy = createAutomaticCircuitProxy({
     fetcher: async () =>

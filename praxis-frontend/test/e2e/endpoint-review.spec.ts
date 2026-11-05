@@ -11,7 +11,10 @@ import {
 
 // Real photograph, deterministic mocked perception. This verifies review mechanics,
 // not model accuracy or a user-confirmed electrical ground truth.
-const photograph = resolve(process.cwd(), "../Complete-Circuit-5.jpg");
+const photograph = resolve(
+  process.cwd(),
+  "test/fixtures/complete-circuit-5.jpg",
+);
 const image = { width: 2500, height: 1406 };
 const anchors = [
   { x: 510, y: 617 },

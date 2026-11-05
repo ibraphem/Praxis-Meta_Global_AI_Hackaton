@@ -62,6 +62,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   console.log(
     JSON.stringify({
       supported: endpoints.filter((e) => e.status === "supported").length,
+      external: endpoints.filter((e) => e.status === "external").length,
       ambiguous: endpoints.filter((e) => e.status === "ambiguous").length,
       unresolved: endpoints.filter((e) => e.status === "unresolved").length,
       output,

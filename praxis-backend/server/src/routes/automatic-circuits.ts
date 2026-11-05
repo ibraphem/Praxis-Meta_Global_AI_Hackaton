@@ -78,7 +78,7 @@ export function registerAutomaticCircuitRoutes(
     service.remove(id(request.params));
     return reply.code(204).send();
   });
-  for (const action of ['review', 'calibrate', 'localize'] as const)
+  for (const action of ['review', 'calibrate', 'localize', 'diagnose'] as const)
     app.post(
       `/api/circuit-inspections/:id/${action}`,
       { bodyLimit: 2 * 1024 * 1024 },
@@ -88,7 +88,9 @@ export function registerAutomaticCircuitRoutes(
             ? service.localize(id(request.params), request.body)
             : action === 'review'
               ? service.review(id(request.params), request.body)
-              : service.recalibrate(id(request.params), request.body);
+              : action === 'diagnose'
+                ? await service.diagnose(id(request.params), request.body)
+                : service.recalibrate(id(request.params), request.body);
         } catch (error) {
           if (error instanceof AppError) throw error;
           throw new AppError(

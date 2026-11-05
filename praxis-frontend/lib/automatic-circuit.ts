@@ -3,6 +3,7 @@ import { inventorySchema } from "../../praxis-backend/server/src/shared/automati
 import { circuitInputSchema } from "../../praxis-backend/server/src/schemas/connectivity";
 import { projection } from "./circuit-session";
 import { hybridStateSchema } from "../../praxis-backend/server/src/shared/hybrid-geometry";
+import { automaticDiagnosisSchema } from "../../praxis-backend/server/src/shared/automatic-diagnosis";
 export type { CircuitInspection } from "../../praxis-backend/server/src/shared/automatic-circuit";
 export type { CircuitInput } from "../../praxis-backend/server/src/schemas/connectivity";
 export const inspectionSchema = z
@@ -27,6 +28,7 @@ export const inspectionSchema = z
     reviewedAt: z.number().nullable(),
     reviewer: z.string().nullable(),
     hybrid: hybridStateSchema.optional(),
+    diagnosis: automaticDiagnosisSchema.optional(),
   })
   .strict();
 export function parseInspection(raw: unknown, id?: string) {

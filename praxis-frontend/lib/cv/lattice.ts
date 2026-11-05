@@ -323,7 +323,18 @@ export function fitHoleLattice(
   if (matched.length < 8)
     throw Error("Could not separate both five-column terminal banks.");
   const selected = matched.flatMap((c) => c.line.points);
-  const horizontal = lines(selected, xAxis, pitch, 3, 65, 3.5);
+  // Printed column letters and component markings can form short, hole-like
+  // horizontal rows. A physical terminal row must be supported across most of
+  // the detected terminal banks.
+  const minimumRowPoints = Math.max(4, Math.ceil(matched.length * 0.55));
+  const horizontal = lines(
+    selected,
+    xAxis,
+    pitch,
+    minimumRowPoints,
+    65,
+    3.5,
+  );
   const crossCenter = median(selected.map((p) => dot(p, xAxis)));
   horizontal.forEach((l) => (l.at = intercept(l, yAxis, xAxis, crossCenter)));
   horizontal.sort((a, b) => a.at - b.at);

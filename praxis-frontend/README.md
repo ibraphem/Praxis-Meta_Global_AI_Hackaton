@@ -569,8 +569,8 @@ Storage remains in photograph-local component memory, capped at 100 assignments.
 Reviewer assignments have no database or browser persistence: replacing the photograph or reloading
 clears assignments and reviews.
 
-Run the repeatable browser regression with the supplied `Complete-Circuit-5.jpg`
-in the repository root:
+Run the repeatable browser regression with the archived
+`test/fixtures/complete-circuit-5.jpg` photograph:
 
 ```sh
 npx playwright install chromium
@@ -720,8 +720,9 @@ them. Relative paths are resolved from the directory where you run the command
   physical hole labels. Copy `imageSha256` and `analysisRunId` from that bundle's
   `image.sha256` and `analysisRunId`. These identify the inputs, not the answers.
   Do not fill in hole labels from model predictions or corrected assignments.
-- **Photograph:** use its real path. A photo at the repository root is
-  `../jumper_wires_breadboard.png` when running inside `praxis-frontend`.
+- **Photograph:** use its real path. The frozen exact-hole fixture is
+  `test/fixtures/exact-hole-v1/jumper_wires_breadboard.png` when running inside
+  `praxis-frontend`.
 
 Save the JSON below to an actual file such as `benchmarks/my-run/truth.json`,
 replacing its placeholder metadata and illustrative hole labels with your data.
@@ -765,7 +766,7 @@ current directory. Otherwise replace each example filename with its actual path.
 npm run benchmark:refine -- \
   bundle.json \
   truth.json \
-  jumper_wires_breadboard.png \
+  test/fixtures/exact-hole-v1/jumper_wires_breadboard.png \
   --all-endpoints
 ```
 
